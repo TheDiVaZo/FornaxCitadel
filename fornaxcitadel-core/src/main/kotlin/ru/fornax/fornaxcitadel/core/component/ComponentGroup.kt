@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.core.component
 
 data class ComponentGroup(
-    var name: String? = null,
+    val name: String?,
     val mask: Long,
     val id: Short
 ) {
