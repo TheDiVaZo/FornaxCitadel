@@ -3,7 +3,7 @@ package ru.fornax.fornaxcitadel.core.component
 import java.lang.Long.bitCount
 import java.util.*
 
-data class Citadel(
+data class CitadelEntity(
     val id: UUID,
     private var componentsMask: Long,
     private var systemsMask: Long,
@@ -12,7 +12,7 @@ data class Citadel(
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is Citadel) return false
+        if (other !is CitadelEntity) return false
 
         if (id != other.id) return false
 
