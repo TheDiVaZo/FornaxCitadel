@@ -1,1 +1,5 @@
 /.idea/
+/fornaxcitadel-paper/.gradle/
+.gradle/
+.kotlin/
+build/

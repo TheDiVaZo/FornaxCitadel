@@ -1,9 +1,6 @@
 plugins {
-    kotlin("jvm") version "2.4.20"
+    kotlin("jvm")
 }
-
-group = "ru.fornax"
-version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()

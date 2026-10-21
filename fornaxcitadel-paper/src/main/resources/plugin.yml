@@ -1,0 +1,11 @@
+name: FornaxCitadel
+description: $description
+prefix: FornaxCitadel
+version: '${version}'
+
+main: ru.fornax.fornaxcitadel.paper.FornaxCitadel
+paper-plugin-loader: ru.fornax.fornaxcitadel.paper.FornaxCitadelLoader
+api-version: '26.3'
+load: POSTWORLD
+
+authors: [TheDiVaZo]
