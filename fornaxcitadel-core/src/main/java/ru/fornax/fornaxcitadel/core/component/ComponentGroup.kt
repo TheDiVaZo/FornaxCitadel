@@ -11,7 +11,7 @@ data class ComponentGroup(
     }
 
     fun containsAny(bits: Long): Boolean {
-        return (bits and mask) > 0
+        return (bits and mask) != 0L
     }
 
     fun containsAll(bits: Long): Boolean {
