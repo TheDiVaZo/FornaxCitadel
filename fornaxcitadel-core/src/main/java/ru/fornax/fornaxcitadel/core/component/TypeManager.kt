@@ -3,6 +3,7 @@ package ru.fornax.fornaxcitadel.core.component
 import it.unimi.dsi.fastutil.bytes.Byte2ObjectOpenHashMap
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
 import ru.fornax.fornaxcitadel.core.util.Key
+import java.util.Collections
 
 class TypeManager {
     private val typeLock = Any()
@@ -26,6 +27,18 @@ class TypeManager {
     fun getType(key: Key): ComponentType<out Component>? {
         return synchronized(typeLock) {
             typesByKey[key]
+        }
+    }
+
+    internal fun getTypes(
+        keys: Collection<Key>
+    ): Map<Key, ComponentType<out Component>> {
+        return synchronized(typeLock) {
+            val result = LinkedHashMap<Key, ComponentType<out Component>>()
+            for (key in keys) {
+                typesByKey[key]?.let { result[key] = it }
+            }
+            Collections.unmodifiableMap(result)
         }
     }
 

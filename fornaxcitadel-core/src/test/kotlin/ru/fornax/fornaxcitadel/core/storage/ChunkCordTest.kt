@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.core.storage
 
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.component.OpaqueComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.io.DataInput
@@ -93,6 +94,9 @@ class ChunkCordTest {
         val second = chunk.putCitadel(7, 42, 11)
         chunk.putComponent(first, type, TestComponent(17))
         chunk.putComponent(second, type, TestComponent(23))
+        val opaqueKey = Key("test", "opaque")
+        chunk.putOpaqueComponent(first, OpaqueComponent(opaqueKey, byteArrayOf(1)))
+        chunk.putOpaqueComponent(second, OpaqueComponent(opaqueKey, byteArrayOf(2)))
 
         chunk.clear()
 
@@ -100,6 +104,7 @@ class ChunkCordTest {
         assertEquals(0, chunk.size)
         assertEquals(0L, first.components())
         assertEquals(0L, second.components())
+        assertTrue(chunk.captureOpaqueComponents().isEmpty())
         assertNull(chunk.getCitadel(4, 21, 5))
         assertNull(chunk.getCitadel(7, 42, 11))
 

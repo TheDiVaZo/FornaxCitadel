@@ -6,7 +6,24 @@ import ru.fornax.fornaxcitadel.core.component.ComponentType
 import ru.fornax.fornaxcitadel.core.component.OpaqueComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.util.Key
-import java.util.*
+import java.util.ArrayList
+import java.util.Collections
+import java.util.HashMap
+import java.util.LinkedHashMap
+import java.util.UUID
+
+internal class OpaqueComponentCandidate internal constructor(
+    internal val ownerToken: Any,
+    val packedPosition: Int,
+    val key: Key,
+    component: OpaqueComponent
+) {
+    internal val expectedComponent = component
+
+    fun toSnapshot(): ComponentSnapshot {
+        return ComponentSnapshot(key, expectedComponent.payloadData)
+    }
+}
 
 class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
     companion object {
@@ -190,6 +207,45 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
         opaqueComponents.forEach(packedPosition, action)
     }
 
+    internal fun captureOpaqueComponents(
+        key: Key? = null
+    ): List<OpaqueComponentCandidate> {
+        return opaqueComponents.capture(ownerToken, key)
+    }
+
+    internal fun isOpaqueComponentCurrent(
+        candidate: OpaqueComponentCandidate
+    ): Boolean {
+        return candidate.ownerToken === ownerToken &&
+            citadels.getPacked(candidate.packedPosition) != null &&
+            opaqueComponents.isCurrent(candidate)
+    }
+
+    internal fun replaceOpaqueComponent(
+        candidate: OpaqueComponentCandidate,
+        type: ComponentType<out Component>,
+        component: Component
+    ): Boolean {
+        require(candidate.key == type.key) {
+            "Opaque key ${candidate.key} does not match component type ${type.key}"
+        }
+
+        if (candidate.ownerToken !== ownerToken) return false
+        val entity = citadels.getPacked(candidate.packedPosition) ?: return false
+        if (!opaqueComponents.isCurrent(candidate)) return false
+
+        putUntypedComponent(entity, type, component)
+        return true
+    }
+
+    internal fun discardOpaqueComponent(
+        candidate: OpaqueComponentCandidate
+    ): Boolean {
+        if (candidate.ownerToken !== ownerToken) return false
+        if (citadels.getPacked(candidate.packedPosition) == null) return false
+        return opaqueComponents.removeIfCurrent(candidate)
+    }
+
     fun clear() {
         citadels.forEachCitadel { _, _, _, entity ->
             entity.setComponents(0L)
@@ -218,6 +274,19 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
         components.removeAllComponents(packedPosition)
         opaqueComponents.removeAll(packedPosition)
         entity.setComponents(0L)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun putUntypedComponent(
+        entity: CitadelEntity,
+        type: ComponentType<out Component>,
+        component: Component
+    ) {
+        putComponent(
+            entity,
+            type as ComponentType<Component>,
+            component
+        )
     }
 
     /** Tracks the Minecraft chunk lifecycle independently of storage residency and citadel contents. */
@@ -582,6 +651,55 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
             action: (OpaqueComponent) -> Unit
         ) {
             data[packedPosition]?.values?.forEach(action)
+        }
+
+        fun capture(
+            ownerToken: Any,
+            key: Key?
+        ): List<OpaqueComponentCandidate> {
+            val candidates = ArrayList<OpaqueComponentCandidate>()
+            for ((packedPosition, components) in data) {
+                if (key == null) {
+                    for (component in components.values) {
+                        candidates.add(
+                            OpaqueComponentCandidate(
+                                ownerToken,
+                                packedPosition,
+                                component.key,
+                                component
+                            )
+                        )
+                    }
+                } else {
+                    val component = components[key] ?: continue
+                    candidates.add(
+                        OpaqueComponentCandidate(
+                            ownerToken,
+                            packedPosition,
+                            component.key,
+                            component
+                        )
+                    )
+                }
+            }
+            candidates.sortWith(
+                compareBy<OpaqueComponentCandidate>(
+                    { it.packedPosition },
+                    { it.key }
+                )
+            )
+            return Collections.unmodifiableList(candidates)
+        }
+
+        fun isCurrent(candidate: OpaqueComponentCandidate): Boolean {
+            return data[candidate.packedPosition]?.get(candidate.key) ===
+                candidate.expectedComponent
+        }
+
+        fun removeIfCurrent(candidate: OpaqueComponentCandidate): Boolean {
+            if (!isCurrent(candidate)) return false
+            remove(candidate.packedPosition, candidate.key)
+            return true
         }
 
         fun clear() {

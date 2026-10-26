@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.CitadelSnapshot
 import ru.fornax.fornaxcitadel.core.storage.ComponentSnapshot
+import ru.fornax.fornaxcitadel.core.storage.OpaqueUpdateResult
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.io.DataInput
@@ -22,6 +23,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class ReadAndWriteAbleTest {
 
@@ -32,7 +34,10 @@ class ReadAndWriteAbleTest {
         val sourceComponents = mutableListOf(component)
         val citadel = CitadelSnapshot(0, sourceComponents)
         val sourceCitadels = mutableListOf(citadel)
-        val snapshot = ChunkCordSnapshot(UUID.randomUUID(), 1, -2, sourceCitadels)
+        val snapshot = ChunkCordSnapshot(
+            UUID.randomUUID(), 1, -2,
+            sourceCitadels
+        )
 
         sourcePayload[0] = 9
         sourceComponents.clear()
@@ -98,9 +103,7 @@ class ReadAndWriteAbleTest {
         val packedPosition = ChunkCord.packPosition(15, 319, 0)
         val payload = byteArrayOf(4, 5, 6)
         val snapshot = ChunkCordSnapshot(
-            world,
-            -10,
-            23,
+            world, -10, 23,
             listOf(
                 CitadelSnapshot(
                     packedPosition,
@@ -224,9 +227,12 @@ class ReadAndWriteAbleTest {
             )
         )
         val opaqueRetainedEntity = assertNotNull(opaqueChunk.getCitadel(1, 20, 2))
+        assertEquals(listOf(INT_KEY, INT_KEY), opaqueChunk.captureOpaqueComponents().map { it.key })
 
         opaqueChunk.removeAllComponents(opaqueRetainedEntity)
+        assertEquals(listOf(INT_KEY), opaqueChunk.captureOpaqueComponents().map { it.key })
         assertNotNull(opaqueChunk.removeCitadel(4, 21, 5))
+        assertTrue(opaqueChunk.captureOpaqueComponents().isEmpty())
 
         val restoredTypes = TypeManager()
         val restoredType = restoredTypes.registerType(INT_KEY, IntComponent::class.java)
@@ -286,23 +292,171 @@ class ReadAndWriteAbleTest {
     }
 
     @Test
-    fun `fails when a registered component cannot decode its payload`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
-        val entity = chunk.putCitadel(0, 0, 0)
-        val sourceTypes = TypeManager()
-        val sourceType = sourceTypes.registerType(INT_KEY, IntComponent::class.java)
-
-        chunk.putComponent(entity, sourceType, IntComponent(9))
-
-        val targetTypes = TypeManager()
-        targetTypes.registerType(INT_KEY, OtherComponent::class.java)
-
-        assertFailsWith<IOException> {
-            ChunkCordSnapshotMapper(targetTypes).restore(
-                ChunkCordSnapshot.fromByteArray(
-                    ChunkCordSnapshotMapper(sourceTypes).snapshot(chunk).toByteArray()
+    fun `discards corrupted registered component and preserves its neighbors`() {
+        val world = UUID.randomUUID()
+        val packedPosition = ChunkCord.packPosition(0, 0, 0)
+        val unknownPayload = byteArrayOf(9, 8, 7)
+        val snapshot = ChunkCordSnapshot(
+            world, 0, 0,
+            listOf(
+                CitadelSnapshot(
+                    packedPosition,
+                    listOf(
+                        ComponentSnapshot(INT_KEY, byteArrayOf(1, 2)),
+                        ComponentSnapshot(OTHER_KEY, byteArrayOf()),
+                        ComponentSnapshot(UNKNOWN_KEY, unknownPayload)
+                    )
                 )
             )
+        )
+        val types = TypeManager()
+        val intType = types.registerType(INT_KEY, IntComponent::class.java)
+        val otherType = types.registerType(OTHER_KEY, OtherComponent::class.java)
+        val corrupted = ArrayList<CorruptedComponentPayload>()
+        val mapper = ChunkCordSnapshotMapper(types, corrupted::add)
+
+        val restored = mapper.restore(snapshot)
+        val entity = assertNotNull(restored.getCitadel(0, 0, 0))
+
+        assertNull(restored.getComponent(entity, intType))
+        assertNotNull(restored.getComponent(entity, otherType))
+        assertEquals(otherType.flag, entity.components())
+
+        val savedComponents = mapper.snapshot(restored).citadels.single().components
+        assertEquals(listOf(OTHER_KEY, UNKNOWN_KEY), savedComponents.map { it.key })
+        assertContentEquals(
+            unknownPayload,
+            savedComponents.single { it.key == UNKNOWN_KEY }.payload
+        )
+        assertEquals(1, corrupted.size)
+        assertEquals(WXZCord(world, 0, 0), corrupted.single().location)
+        assertEquals(packedPosition, corrupted.single().packedPosition)
+        assertEquals(INT_KEY, corrupted.single().key)
+    }
+
+    @Test
+    fun `diagnostic failure does not restore a corrupted payload`() {
+        val types = TypeManager()
+        val type = types.registerType(INT_KEY, IntComponent::class.java)
+        val mapper = ChunkCordSnapshotMapper(types) {
+            throw IllegalStateException("diagnostic failed")
+        }
+        val snapshot = ChunkCordSnapshot(
+            UUID.randomUUID(), 0, 0,
+            listOf(
+                CitadelSnapshot(
+                    ChunkCord.packPosition(0, 0, 0),
+                    listOf(ComponentSnapshot(INT_KEY, byteArrayOf(1, 2)))
+                )
+            )
+        )
+
+        val restored = mapper.restore(snapshot)
+        val entity = assertNotNull(restored.getCitadel(0, 0, 0))
+
+        assertNull(restored.getComponent(entity, type))
+        assertEquals(0, mapper.snapshot(restored).citadels.single().components.size)
+    }
+
+    @Test
+    fun `opaque update restores discards and retains components with exact statistics`() {
+        val world = UUID.randomUUID()
+        val packedPosition = ChunkCord.packPosition(4, 50, 6)
+        val unknownPayload = byteArrayOf(4, 3, 2, 1)
+        val snapshot = ChunkCordSnapshot(
+            world, 7, -9,
+            listOf(
+                CitadelSnapshot(
+                    packedPosition,
+                    listOf(
+                        ComponentSnapshot(INT_KEY, IntComponent(73).toByteArray()),
+                        ComponentSnapshot(CORRUPT_KEY, byteArrayOf(1, 2)),
+                        ComponentSnapshot(UNKNOWN_KEY, unknownPayload)
+                    )
+                )
+            )
+        )
+        val types = TypeManager()
+        val corrupted = ArrayList<CorruptedComponentPayload>()
+        val mapper = ChunkCordSnapshotMapper(types, corrupted::add)
+        val chunk = mapper.restore(snapshot)
+        val entity = assertNotNull(chunk.getCitadel(4, 50, 6))
+
+        assertEquals(
+            setOf(INT_KEY, CORRUPT_KEY, UNKNOWN_KEY),
+            chunk.captureOpaqueComponents().map { it.key }.toSet()
+        )
+
+        val intType = types.registerType(INT_KEY, IntComponent::class.java)
+        types.registerType(CORRUPT_KEY, CorruptibleComponent::class.java)
+        val candidates = mapper.captureOpaqueComponents(chunk)
+        val resolutions = mapper.decodeOpaqueComponents(candidates)
+
+        val result = mapper.applyOpaqueComponents(chunk, resolutions)
+
+        assertEquals(OpaqueUpdateResult(1, 1, 1, 0), result)
+        assertSame(entity, chunk.getCitadel(4, 50, 6))
+        assertEquals(73, assertNotNull(chunk.getComponent(entity, intType)).value)
+        assertEquals(intType.flag, entity.components())
+        assertEquals(listOf(UNKNOWN_KEY), chunk.captureOpaqueComponents().map { it.key })
+        assertEquals(CORRUPT_KEY, corrupted.single().key)
+
+        val savedComponents = mapper.snapshot(chunk).citadels.single().components
+        assertEquals(listOf(INT_KEY, UNKNOWN_KEY), savedComponents.map { it.key })
+        assertContentEquals(
+            unknownPayload,
+            savedComponents.single { it.key == UNKNOWN_KEY }.payload
+        )
+    }
+
+    @Test
+    fun `opaque update skips a candidate changed between capture and apply`() {
+        val packedPosition = ChunkCord.packPosition(2, 30, 4)
+        val types = TypeManager()
+        val mapper = ChunkCordSnapshotMapper(types)
+        val chunk = mapper.restore(
+            ChunkCordSnapshot(
+                UUID.randomUUID(), 0, 0,
+                listOf(
+                    CitadelSnapshot(
+                        packedPosition,
+                        listOf(ComponentSnapshot(INT_KEY, IntComponent(31).toByteArray()))
+                    )
+                )
+            )
+        )
+        val entity = assertNotNull(chunk.getCitadel(2, 30, 4))
+        val candidates = mapper.captureOpaqueComponents(chunk)
+        val intType = types.registerType(INT_KEY, IntComponent::class.java)
+        val resolutions = mapper.decodeOpaqueComponents(candidates)
+
+        assertNull(chunk.removeComponent(entity, intType))
+
+        assertEquals(
+            OpaqueUpdateResult(skipped = 1),
+            mapper.applyOpaqueComponents(chunk, resolutions)
+        )
+        assertTrue(chunk.captureOpaqueComponents().isEmpty())
+        assertNull(chunk.getComponent(entity, intType))
+        assertEquals(0L, entity.components())
+    }
+
+    @Test
+    fun `component construction failure still aborts chunk restoration`() {
+        val types = TypeManager()
+        types.registerType(INFRASTRUCTURE_KEY, RequiredArgumentComponent::class.java)
+        val snapshot = ChunkCordSnapshot(
+            UUID.randomUUID(), 0, 0,
+            listOf(
+                CitadelSnapshot(
+                    ChunkCord.packPosition(0, 0, 0),
+                    listOf(ComponentSnapshot(INFRASTRUCTURE_KEY, byteArrayOf()))
+                )
+            )
+        )
+
+        assertFailsWith<IOException> {
+            ChunkCordSnapshotMapper(types).restore(snapshot)
         }
     }
 
@@ -389,6 +543,30 @@ class ReadAndWriteAbleTest {
         override fun read(input: DataInput) = Unit
     }
 
+    private class CorruptibleComponent(
+        var value: Int = 0
+    ) : Component() {
+        override fun write(output: DataOutput) {
+            output.writeInt(value)
+        }
+
+        override fun read(input: DataInput) {
+            value = input.readInt()
+        }
+    }
+
+    private class RequiredArgumentComponent(
+        private val value: Int
+    ) : Component() {
+        override fun write(output: DataOutput) {
+            output.writeInt(value)
+        }
+
+        override fun read(input: DataInput) {
+            input.readInt()
+        }
+    }
+
     private companion object {
         const val CHUNK_VERSION_OFFSET = 4
         const val FIRST_CITADEL_POSITION_OFFSET = 36
@@ -396,6 +574,8 @@ class ReadAndWriteAbleTest {
         const val SINGLE_EMPTY_CITADEL_SIZE = 44
         val INT_KEY = Key("test", "int")
         val OTHER_KEY = Key("test", "other")
+        val CORRUPT_KEY = Key("test", "corrupt")
+        val INFRASTRUCTURE_KEY = Key("test", "infrastructure")
         val UNKNOWN_KEY = Key("test", "unknown")
     }
 }

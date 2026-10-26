@@ -10,6 +10,23 @@ import java.io.DataInput
 import java.io.DataOutput
 import java.io.IOException
 
+sealed interface ComponentDecodeResult {
+    data class Decoded(
+        val type: ComponentType<out Component>,
+        val component: Component
+    ) : ComponentDecodeResult
+
+    data object Unknown : ComponentDecodeResult
+
+    data class Corrupted(
+        val cause: Throwable
+    ) : ComponentDecodeResult
+
+    data class InfrastructureFailure(
+        val cause: Throwable
+    ) : ComponentDecodeResult
+}
+
 object ComponentSerializer {
     private const val MAX_COMPONENT_DATA_SIZE = 16 * 1024 * 1024
 
@@ -78,6 +95,48 @@ object ComponentSerializer {
         return value
     }
 
+    fun decodeSafely(
+        component: ComponentSnapshot,
+        type: ComponentType<out Component>?
+    ): ComponentDecodeResult {
+        if (type == null) return ComponentDecodeResult.Unknown
+
+        if (component.key != type.key) {
+            return ComponentDecodeResult.InfrastructureFailure(
+                IOException(
+                    "Component key ${component.key} does not match type ${type.key}"
+                )
+            )
+        }
+
+        val value = try {
+            createUntypedComponent(type)
+        } catch (exception: IOException) {
+            return ComponentDecodeResult.InfrastructureFailure(exception)
+        } catch (exception: LinkageError) {
+            return ComponentDecodeResult.InfrastructureFailure(exception)
+        }
+
+        return try {
+            component.payloadData.readInto(value)
+            ComponentDecodeResult.Decoded(type, value)
+        } catch (exception: IOException) {
+            ComponentDecodeResult.Corrupted(exception)
+        } catch (exception: RuntimeException) {
+            ComponentDecodeResult.Corrupted(exception)
+        } catch (exception: LinkageError) {
+            ComponentDecodeResult.InfrastructureFailure(exception)
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IOException::class)
+    private fun createUntypedComponent(
+        type: ComponentType<out Component>
+    ): Component {
+        return createComponent(type as ComponentType<Component>)
+    }
+
     @Throws(IOException::class)
     private fun <T : Component> createComponent(type: ComponentType<T>): T {
         try {
@@ -89,6 +148,8 @@ object ComponentSerializer {
         } catch (exception: ReflectiveOperationException) {
             throw IOException("Cannot create component ${type.key}", exception)
         } catch (exception: SecurityException) {
+            throw IOException("Cannot create component ${type.key}", exception)
+        } catch (exception: RuntimeException) {
             throw IOException("Cannot create component ${type.key}", exception)
         }
     }
