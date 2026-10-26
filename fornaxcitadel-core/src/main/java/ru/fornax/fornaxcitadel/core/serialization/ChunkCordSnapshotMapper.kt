@@ -79,6 +79,7 @@ class ChunkCordSnapshotMapper(
     @Throws(IOException::class)
     fun restore(snapshot: ChunkCordSnapshot): ChunkCord {
         val chunk = ChunkCord(snapshot.location)
+        var discardedCorruptedComponent = false
         val registeredTypes = typeManager.getTypes(
             snapshot.citadels
                 .flatMapTo(LinkedHashSet()) { citadel ->
@@ -105,6 +106,7 @@ class ChunkCordSnapshotMapper(
                         )
                     }
                     is ComponentDecodeResult.Corrupted -> {
+                        discardedCorruptedComponent = true
                         reportCorrupted(chunk, citadel.packedPosition, component.key, result.cause)
                     }
                     is ComponentDecodeResult.InfrastructureFailure -> {
@@ -117,6 +119,8 @@ class ChunkCordSnapshotMapper(
                 }
             }
         }
+        // Loading existing data is not a change; removing corrupted payloads is.
+        if (!discardedCorruptedComponent) chunk.resetDirty()
         return chunk
     }
 

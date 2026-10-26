@@ -75,6 +75,7 @@ class ChunkCord(val location: WXZCord) {
     }
 
     private var minecraftChunkLoaded = false
+    internal val dirtyState = ChunkDirtyState()
 
     private val ownerToken = Any()
     private val citadels = CitadelsData()
@@ -86,6 +87,19 @@ class ChunkCord(val location: WXZCord) {
 
     val isEmpty: Boolean
         get() = size == 0
+
+    val isDirty: Boolean
+        get() = dirtyState.isDirty
+
+    /** Call on the owning thread after changing a component's fields directly. */
+    fun markDirty() {
+        dirtyState.markDirty()
+    }
+
+    /** Marks the current contents clean without saving them. */
+    fun resetDirty() {
+        dirtyState.resetDirty()
+    }
 
     fun getCitadel(
         locX: Int,
@@ -107,6 +121,7 @@ class ChunkCord(val location: WXZCord) {
 
         val entity = CitadelEntity(ownerToken, packedPosition)
         citadels.putCitadel(locX, locY, locZ, entity)
+        markDirty()
         return entity
     }
 
@@ -118,6 +133,7 @@ class ChunkCord(val location: WXZCord) {
         val packedPosition = packPosition(locX, locY, locZ)
         val removed = citadels.removeCitadel(locX, locY, locZ) ?: return null
         removeAllComponentsAt(removed, packedPosition)
+        markDirty()
         return removed
     }
 
@@ -154,6 +170,7 @@ class ChunkCord(val location: WXZCord) {
         )
         opaqueComponents.remove(packedPosition, type.key)
         entity.addComponent(type.flag)
+        markDirty()
         return previous
     }
 
@@ -163,10 +180,11 @@ class ChunkCord(val location: WXZCord) {
     ): T? {
         val packedPosition = requireCurrentPosition(entity)
         val removed = components.removeComponent(packedPosition, type)
-        opaqueComponents.remove(packedPosition, type.key)
+        val removedOpaque = opaqueComponents.remove(packedPosition, type.key)
         if (removed != null) {
             entity.removeComponent(type.flag)
         }
+        if (removed != null || removedOpaque != null) markDirty()
         return removed
     }
 
@@ -195,7 +213,9 @@ class ChunkCord(val location: WXZCord) {
         component: OpaqueComponent
     ): OpaqueComponent? {
         val packedPosition = requireCurrentPosition(entity)
-        return opaqueComponents.put(packedPosition, component)
+        val previous = opaqueComponents.put(packedPosition, component)
+        markDirty()
+        return previous
     }
 
     internal fun forEachOpaqueComponent(
@@ -242,16 +262,20 @@ class ChunkCord(val location: WXZCord) {
     ): Boolean {
         if (candidate.ownerToken !== ownerToken) return false
         if (citadels.getPacked(candidate.packedPosition) == null) return false
-        return opaqueComponents.removeIfCurrent(candidate)
+        if (!opaqueComponents.removeIfCurrent(candidate)) return false
+        markDirty()
+        return true
     }
 
     fun clear() {
+        if (isEmpty) return
         citadels.forEachCitadel { _, _, _, entity ->
             entity.setComponents(0L)
         }
         opaqueComponents.clear()
         components.clear()
         citadels.clear()
+        markDirty()
     }
 
     private fun requireCurrentPosition(entity: CitadelEntity): Int {
@@ -270,9 +294,10 @@ class ChunkCord(val location: WXZCord) {
         entity: CitadelEntity,
         packedPosition: Int
     ) {
-        components.removeAllComponents(packedPosition)
-        opaqueComponents.removeAll(packedPosition)
+        val removed = components.removeAllComponents(packedPosition)
+        val removedOpaque = opaqueComponents.removeAll(packedPosition)
         entity.setComponents(0L)
+        if (removed || removedOpaque) markDirty()
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -581,16 +606,18 @@ class ChunkCord(val location: WXZCord) {
             return removed
         }
 
-        fun removeAllComponents(packedPosition: Int) {
+        fun removeAllComponents(packedPosition: Int): Boolean {
+            var removed = false
             for (i in componentsType.indices) {
                 val store = componentsType[i] ?: continue
 
-                store.remove(packedPosition)
+                if (store.remove(packedPosition) != null) removed = true
 
                 if (store.isEmpty) {
                     componentsType[i] = null
                 }
             }
+            return removed
         }
 
         fun forEachComponent(
@@ -641,8 +668,8 @@ class ChunkCord(val location: WXZCord) {
             return removed
         }
 
-        fun removeAll(packedPosition: Int) {
-            data.remove(packedPosition)
+        fun removeAll(packedPosition: Int): Boolean {
+            return data.remove(packedPosition) != null
         }
 
         fun forEach(

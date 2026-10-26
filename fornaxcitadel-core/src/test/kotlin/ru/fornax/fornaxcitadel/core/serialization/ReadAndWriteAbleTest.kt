@@ -19,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -185,6 +186,7 @@ class ReadAndWriteAbleTest {
         val opaqueChunk = unavailableMapper.restore(ChunkCordSnapshot.fromByteArray(sourceData))
         val opaqueEntity = assertNotNull(opaqueChunk.getCitadel(3, 12, 9))
 
+        assertFalse(opaqueChunk.isDirty)
         assertEquals(0L, opaqueEntity.components())
         assertNull(unavailableTypes.getType(INT_KEY))
         val firstExplicitType = unavailableTypes.registerType(OTHER_KEY, OtherComponent::class.java)
@@ -206,6 +208,7 @@ class ReadAndWriteAbleTest {
 
         assertEquals(restoredType.flag, restoredEntity.components())
         assertEquals(73, restoredComponent.value)
+        assertFalse(restoredChunk.isDirty)
     }
 
     @Test
@@ -318,6 +321,7 @@ class ReadAndWriteAbleTest {
         val restored = mapper.restore(snapshot)
         val entity = assertNotNull(restored.getCitadel(0, 0, 0))
 
+        assertTrue(restored.isDirty)
         assertNull(restored.getComponent(entity, intType))
         assertNotNull(restored.getComponent(entity, otherType))
         assertEquals(otherType.flag, entity.components())
@@ -394,6 +398,7 @@ class ReadAndWriteAbleTest {
 
         val result = mapper.applyOpaqueComponents(chunk, resolutions)
 
+        assertTrue(chunk.isDirty)
         assertEquals(OpaqueUpdateResult(1, 1, 1, 0), result)
         assertSame(entity, chunk.getCitadel(4, 50, 6))
         assertEquals(73, assertNotNull(chunk.getComponent(entity, intType)).value)
@@ -431,11 +436,13 @@ class ReadAndWriteAbleTest {
         val resolutions = mapper.decodeOpaqueComponents(candidates)
 
         assertNull(chunk.removeComponent(entity, intType))
+        chunk.resetDirty()
 
         assertEquals(
             OpaqueUpdateResult(skipped = 1),
             mapper.applyOpaqueComponents(chunk, resolutions)
         )
+        assertFalse(chunk.isDirty)
         assertTrue(chunk.captureOpaqueComponents().isEmpty())
         assertNull(chunk.getComponent(entity, intType))
         assertEquals(0L, entity.components())

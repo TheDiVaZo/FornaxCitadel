@@ -19,6 +19,98 @@ import kotlin.test.assertTrue
 class ChunkCordTest {
 
     @Test
+    fun `content mutations mark dirty and explicit reset acknowledges them`() {
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
+        val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
+        assertFalse(chunk.isDirty)
+
+        val entity = chunk.putCitadel(1, 20, 2)
+        assertTrue(chunk.isDirty)
+        chunk.resetDirty()
+        assertFalse(chunk.isDirty)
+
+        val component = TestComponent(10)
+        chunk.putComponent(entity, type, component)
+        assertTrue(chunk.isDirty)
+        chunk.resetDirty()
+
+        component.value = 20
+        chunk.markDirty()
+        assertTrue(chunk.isDirty)
+        chunk.resetDirty()
+
+        chunk.putComponent(entity, type, TestComponent(30))
+        assertTrue(chunk.isDirty)
+        chunk.resetDirty()
+        chunk.removeComponent(entity, type)
+        assertTrue(chunk.isDirty)
+        chunk.resetDirty()
+
+        chunk.putComponent(entity, type, component)
+        chunk.resetDirty()
+        chunk.removeAllComponents(entity)
+        assertTrue(chunk.isDirty)
+        chunk.resetDirty()
+        chunk.removeCitadel(1, 20, 2)
+        assertTrue(chunk.isDirty)
+
+        chunk.putCitadel(1, 20, 2)
+        chunk.resetDirty()
+        chunk.clear()
+        assertTrue(chunk.isDirty)
+        assertTrue(chunk.isEmpty)
+    }
+
+    @Test
+    fun `opaque insertion removal and discard mark dirty`() {
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
+        val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
+        val entity = chunk.putCitadel(1, 20, 2)
+        val opaque = OpaqueComponent(COMPONENT_KEY, byteArrayOf(1))
+        chunk.resetDirty()
+
+        chunk.putOpaqueComponent(entity, opaque)
+        assertTrue(chunk.isDirty)
+        chunk.resetDirty()
+        assertNull(chunk.removeComponent(entity, type))
+        assertTrue(chunk.isDirty)
+
+        chunk.putOpaqueComponent(entity, opaque)
+        chunk.resetDirty()
+        chunk.removeAllComponents(entity)
+        assertTrue(chunk.isDirty)
+
+        chunk.putOpaqueComponent(entity, opaque)
+        val candidate = chunk.captureOpaqueComponents().single()
+        chunk.resetDirty()
+        assertTrue(chunk.discardOpaqueComponent(candidate))
+        assertTrue(chunk.isDirty)
+        chunk.resetDirty()
+        assertFalse(chunk.discardOpaqueComponent(candidate))
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
+    fun `reads lifecycle events and unsuccessful mutations leave a clean chunk clean`() {
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
+        val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
+        chunk.minecraftChunkLoaded()
+        chunk.minecraftChunkUnloaded()
+        chunk.clear()
+        assertNull(chunk.removeCitadel(1, 20, 2))
+        assertFalse(chunk.isDirty)
+
+        val entity = chunk.putCitadel(1, 20, 2)
+        chunk.resetDirty()
+        assertSame(entity, chunk.getCitadel(1, 20, 2))
+        assertNull(chunk.getComponent(entity, type))
+        assertNull(chunk.removeComponent(entity, type))
+        chunk.removeAllComponents(entity)
+        assertFailsWith<IllegalStateException> { chunk.putCitadel(1, 20, 2) }
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
     fun `minecraft chunk load state follows rapid lifecycle events independently of contents`() {
         val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         assertFalse(chunk.isChunkLoaded())
