@@ -1,5 +1,6 @@
 package ru.fornax.fornaxcitadel.core.storage
 
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import ru.fornax.fornaxcitadel.core.component.Component
 import ru.fornax.fornaxcitadel.core.component.ComponentType
 import ru.fornax.fornaxcitadel.core.component.OpaqueComponent
@@ -374,17 +375,21 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
         ) {
             private val owners = ArrayList<CitadelEntity>()
             private val components = ArrayList<T>()
-            private val indices = HashMap<Int, Int>()
+            private val indices = Int2IntOpenHashMap().apply {
+                defaultReturnValue(MISSING_INDEX)
+            }
 
             val isEmpty: Boolean
                 get() = components.isEmpty()
 
-            private fun indexOf(packedPosition: Int): Int? {
-                return indices[packedPosition]
+            private fun indexOf(packedPosition: Int): Int {
+                return indices.get(packedPosition)
             }
 
             fun get(packedPosition: Int): T? {
-                val index = indexOf(packedPosition) ?: return null
+                val index = indexOf(packedPosition)
+                if (index == MISSING_INDEX) return null
+
                 return components[index]
             }
 
@@ -395,11 +400,11 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
             ): T? {
                 val index = indexOf(packedPosition)
 
-                if (index != null) {
+                if (index != MISSING_INDEX) {
                     return components.set(index, component)
                 }
 
-                indices[packedPosition] = components.size
+                indices.put(packedPosition, components.size)
                 owners.add(entity)
                 components.add(component)
 
@@ -407,7 +412,9 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
             }
 
             fun remove(packedPosition: Int): T? {
-                val index = indexOf(packedPosition) ?: return null
+                val index = indexOf(packedPosition)
+                if (index == MISSING_INDEX) return null
+
                 val last = components.lastIndex
 
                 val removed = components[index]
@@ -419,13 +426,17 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
 
                     owners[index] = movedEntity
                     components[index] = components[last]
-                    indices[movedEntity.packedPosition] = index
+                    indices.put(movedEntity.packedPosition, index)
                 }
 
                 owners.removeAt(last)
                 components.removeAt(last)
 
                 return removed
+            }
+
+            private companion object {
+                const val MISSING_INDEX = -1
             }
 
             fun forEach(

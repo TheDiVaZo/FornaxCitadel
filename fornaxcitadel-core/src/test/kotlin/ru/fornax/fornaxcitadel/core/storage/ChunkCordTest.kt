@@ -112,6 +112,47 @@ class ChunkCordTest {
     }
 
     @Test
+    fun `component index preserves zero index and swap removal`() {
+        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
+        val first = chunk.putCitadel(0, ChunkCord.MIN_Y, 0)
+        val middle = chunk.putCitadel(7, 40, 8)
+        val last = chunk.putCitadel(15, 319, 15)
+        val firstComponent = TestComponent(11)
+        val middleComponent = TestComponent(22)
+        val lastComponent = TestComponent(33)
+
+        chunk.putComponent(first, type, firstComponent)
+        chunk.putComponent(middle, type, middleComponent)
+        chunk.putComponent(last, type, lastComponent)
+
+        assertSame(firstComponent, chunk.getComponent(first, type))
+        assertSame(middleComponent, chunk.getComponent(middle, type))
+        assertSame(lastComponent, chunk.getComponent(last, type))
+
+        val replacement = TestComponent(44)
+        assertSame(middleComponent, chunk.putComponent(middle, type, replacement))
+        assertSame(replacement, chunk.removeComponent(middle, type))
+        assertNull(chunk.getComponent(middle, type))
+        assertSame(firstComponent, chunk.getComponent(first, type))
+        assertSame(lastComponent, chunk.getComponent(last, type))
+
+        val remaining = ArrayList<Pair<CitadelEntity, TestComponent>>()
+        chunk.forEachComponentOfType(type) { entity, component ->
+            remaining.add(entity to component)
+        }
+        assertEquals(setOf(first to firstComponent, last to lastComponent), remaining.toSet())
+
+        assertSame(firstComponent, chunk.removeComponent(first, type))
+        assertSame(lastComponent, chunk.removeComponent(last, type))
+        assertNull(chunk.removeComponent(first, type))
+
+        val reinserted = TestComponent(55)
+        chunk.putComponent(first, type, reinserted)
+        assertSame(reinserted, chunk.getComponent(first, type))
+    }
+
+    @Test
     fun `packed position is a bijection for every local coordinate`() {
         val seen = BooleanArray(ChunkCord.POSITION_COUNT)
         var positionCount = 0
