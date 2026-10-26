@@ -28,6 +28,196 @@ import kotlin.test.assertTrue
 class ChunkBackendLifecycleCoordinatorTest {
 
     @Test
+    fun `saveAll skips clean chunks and saves explicit component edits`() {
+        val types = TypeManager()
+        val type = types.registerType(INT_KEY, IntComponent::class.java)
+        val mapper = ChunkCordSnapshotMapper(types)
+        val cleanLocation = location(1, 1)
+        val dirtyLocation = location(2, 2)
+        val backend = FakeDBStorage().apply {
+            enqueueLoad(CompletableFuture.completedFuture(opaqueSnapshot(
+                cleanLocation, ComponentSnapshot(INT_KEY, IntComponent(10).toByteArray())
+            )))
+            enqueueLoad(CompletableFuture.completedFuture(null))
+        }
+        val storage = createStorage(backend, mapper)
+        val clean = storage.loadChunk(cleanLocation).join()
+        val dirty = storage.loadChunk(dirtyLocation).join()
+        assertFalse(clean.isDirty)
+        assertFalse(dirty.isDirty)
+        storage.saveAll().join()
+        assertTrue(backend.saveCalls.isEmpty())
+
+        dirty.putCitadel(1, 2, 3)
+        val writing = CompletableFuture<Void>()
+        backend.enqueueSave(writing)
+        val saving = storage.saveAll()
+        assertEquals(listOf(dirtyLocation), backend.saveCalls.map { it.location })
+        assertTrue(dirty.isDirty)
+        writing.complete(null)
+        saving.join()
+        assertFalse(dirty.isDirty)
+        storage.saveAll().join()
+        assertEquals(1, backend.saveCalls.size)
+
+        val entity = assertNotNull(clean.getCitadel(2, 40, 4))
+        assertNotNull(clean.getComponent(entity, type)).value = 20
+        clean.markDirty()
+        backend.enqueueSave(CompletableFuture.completedFuture(null))
+        storage.saveAll().join()
+        assertEquals(listOf(dirtyLocation, cleanLocation), backend.saveCalls.map { it.location })
+        val saved = mapper.restore(backend.saveCalls.last())
+        val savedEntity = assertNotNull(saved.getCitadel(2, 40, 4))
+        assertEquals(20, assertNotNull(saved.getComponent(savedEntity, type)).value)
+        assertFalse(clean.isDirty)
+    }
+
+    @Test
+    fun `clean populated chunks unload and close without writes`() {
+        for (close in listOf(false, true)) {
+            val location = location(3, 3)
+            val backend = FakeDBStorage().apply {
+                enqueueLoad(CompletableFuture.completedFuture(opaqueSnapshot(
+                    location, ComponentSnapshot(UNKNOWN_KEY, byteArrayOf(1))
+                )))
+            }
+            val storage = createStorage(backend)
+            val chunk = storage.loadChunk(location).join()
+            assertFalse(chunk.isDirty)
+            assertFalse(chunk.isEmpty)
+
+            if (close) storage.closeAndSaveAll().join() else storage.unloadChunk(location).join()
+
+            assertTrue(backend.saveCalls.isEmpty())
+            assertNull(storage.getIfChunkLoaded(location))
+            assertEquals(if (close) 1 else 0, backend.closeCalls)
+        }
+    }
+
+    @Test
+    fun `queued checkpoints wait for a write and skip unchanged contents`() {
+        val writing = CompletableFuture<Void>()
+        val backend = FakeDBStorage().apply {
+            enqueueLoad(CompletableFuture.completedFuture(null))
+            enqueueSave(writing)
+        }
+        val storage = createStorage(backend)
+        val chunk = storage.loadChunk(location(4, 4)).join()
+        chunk.putCitadel(1, 2, 3)
+        val first = storage.saveAll()
+        val second = storage.saveAll()
+        assertFalse(first.isDone)
+        assertFalse(second.isDone)
+
+        CompletableFuture.runAsync { writing.complete(null) }.join()
+
+        first.join()
+        second.join()
+        assertEquals(1, backend.saveCalls.size)
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
+    fun `failed checkpoint stays dirty and retry captures current contents`() {
+        val writing = CompletableFuture<Void>()
+        val failure = IllegalStateException("write failed")
+        val backend = FakeDBStorage().apply {
+            enqueueLoad(CompletableFuture.completedFuture(null))
+            enqueueSave(writing)
+            enqueueSave(CompletableFuture.completedFuture(null))
+        }
+        val storage = createStorage(backend)
+        val chunk = storage.loadChunk(location(5, 5)).join()
+        chunk.putCitadel(1, 2, 3)
+        val saving = storage.saveAll()
+        writing.completeExceptionally(failure)
+        assertSame(failure, assertFailsWith<CompletionException> { saving.join() }.cause)
+        assertTrue(chunk.isDirty)
+
+        chunk.clear()
+        storage.saveAll().join()
+
+        assertEquals(2, backend.saveCalls.size)
+        assertEquals(1, backend.saveCalls.first().citadels.size)
+        assertTrue(backend.saveCalls.last().citadels.isEmpty())
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
+    fun `reset followed by a new edit is not cleared by an earlier save`() {
+        val writing = CompletableFuture<Void>()
+        val backend = FakeDBStorage().apply {
+            enqueueLoad(CompletableFuture.completedFuture(null))
+            enqueueSave(writing)
+            enqueueSave(CompletableFuture.completedFuture(null))
+        }
+        val storage = createStorage(backend)
+        val chunk = storage.loadChunk(location(6, 6)).join()
+        chunk.putCitadel(1, 2, 3)
+        val saving = storage.saveAll()
+        chunk.resetDirty()
+        assertFalse(chunk.isDirty)
+        chunk.markDirty()
+        writing.complete(null)
+        saving.join()
+        assertTrue(chunk.isDirty)
+
+        storage.saveAll().join()
+        assertEquals(2, backend.saveCalls.size)
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
+    fun `clean checkpoints skip serialization and snapshot failures remain retryable`() {
+        val types = TypeManager()
+        val type = types.registerType(INT_KEY, IntComponent::class.java)
+        val location = location(7, 7)
+        val backend = FakeDBStorage().apply {
+            enqueueLoad(CompletableFuture.completedFuture(opaqueSnapshot(
+                location, ComponentSnapshot(INT_KEY, IntComponent(10).toByteArray())
+            )))
+            enqueueSave(CompletableFuture.completedFuture(null))
+        }
+        val storage = createStorage(backend, ChunkCordSnapshotMapper(types))
+        val chunk = storage.loadChunk(location).join()
+        val entity = assertNotNull(chunk.getCitadel(2, 40, 4))
+        val component = assertNotNull(chunk.getComponent(entity, type))
+        component.writeFailure = IllegalStateException("serialization failed")
+
+        storage.saveAll().join()
+        assertTrue(backend.saveCalls.isEmpty())
+        chunk.markDirty()
+        assertFailsWith<CompletionException> { storage.saveAll().join() }
+        assertTrue(backend.saveCalls.isEmpty())
+        assertTrue(chunk.isDirty)
+
+        component.writeFailure = null
+        storage.saveAll().join()
+        assertEquals(1, backend.saveCalls.size)
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
+    fun `discarding corrupted payload during load is persisted by the next save`() {
+        val types = TypeManager().apply { registerType(INT_KEY, IntComponent::class.java) }
+        val location = location(8, 8)
+        val backend = FakeDBStorage().apply {
+            enqueueLoad(CompletableFuture.completedFuture(opaqueSnapshot(
+                location, ComponentSnapshot(INT_KEY, byteArrayOf(1))
+            )))
+            enqueueSave(CompletableFuture.completedFuture(null))
+        }
+        val storage = createStorage(backend, ChunkCordSnapshotMapper(types))
+        val chunk = storage.loadChunk(location).join()
+        assertTrue(chunk.isDirty)
+
+        storage.saveAll().join()
+
+        assertTrue(backend.saveCalls.single().citadels.single().components.isEmpty())
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
     fun `concurrent loads for the same location share one backend read`() {
         val backend = FakeDBStorage()
         val backendLoad = CompletableFuture<ChunkCordSnapshot?>()
@@ -122,6 +312,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         backendSave.complete(null)
 
         assertNull(unloading.join())
+        assertFalse(loaded.isDirty)
     }
 
     @Test
@@ -210,6 +401,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         scheduler.runNext()
 
         val initiallyLoaded = initialLoading.join()
+        initiallyLoaded.markDirty()
         assertFalse(unloading.isDone)
         assertFalse(subsequentLoading.isDone)
         assertEquals(1, scheduler.pendingCount)
@@ -272,6 +464,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         scheduler.runNext()
 
         assertNotNull(initialLoading.join().getCitadel(6, 48, 10))
+        initialLoading.join().markDirty()
         assertEquals(1, scheduler.pendingCount)
         assertFalse(unloading.isDone)
         assertFalse(saving.isDone)
@@ -689,6 +882,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         scheduler.runNext()
 
         assertNotNull(loading.join().getCitadel(3, 91, 7))
+        loading.join().markDirty()
         assertEquals(1, scheduler.pendingCount)
         assertFalse(saving.isDone)
         assertTrue(backend.saveCalls.isEmpty())
@@ -738,6 +932,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         scheduler.runNext()
 
         assertNotNull(loading.join().getCitadel(8, 64, 8))
+        loading.join().markDirty()
         assertEquals(1, scheduler.pendingCount)
         scheduler.runNext()
 
@@ -786,7 +981,6 @@ class ChunkBackendLifecycleCoordinatorTest {
         val backend = FakeDBStorage().apply {
             enqueueLoad(initialLoad)
             repeat(2048) {
-                enqueueSave(CompletableFuture.completedFuture(null))
                 enqueueLoad(CompletableFuture.completedFuture(null))
             }
         }
@@ -803,7 +997,7 @@ class ChunkBackendLifecycleCoordinatorTest {
 
         assertNotNull(finalLoad).join()
         assertEquals(2049, backend.loadCalls.size)
-        assertEquals(2048, backend.saveCalls.size)
+        assertTrue(backend.saveCalls.isEmpty())
     }
 
     @Test
@@ -856,6 +1050,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         backendLoad.complete(null)
 
         val original = sharedLoad.join()
+        original.markDirty()
         assertTrue(cancelledLoad.isCancelled)
         assertSame(original, storage.getIfChunkLoaded(location))
         assertEquals(1, backend.loadCalls.size)
@@ -1046,12 +1241,14 @@ class ChunkBackendLifecycleCoordinatorTest {
         }
         val storage = createStorage(backend, mapper)
         val location = location(12, -21)
-        storage.loadChunk(location).join().putCitadel(7, 101, 4)
+        val chunk = storage.loadChunk(location).join()
+        chunk.putCitadel(7, 101, 4)
 
         val unloading = storage.unloadChunk(location)
 
         val exception = assertFailsWith<CompletionException> { unloading.join() }
         assertSame(firstFailure, exception.cause)
+        assertTrue(chunk.isDirty)
         assertNull(storage.getIfChunkLoaded(location))
         assertEquals(1, backend.saveCalls.size)
 
@@ -1065,6 +1262,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         retrySave.complete(null)
 
         assertNull(saving.join())
+        assertFalse(chunk.isDirty)
     }
 
     @Test
@@ -1095,6 +1293,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         firstBackendSave.complete(null)
 
         assertNull(firstSave.join())
+        assertTrue(loaded.isDirty)
         assertEquals(2, backend.saveCalls.size)
         assertEquals(1, backend.saveCalls[0].citadels.size)
         assertEquals(2, backend.saveCalls[1].citadels.size)
@@ -1103,6 +1302,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         secondBackendSave.complete(null)
 
         assertNull(secondSave.join())
+        assertFalse(loaded.isDirty)
     }
 
     @Test
@@ -1291,7 +1491,10 @@ class ChunkBackendLifecycleCoordinatorTest {
     private class IntComponent(
         var value: Int = 0
     ) : Component() {
+        var writeFailure: RuntimeException? = null
+
         override fun write(output: DataOutput) {
+            writeFailure?.let { throw it }
             output.writeInt(value)
         }
 

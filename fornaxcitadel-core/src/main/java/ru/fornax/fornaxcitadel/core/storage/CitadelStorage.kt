@@ -18,10 +18,12 @@ interface CitadelStorage {
      * are captured when that scan executes; chunks without matches do not count as processed.
      */
     fun updateOpaque(key: Key): CompletableFuture<OpaqueBatchUpdateResult>
+
+    /** Saves dirty chunks after earlier queued operations, including retries of failed unloads. */
     fun saveAll(): CompletableFuture<Void>
 
     /**
-     * Stops accepting new operations, snapshots every accepted live chunk, closes the backend,
+     * Stops accepting new operations, saves dirty chunks after accepted work, closes the backend,
      * and releases loaded chunks. Previously returned live chunks must not be mutated afterwards.
      */
     fun closeAndSaveAll(): CompletableFuture<Void>

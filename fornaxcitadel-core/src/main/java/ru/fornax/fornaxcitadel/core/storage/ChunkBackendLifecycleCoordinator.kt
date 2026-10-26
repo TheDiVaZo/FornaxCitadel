@@ -192,21 +192,21 @@ class ChunkBackendLifecycleCoordinator(
             ?: return retryPendingUnload(slot)
 
         return scheduler.schedule(slot.location) {
-            val snapshot = mapper.snapshot(chunk)
-            requireSnapshotLocation(slot.location, snapshot)
+            val save = captureDirtySnapshot(slot.location, chunk)
             synchronized(stateLock) {
                 check(slot.chunk === chunk) {
                     "Chunk ${slot.location} is no longer the loaded instance"
                 }
-                check(slot.pendingUnloadSnapshot == null) {
+                check(slot.pendingUnloadSave == null) {
                     "Chunk ${slot.location} already has a pending unload snapshot"
                 }
                 slot.chunk = null
-                slot.pendingUnloadSnapshot = snapshot
+                slot.pendingUnloadSave = save
             }
-            snapshot
-        }.thenCompose { snapshot ->
-            persistPendingUnload(slot, snapshot)
+            save
+        }.thenCompose { save ->
+            if (save == null) CompletableFuture.completedFuture(Unit)
+            else persistPendingUnload(slot, save)
         }
     }
 
@@ -215,12 +215,19 @@ class ChunkBackendLifecycleCoordinator(
             ?: return retryPendingUnload(slot)
 
         return scheduler.schedule(slot.location) {
-            mapper.snapshot(chunk).also {
-                requireSnapshotLocation(slot.location, it)
-            }
-        }.thenCompose { snapshot ->
-            backend.saveChunk(snapshot).thenApply { Unit }
+            captureDirtySnapshot(slot.location, chunk)
+        }.thenCompose { save ->
+            if (save == null) CompletableFuture.completedFuture(Unit)
+            else backend.saveChunk(save.snapshot).thenApply { save.markSaved() }
         }
+    }
+
+    /** Called on the owning thread, after earlier queued operations have finished. */
+    private fun captureDirtySnapshot(location: WXZCord, chunk: ChunkCord): PendingChunkSave? {
+        val revision = chunk.dirtyState.captureDirtyRevision() ?: return null
+        val snapshot = mapper.snapshot(chunk)
+        requireSnapshotLocation(location, snapshot)
+        return PendingChunkSave(snapshot, chunk.dirtyState, revision)
     }
 
     private fun executeUpdateOpaque(
@@ -249,26 +256,27 @@ class ChunkBackendLifecycleCoordinator(
     }
 
     private fun retryPendingUnload(slot: ChunkSlot): CompletableFuture<Unit> {
-        val snapshot = synchronized(stateLock) {
-            slot.pendingUnloadSnapshot
+        val save = synchronized(stateLock) {
+            slot.pendingUnloadSave
         } ?: return CompletableFuture.completedFuture(Unit)
 
-        return persistPendingUnload(slot, snapshot)
+        return persistPendingUnload(slot, save)
     }
 
     private fun persistPendingUnload(
         slot: ChunkSlot,
-        snapshot: ChunkCordSnapshot
+        save: PendingChunkSave
     ): CompletableFuture<Unit> {
         val shouldPersist = synchronized(stateLock) {
-            slot.pendingUnloadSnapshot === snapshot
+            slot.pendingUnloadSave === save
         }
         if (!shouldPersist) return CompletableFuture.completedFuture(Unit)
 
-        return backend.saveChunk(snapshot).thenApply<Unit> {
+        return backend.saveChunk(save.snapshot).thenApply<Unit> {
+            save.markSaved()
             synchronized(stateLock) {
-                if (slot.pendingUnloadSnapshot === snapshot) {
-                    slot.pendingUnloadSnapshot = null
+                if (slot.pendingUnloadSave === save) {
+                    slot.pendingUnloadSave = null
                 }
             }
         }
@@ -310,7 +318,7 @@ class ChunkBackendLifecycleCoordinator(
     }
 
     private fun removeSlotIfIdleLocked(slot: ChunkSlot) {
-        if (slot.chunk != null || slot.pendingUnloadSnapshot != null) return
+        if (slot.chunk != null || slot.pendingUnloadSave != null) return
         if (slot.running || slot.operations.isNotEmpty()) return
         if (slots[slot.location] === slot) {
             slots.remove(slot.location)

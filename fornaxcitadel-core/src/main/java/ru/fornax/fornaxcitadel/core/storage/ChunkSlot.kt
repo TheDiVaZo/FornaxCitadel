@@ -5,12 +5,22 @@ import java.util.concurrent.CompletableFuture
 
 internal class ChunkSlot(val location: WXZCord) {
     var chunk: ChunkCord? = null
-    var pendingUnloadSnapshot: ChunkCordSnapshot? = null
+    var pendingUnloadSave: PendingChunkSave? = null
     internal val operations = ArrayDeque<ChunkOperation<*>>()
     internal var running = false
 
     fun hasAccepted(kind: ChunkOperationKind): Boolean {
         return operations.any { it.kind == kind }
+    }
+}
+
+internal class PendingChunkSave(
+    val snapshot: ChunkCordSnapshot,
+    private val dirtyState: ChunkDirtyState,
+    private val revision: Long
+) {
+    fun markSaved() {
+        dirtyState.resetDirty(revision)
     }
 }
 
