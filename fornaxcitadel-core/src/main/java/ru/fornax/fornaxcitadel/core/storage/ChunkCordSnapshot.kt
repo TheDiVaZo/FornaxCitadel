@@ -100,6 +100,7 @@ class ChunkCordSnapshot(
             }
 
             val positions = HashSet<Int>(citadelCount)
+            val canonicalKeys = HashMap<Key, Key>()
             val citadels = ArrayList<CitadelSnapshot>(citadelCount)
             repeat(citadelCount) {
                 val packedPosition = input.readInt()
@@ -116,7 +117,9 @@ class ChunkCordSnapshot(
                 val componentKeys = HashSet<Key>(componentCount)
                 val components = ArrayList<ComponentSnapshot>(componentCount)
                 repeat(componentCount) {
-                    val component = ComponentSerializer.read(input)
+                    val component = ComponentSerializer.read(input) { key ->
+                        canonicalKeys.getOrPut(key) { key }
+                    }
                     if (!componentKeys.add(component.key)) {
                         throw IOException(
                             "Duplicate component key ${component.key} for citadel $packedPosition"
@@ -167,16 +170,25 @@ class CitadelSnapshot(
     }
 }
 
-class ComponentSnapshot(
+class ComponentSnapshot internal constructor(
     val key: Key,
-    payload: ByteArray
+    internal val payloadData: ImmutablePayload
 ) {
-    private val data = payload.copyOf()
+    constructor(key: Key, payload: ByteArray) : this(
+        key,
+        ImmutablePayload.copyOf(payload)
+    )
 
     val payload: ByteArray
-        get() = data.copyOf()
+        get() = payloadData.copy()
 
-    fun toByteArray(): ByteArray = data.copyOf()
+    fun toByteArray(): ByteArray = payloadData.copy()
+
+    internal companion object {
+        fun takeOwnership(key: Key, payload: ByteArray): ComponentSnapshot {
+            return ComponentSnapshot(key, ImmutablePayload.takeOwnership(payload))
+        }
+    }
 }
 
 private fun <T> immutableCopy(values: Collection<T>): List<T> {

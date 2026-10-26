@@ -55,7 +55,7 @@ class ChunkCordSnapshotMapper(
                 if (type == null) {
                     chunk.putOpaqueComponent(
                         entity,
-                        OpaqueComponent(component.key, component.toByteArray())
+                        OpaqueComponent(component.key, component.payloadData)
                     )
                 } else {
                     decodeComponent(chunk, entity, type, component)

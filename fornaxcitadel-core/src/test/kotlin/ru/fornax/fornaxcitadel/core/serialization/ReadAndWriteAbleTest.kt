@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.core.serialization
 
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.component.OpaqueComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
@@ -43,6 +44,52 @@ class ReadAndWriteAbleTest {
         assertEquals(1, snapshot.citadels.single().components.size)
         assertContentEquals(byteArrayOf(1, 2, 3), component.payload)
         assertContentEquals(byteArrayOf(1, 2, 3), component.toByteArray())
+    }
+
+    @Test
+    fun `opaque payload remains immutable across public boundaries`() {
+        val sourcePayload = byteArrayOf(1, 2, 3)
+        val opaque = OpaqueComponent(UNKNOWN_KEY, sourcePayload)
+
+        sourcePayload[0] = 9
+        val exposedOpaquePayload = opaque.toByteArray()
+        exposedOpaquePayload[1] = 9
+
+        val snapshot = ComponentSerializer.encode(opaque)
+        val exposedSnapshotPayload = snapshot.payload
+        exposedSnapshotPayload[2] = 9
+
+        assertSame(opaque.payloadData, snapshot.payloadData)
+        assertContentEquals(byteArrayOf(1, 2, 3), opaque.toByteArray())
+        assertContentEquals(byteArrayOf(1, 2, 3), snapshot.toByteArray())
+    }
+
+    @Test
+    fun `binary snapshot read canonicalizes equal component keys`() {
+        val firstKey = Key("shared", "component")
+        val secondKey = Key(
+            String("shared".toCharArray()),
+            String("component".toCharArray())
+        )
+        val snapshot = ChunkCordSnapshot(
+            UUID.randomUUID(), 0, 0,
+            listOf(
+                CitadelSnapshot(
+                    ChunkCord.packPosition(0, 0, 0),
+                    listOf(ComponentSnapshot(firstKey, byteArrayOf(1)))
+                ),
+                CitadelSnapshot(
+                    ChunkCord.packPosition(1, 0, 0),
+                    listOf(ComponentSnapshot(secondKey, byteArrayOf(2)))
+                )
+            )
+        )
+
+        val decoded = ChunkCordSnapshot.fromByteArray(snapshot.toByteArray())
+        val decodedFirstKey = decoded.citadels[0].components.single().key
+        val decodedSecondKey = decoded.citadels[1].components.single().key
+
+        assertSame(decodedFirstKey, decodedSecondKey)
     }
 
     @Test
@@ -349,5 +396,6 @@ class ReadAndWriteAbleTest {
         const val SINGLE_EMPTY_CITADEL_SIZE = 44
         val INT_KEY = Key("test", "int")
         val OTHER_KEY = Key("test", "other")
+        val UNKNOWN_KEY = Key("test", "unknown")
     }
 }

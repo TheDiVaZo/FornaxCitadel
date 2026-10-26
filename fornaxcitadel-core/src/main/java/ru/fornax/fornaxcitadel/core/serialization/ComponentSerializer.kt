@@ -22,38 +22,46 @@ object ComponentSerializer {
                 "Component ${component.javaClass.name} does not match type ${type.componentClass.name}"
             )
         }
-        return ComponentSnapshot(type.key, component.toByteArray())
+        return ComponentSnapshot.takeOwnership(type.key, component.toByteArray())
     }
 
     fun encode(component: OpaqueComponent): ComponentSnapshot {
-        return ComponentSnapshot(component.key, component.toByteArray())
+        return ComponentSnapshot(component.key, component.payloadData)
     }
 
     @Throws(IOException::class)
     fun write(component: ComponentSnapshot, output: DataOutput) {
-        val data = component.toByteArray()
-        if (data.size > MAX_COMPONENT_DATA_SIZE) {
-            throw IOException("Component data is too large: ${data.size}")
+        if (component.payloadData.size > MAX_COMPONENT_DATA_SIZE) {
+            throw IOException("Component data is too large: ${component.payloadData.size}")
         }
 
         output.writeUTF(component.key.namespace)
         output.writeUTF(component.key.key)
-        output.writeInt(data.size)
-        output.write(data)
+        output.writeInt(component.payloadData.size)
+        component.payloadData.writeTo(output)
     }
 
     @Throws(IOException::class)
     fun read(input: DataInput): ComponentSnapshot {
+        return read(input) { it }
+    }
+
+    @Throws(IOException::class)
+    internal fun read(
+        input: DataInput,
+        canonicalizeKey: (Key) -> Key
+    ): ComponentSnapshot {
         val namespace = input.readUTF()
         val value = input.readUTF()
-        val key = try {
+        val parsedKey = try {
             Key(namespace, value)
         } catch (exception: InvalidKeyException) {
             throw IOException("Invalid component key $namespace:${value}", exception)
         }
+        val key = canonicalizeKey(parsedKey)
         val dataSize = input.readInt()
         val data = readData(input, dataSize)
-        return ComponentSnapshot(key, data)
+        return ComponentSnapshot.takeOwnership(key, data)
     }
 
     @Throws(IOException::class)
@@ -66,7 +74,7 @@ object ComponentSerializer {
         }
 
         val value = createComponent(type)
-        value.safeRead(component.toByteArray())
+        component.payloadData.readInto(value)
         return value
     }
 
