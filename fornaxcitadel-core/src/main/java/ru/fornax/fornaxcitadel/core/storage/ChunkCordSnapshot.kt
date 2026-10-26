@@ -12,14 +12,11 @@ import java.io.DataOutputStream
 import java.io.IOException
 import java.io.UncheckedIOException
 import java.util.Collections
-import java.util.UUID
 
 class ChunkCordSnapshot(
-    world: UUID,
-    x: Int,
-    z: Int,
+    val location: WXZCord,
     citadels: Collection<CitadelSnapshot> = emptyList()
-) : WXZCord(world, x, z) {
+) {
     val citadels: List<CitadelSnapshot> = immutableCopy(citadels)
 
     init {
@@ -50,7 +47,7 @@ class ChunkCordSnapshot(
     fun write(output: DataOutput) {
         output.writeInt(CHUNK_MAGIC)
         output.writeInt(CHUNK_FORMAT_VERSION)
-        ReadAndWriteAble.writeWXZCord(this, output)
+        ReadAndWriteAble.writeWXZCord(location, output)
         output.writeInt(citadels.size)
 
         for (citadel in citadels) {
@@ -130,12 +127,7 @@ class ChunkCordSnapshot(
                 citadels.add(CitadelSnapshot(packedPosition, components))
             }
 
-            return ChunkCordSnapshot(
-                coordinates.world,
-                coordinates.x,
-                coordinates.z,
-                citadels
-            )
+            return ChunkCordSnapshot(coordinates, citadels)
         }
 
         @Throws(IOException::class)

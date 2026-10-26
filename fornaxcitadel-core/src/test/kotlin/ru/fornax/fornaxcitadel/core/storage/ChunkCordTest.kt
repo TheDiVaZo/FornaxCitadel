@@ -20,7 +20,7 @@ class ChunkCordTest {
 
     @Test
     fun `minecraft chunk load state follows rapid lifecycle events independently of contents`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         assertFalse(chunk.isChunkLoaded())
         chunk.minecraftChunkUnloaded()
         assertFalse(chunk.isChunkLoaded())
@@ -42,7 +42,7 @@ class ChunkCordTest {
 
     @Test
     fun `putCitadel creates and stores entity`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 2, -3)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 2, -3))
 
         val entity = chunk.putCitadel(3, 12, 9)
 
@@ -53,7 +53,7 @@ class ChunkCordTest {
 
     @Test
     fun `putCitadel rejects occupied position`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val original = chunk.putCitadel(7, 42, 11)
 
         assertFailsWith<IllegalStateException> {
@@ -66,7 +66,7 @@ class ChunkCordTest {
 
     @Test
     fun `removeCitadel clears mask and makes old entity stale`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val types = TypeManager()
         val type = types.registerType(COMPONENT_KEY, TestComponent::class.java)
         val entity = chunk.putCitadel(4, 21, 5)
@@ -88,7 +88,7 @@ class ChunkCordTest {
 
     @Test
     fun `clear resets masks and frees occupied positions`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
         val first = chunk.putCitadel(4, 21, 5)
         val second = chunk.putCitadel(7, 42, 11)
@@ -118,7 +118,7 @@ class ChunkCordTest {
 
     @Test
     fun `component index preserves zero index and swap removal`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
         val first = chunk.putCitadel(0, ChunkCord.MIN_Y, 0)
         val middle = chunk.putCitadel(7, 40, 8)

@@ -14,4 +14,10 @@ interface DBStorage {
      * (for example, after a SQL transaction commits).
      */
     fun saveChunk(snapshot: ChunkCordSnapshot): CompletableFuture<Void>
+
+    /**
+     * Releases resources owned by this backend after all accepted writes have completed.
+     * Backends without resources to release may use this default no-op implementation.
+     */
+    fun close(): CompletableFuture<Void> = CompletableFuture.completedFuture(null)
 }

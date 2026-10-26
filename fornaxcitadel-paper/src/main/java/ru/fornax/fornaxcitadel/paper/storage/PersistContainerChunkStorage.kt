@@ -44,8 +44,8 @@ class PersistContainerChunkStorage(
     ): CompletableFuture<Void> {
         return try {
             val data = snapshot.toByteArray()
-            scheduler.schedule(snapshot) {
-                getBukkitChunk(snapshot)
+            scheduler.schedule(snapshot.location) {
+                getBukkitChunk(snapshot.location)
                     .persistentDataContainer
                     .set(dataKey, PersistentDataType.BYTE_ARRAY, data)
             }.thenAccept { }
@@ -59,13 +59,10 @@ class PersistContainerChunkStorage(
         data: ByteArray
     ): ChunkCordSnapshot {
         val snapshot = ChunkCordSnapshot.fromByteArray(data)
-        if (
-            snapshot.world != location.world ||
-            snapshot.x != location.x ||
-            snapshot.z != location.z
-        ) {
+        if (snapshot.location != location) {
             throw IOException(
-                "Stored chunk ${snapshot.world} [${snapshot.x}, ${snapshot.z}] " +
+                "Stored chunk ${snapshot.location.world} " +
+                    "[${snapshot.location.x}, ${snapshot.location.z}] " +
                     "does not match requested chunk ${location.world} " +
                     "[${location.x}, ${location.z}]"
             )

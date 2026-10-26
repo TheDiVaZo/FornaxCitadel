@@ -2,18 +2,20 @@ package ru.fornax.fornaxcitadel.core.storage
 
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
+import ru.fornax.fornaxcitadel.core.util.Key
 import java.io.IOException
-import java.util.ArrayDeque
+import java.util.LinkedHashMap
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
 import java.util.concurrent.Executor
 
 /**
- * Coordinates the lifecycle of loaded chunks and exposes them through [CitadelStorage].
+ * Coordinates loaded chunks, their owner-thread access, and backend persistence.
  *
- * Load and unload requests are serialized per chunk location, duplicate loads are shared,
- * live chunks are published and snapshotted on the owning game thread through [Scheduler],
- * and snapshot restoration is delegated to the configured codec executor. Persistence and
- * retry ordering are handled by [ChunkSaveCoordinator].
+ * Every location owns one [ChunkSlot]. Its FIFO queue serializes loads, updates, snapshots, and
+ * unloads, while different locations remain independent. A failed unload keeps its immutable
+ * snapshot in the slot until a later load, save, or close retries the write.
  */
 class ChunkBackendLifecycleCoordinator(
     private val backend: DBStorage,
@@ -22,280 +24,416 @@ class ChunkBackendLifecycleCoordinator(
     private val codecExecutor: Executor
 ) : CitadelStorage {
     private val stateLock = Any()
-    private val loadedChunks = HashMap<WXZCord, ChunkCord>()
-    private val lifecycleStates = HashMap<WXZCord, LifecycleState>()
-    private val saves = ChunkSaveCoordinator(backend)
+    private val slots = HashMap<WXZCord, ChunkSlot>()
+    private val operations = ChunkOperationDispatcher(stateLock, ::removeSlotIfIdleLocked)
+    private var phase = Phase.ACTIVE
+    private var closeAttempt: CompletableFuture<Void>? = null
 
     override fun getIfChunkLoaded(location: WXZCord): ChunkCord? {
-        val key = location.copyLocation()
         return synchronized(stateLock) {
-            loadedChunks[key]
+            slots[location]?.chunk
         }
     }
 
     override fun loadChunk(location: WXZCord): CompletableFuture<ChunkCord> {
-        val key = location.copyLocation()
-        var operationToStart: LifecycleOperation? = null
-        val result: CompletableFuture<ChunkCord>
-
-        synchronized(stateLock) {
-            val state = lifecycleStates[key]
-            val lastOperation = state?.operations?.peekLast()
-            if (lastOperation is LoadOperation) {
-                return lastOperation.result.nonCancellingView()
+        return submit {
+            val existingSlot = slots[location]
+            val lastOperation = existingSlot?.operations?.peekLast()
+            if (lastOperation?.kind == ChunkOperationKind.LOAD) {
+                return@submit Submission(lastOperation.typedResult<ChunkCord>())
+            }
+            if (existingSlot != null && !existingSlot.hasAccepted(ChunkOperationKind.UNLOAD)) {
+                existingSlot.chunk?.let {
+                    return@submit Submission(CompletableFuture.completedFuture(it))
+                }
             }
 
-            if (lastOperation == null) {
-                val loaded = loadedChunks[key]
-                if (loaded != null) return CompletableFuture.completedFuture(loaded)
-            }
-
-            val operation = LoadOperation()
-            val lifecycleState = state ?: LifecycleState().also {
-                lifecycleStates[key] = it
-            }
-            lifecycleState.operations.addLast(operation)
-            if (!lifecycleState.running) {
-                lifecycleState.running = true
-                operationToStart = operation
-            }
-            result = operation.result
+            val slot = existingSlot ?: ChunkSlot(location).also { slots[location] = it }
+            val operation = ChunkOperation(ChunkOperationKind.LOAD, ::executeLoad)
+            Submission(operation.result, operations.enqueueLocked(slot, operation))
         }
-
-        operationToStart?.let { startLifecycleOperation(key, it) }
-        return result.nonCancellingView()
     }
 
     override fun unloadChunk(location: WXZCord): CompletableFuture<Void> {
-        val key = location.copyLocation()
-        var operationToStart: LifecycleOperation? = null
-        val result: CompletableFuture<Void>
+        return submit {
+            val slot = slots[location] ?: ChunkSlot(location).also { slots[location] = it }
+            val lastOperation = slot.operations.peekLast()
+            if (lastOperation?.kind == ChunkOperationKind.UNLOAD) {
+                return@submit Submission(lastOperation.typedResult<Unit>())
+            }
+
+            val operation = ChunkOperation(ChunkOperationKind.UNLOAD, ::executeUnload)
+            Submission(operation.result, operations.enqueueLocked(slot, operation))
+        }.toVoidView()
+    }
+
+    override fun updateOpaque(chunk: ChunkCord): CompletableFuture<OpaqueUpdateResult> {
+        val location = chunk.location
+        return submit {
+            val slot = slots[location]
+            if (slot?.chunk !== chunk) {
+                return@submit Submission(notLoadedInstance(location))
+            }
+            if (slot.hasAccepted(ChunkOperationKind.UNLOAD)) {
+                return@submit Submission(unloading(location))
+            }
+
+            val operation = ChunkOperation(ChunkOperationKind.OTHER) {
+                executeUpdateOpaque(it, chunk, null)
+            }
+            Submission(operation.result, operations.enqueueLocked(slot, operation))
+        }
+    }
+
+    override fun updateOpaque(key: Key): CompletableFuture<OpaqueBatchUpdateResult> {
+        val operationsToStart = ArrayList<ChunkOperation<*>>()
+        val updates = ArrayList<OpaqueChunkUpdate>()
 
         synchronized(stateLock) {
-            val state = lifecycleStates[key]
-            val lastOperation = state?.operations?.peekLast()
-            if (lastOperation is UnloadOperation) {
-                return lastOperation.result.nonCancellingView()
-            }
+            rejectedIfNotActive<OpaqueBatchUpdateResult>()?.let { return it }
 
-            val operation = UnloadOperation((lastOperation as? LoadOperation)?.result)
-            val lifecycleState = state ?: LifecycleState().also {
-                lifecycleStates[key] = it
+            for (slot in slots.values) {
+                val chunk = slot.chunk ?: continue
+                if (slot.hasAccepted(ChunkOperationKind.UNLOAD)) continue
+
+                val operation = ChunkOperation(ChunkOperationKind.OTHER) {
+                    executeUpdateOpaque(it, chunk, key)
+                }
+                operations.enqueueLocked(slot, operation)?.let(operationsToStart::add)
+                updates.add(OpaqueChunkUpdate(slot.location, operation.result))
             }
-            lifecycleState.operations.addLast(operation)
-            if (!lifecycleState.running) {
-                lifecycleState.running = true
-                operationToStart = operation
-            }
-            result = operation.result
         }
 
-        operationToStart?.let { startLifecycleOperation(key, it) }
-        return result.nonCancellingView()
+        operationsToStart.forEach(operations::start)
+        return combineOpaqueUpdateResults(updates).nonCancellingView()
     }
 
     override fun saveAll(): CompletableFuture<Void> {
-        val snapshotRequests = ArrayList<SnapshotRequest>()
-        val batch = synchronized(stateLock) {
-            val lifecycleSaves = HashMap<WXZCord, List<CompletableFuture<Void>>>()
-            for ((location, state) in lifecycleStates) {
-                val unloads = state.operations
-                    .filterIsInstance<UnloadOperation>()
-                    .map(UnloadOperation::result)
-                if (unloads.isNotEmpty()) {
-                    lifecycleSaves[location] = unloads
-                }
-            }
-
-            val liveSnapshots = HashMap<WXZCord, CompletableFuture<ChunkCordSnapshot>>()
-            for ((location, chunk) in loadedChunks) {
-                if (location in lifecycleSaves) continue
-
-                val snapshot = CompletableFuture<ChunkCordSnapshot>()
-                liveSnapshots[location] = snapshot
-                snapshotRequests.add(SnapshotRequest(location, chunk, snapshot))
-            }
-
-            saves.reserveSaveAll(liveSnapshots, lifecycleSaves)
+        val batch: OperationBatch
+        synchronized(stateLock) {
+            rejectedIfNotActive<Void>()?.let { return it }
+            batch = enqueueCheckpointsLocked(final = false)
         }
 
-        val result = saves.startSaveAll(batch)
-        snapshotRequests.forEach(::scheduleSnapshot)
-        return result
+        batch.operationsToStart.forEach(operations::start)
+        return combineFutureResults(batch.results)
     }
 
-    private fun startLifecycleOperation(
-        location: WXZCord,
-        operation: LifecycleOperation
-    ) {
-        val execution = try {
-            when (operation) {
-                is LoadOperation -> executeLoad(location)
-                is UnloadOperation -> {
-                    val requiredLoad = operation.requiredLoad
-                    if (requiredLoad == null) {
-                        executeUnload(location)
-                    } else {
-                        requiredLoad.thenCompose { executeUnload(location) }
-                    }
-                }
-            }
-        } catch (exception: Exception) {
-            CompletableFuture.failedFuture(exception)
+    override fun closeAndSaveAll(): CompletableFuture<Void> {
+        val attempt: CompletableFuture<Void>
+        val batch: OperationBatch
+
+        synchronized(stateLock) {
+            closeAttempt?.let { return it.nonCancellingView() }
+
+            phase = Phase.DRAINING
+            attempt = CompletableFuture()
+            closeAttempt = attempt
+            batch = enqueueCheckpointsLocked(final = true)
         }
 
-        execution.whenComplete { value, error ->
-            val next = removeLifecycleOperation(location, operation)
-            when (operation) {
-                is LoadOperation -> {
-                    @Suppress("UNCHECKED_CAST")
-                    complete(operation.result, value as ChunkCord?, error)
-                }
-                is UnloadOperation -> complete(operation.result, null, error)
-            }
-            next?.let { startLifecycleOperation(location, it) }
-        }
+        batch.operationsToStart.forEach(operations::start)
+        combineFutureResults(batch.results)
+            .thenCompose { closeBackend() }
+            .whenComplete { _, error -> finishCloseAttempt(attempt, error) }
+
+        return attempt.nonCancellingView()
     }
 
-    private fun executeLoad(location: WXZCord): CompletableFuture<ChunkCord> {
-        return saves.awaitLatestOrRetry(location)
-            .thenCompose { backend.loadChunk(location) }
+    /** Accepts a single operation under the state lock, then starts execution outside it. */
+    private fun <T> submit(prepareLocked: () -> Submission<T>): CompletableFuture<T> {
+        val submission = synchronized(stateLock) {
+            rejectedIfNotActive<T>()?.let { return it }
+            prepareLocked()
+        }
+
+        submission.operationToStart?.let(operations::start)
+        return submission.result.nonCancellingView()
+    }
+
+    private fun enqueueCheckpointsLocked(final: Boolean): OperationBatch {
+        val operationsToStart = ArrayList<ChunkOperation<*>>(slots.size)
+        val results = ArrayList<CompletableFuture<*>>(slots.size)
+
+        for (slot in slots.values) {
+            val operation = ChunkOperation(ChunkOperationKind.OTHER) {
+                if (final) executeUnload(it) else executeCheckpoint(it)
+            }
+            operations.enqueueLocked(slot, operation)?.let(operationsToStart::add)
+            results.add(operation.result)
+        }
+        return OperationBatch(operationsToStart, results)
+    }
+
+    private fun executeLoad(slot: ChunkSlot): CompletableFuture<ChunkCord> {
+        synchronized(stateLock) {
+            slot.chunk?.let { return CompletableFuture.completedFuture(it) }
+        }
+
+        return retryPendingUnload(slot)
+            .thenCompose { backend.loadChunk(slot.location) }
             .thenApplyAsync(
-                { snapshot -> restoreChunk(location, snapshot) },
+                { snapshot -> restoreChunk(slot.location, snapshot) },
                 codecExecutor
             )
-            .thenCompose { chunk ->
-                scheduler.schedule(location) {
+            .thenCompose { restored ->
+                scheduler.schedule(slot.location) {
                     synchronized(stateLock) {
-                        loadedChunks[location]
-                            ?: chunk.also { loadedChunks[location] = it }
+                        slot.chunk ?: restored.also {
+                            slot.chunk = it
+                        }
                     }
                 }
             }
     }
 
-    private fun executeUnload(location: WXZCord): CompletableFuture<Void> {
-        val chunk = synchronized(stateLock) {
-            loadedChunks[location]
-        } ?: return saves.awaitLatestOrRetry(location)
+    private fun executeUnload(slot: ChunkSlot): CompletableFuture<Unit> {
+        val chunk = synchronized(stateLock) { slot.chunk }
+            ?: return retryPendingUnload(slot)
 
-        val snapshot = CompletableFuture<ChunkCordSnapshot>()
-        val result = saves.saveForUnload(location, snapshot)
-        completeFromScheduledSnapshot(
-            location,
-            snapshot
-        ) {
-            val value = mapper.snapshot(chunk)
+        return scheduler.schedule(slot.location) {
+            val snapshot = mapper.snapshot(chunk)
+            requireSnapshotLocation(slot.location, snapshot)
             synchronized(stateLock) {
-                if (loadedChunks[location] === chunk) {
-                    loadedChunks.remove(location)
+                check(slot.chunk === chunk) {
+                    "Chunk ${slot.location} is no longer the loaded instance"
+                }
+                check(slot.pendingUnloadSnapshot == null) {
+                    "Chunk ${slot.location} already has a pending unload snapshot"
+                }
+                slot.chunk = null
+                slot.pendingUnloadSnapshot = snapshot
+            }
+            snapshot
+        }.thenCompose { snapshot ->
+            persistPendingUnload(slot, snapshot)
+        }
+    }
+
+    private fun executeCheckpoint(slot: ChunkSlot): CompletableFuture<Unit> {
+        val chunk = synchronized(stateLock) { slot.chunk }
+            ?: return retryPendingUnload(slot)
+
+        return scheduler.schedule(slot.location) {
+            mapper.snapshot(chunk).also {
+                requireSnapshotLocation(slot.location, it)
+            }
+        }.thenCompose { snapshot ->
+            backend.saveChunk(snapshot).thenApply { Unit }
+        }
+    }
+
+    private fun executeUpdateOpaque(
+        slot: ChunkSlot,
+        chunk: ChunkCord,
+        key: Key?
+    ): CompletableFuture<OpaqueUpdateResult> {
+        return scheduler.schedule(slot.location) {
+            requireLoadedInstance(slot, chunk)
+            mapper.captureOpaqueComponents(chunk, key)
+        }.thenCompose { candidates ->
+            if (candidates.isEmpty()) {
+                CompletableFuture.completedFuture(OpaqueUpdateResult())
+            } else {
+                CompletableFuture.supplyAsync(
+                    { mapper.decodeOpaqueComponents(candidates) },
+                    codecExecutor
+                ).thenCompose { resolutions ->
+                    scheduler.schedule(slot.location) {
+                        requireLoadedInstance(slot, chunk)
+                        mapper.applyOpaqueComponents(chunk, resolutions)
+                    }
                 }
             }
-            value
         }
-        return result
+    }
+
+    private fun retryPendingUnload(slot: ChunkSlot): CompletableFuture<Unit> {
+        val snapshot = synchronized(stateLock) {
+            slot.pendingUnloadSnapshot
+        } ?: return CompletableFuture.completedFuture(Unit)
+
+        return persistPendingUnload(slot, snapshot)
+    }
+
+    private fun persistPendingUnload(
+        slot: ChunkSlot,
+        snapshot: ChunkCordSnapshot
+    ): CompletableFuture<Unit> {
+        val shouldPersist = synchronized(stateLock) {
+            slot.pendingUnloadSnapshot === snapshot
+        }
+        if (!shouldPersist) return CompletableFuture.completedFuture(Unit)
+
+        return backend.saveChunk(snapshot).thenApply<Unit> {
+            synchronized(stateLock) {
+                if (slot.pendingUnloadSnapshot === snapshot) {
+                    slot.pendingUnloadSnapshot = null
+                }
+            }
+        }
     }
 
     private fun restoreChunk(
         location: WXZCord,
         persisted: ChunkCordSnapshot?
     ): ChunkCord {
-        val snapshot = persisted ?: ChunkCordSnapshot(
-            location.world,
-            location.x,
-            location.z
-        )
-        if (snapshot != location) {
+        val snapshot = persisted ?: ChunkCordSnapshot(location)
+        if (snapshot.location != location) {
             throw IOException(
-                "Loaded snapshot ${snapshot.world} [${snapshot.x}, ${snapshot.z}] " +
+                "Loaded snapshot ${snapshot.location.world} " +
+                    "[${snapshot.location.x}, ${snapshot.location.z}] " +
                     "does not match requested chunk ${location.world} [${location.x}, ${location.z}]"
             )
         }
         return mapper.restore(snapshot)
     }
 
-    private fun scheduleSnapshot(request: SnapshotRequest) {
-        completeFromScheduledSnapshot(request.location, request.result) {
-            mapper.snapshot(request.chunk)
-        }
-    }
-
-    private fun completeFromScheduledSnapshot(
+    private fun requireSnapshotLocation(
         location: WXZCord,
-        result: CompletableFuture<ChunkCordSnapshot>,
-        snapshot: () -> ChunkCordSnapshot
+        snapshot: ChunkCordSnapshot
     ) {
-        val scheduled = try {
-            scheduler.schedule(location) { snapshot() }
+        require(snapshot.location == location) {
+            "Snapshot ${snapshot.location.world} " +
+                "[${snapshot.location.x}, ${snapshot.location.z}] does not match " +
+                "chunk ${location.world} [${location.x}, ${location.z}]"
+        }
+    }
+
+    private fun requireLoadedInstance(slot: ChunkSlot, chunk: ChunkCord) {
+        synchronized(stateLock) {
+            check(slot.chunk === chunk) {
+                "Chunk ${slot.location.world} [${slot.location.x}, ${slot.location.z}] " +
+                    "is no longer loaded"
+            }
+        }
+    }
+
+    private fun removeSlotIfIdleLocked(slot: ChunkSlot) {
+        if (slot.chunk != null || slot.pendingUnloadSnapshot != null) return
+        if (slot.running || slot.operations.isNotEmpty()) return
+        if (slots[slot.location] === slot) {
+            slots.remove(slot.location)
+        }
+    }
+
+    private fun closeBackend(): CompletableFuture<Void> {
+        return try {
+            backend.close()
         } catch (exception: Exception) {
-            result.completeExceptionally(exception)
-            return
-        }
-
-        scheduled.whenComplete { value, error ->
-            if (error == null) {
-                result.complete(value)
-            } else {
-                result.completeExceptionally(error.unwrapCompletionException())
-            }
+            CompletableFuture.failedFuture(exception)
         }
     }
 
-    private fun removeLifecycleOperation(
-        location: WXZCord,
-        operation: LifecycleOperation
-    ): LifecycleOperation? {
-        return synchronized(stateLock) {
-            val state = checkNotNull(lifecycleStates[location])
-            check(state.operations.peekFirst() === operation)
-            state.operations.removeFirst()
-
-            val next = state.operations.peekFirst()
-            if (next == null) {
-                state.running = false
-                lifecycleStates.remove(location)
-            }
-            next
-        }
-    }
-
-    private fun <T> complete(
-        result: CompletableFuture<T>,
-        value: T?,
+    private fun finishCloseAttempt(
+        attempt: CompletableFuture<Void>,
         error: Throwable?
     ) {
+        synchronized(stateLock) {
+            if (error == null) {
+                phase = Phase.CLOSED
+                slots.clear()
+            } else if (closeAttempt === attempt) {
+                closeAttempt = null
+            }
+        }
+
         if (error == null) {
-            @Suppress("UNCHECKED_CAST")
-            result.complete(value as T)
+            attempt.complete(null)
         } else {
-            result.completeExceptionally(error.unwrapCompletionException())
+            attempt.completeExceptionally(error.unwrapCompletionException())
         }
     }
 
-    private fun WXZCord.copyLocation(): WXZCord {
-        return WXZCord(world, x, z)
+    private fun combineOpaqueUpdateResults(
+        updates: List<OpaqueChunkUpdate>
+    ): CompletableFuture<OpaqueBatchUpdateResult> {
+        if (updates.isEmpty()) {
+            return CompletableFuture.completedFuture(
+                OpaqueBatchUpdateResult(0, 0, 0, OpaqueUpdateResult())
+            )
+        }
+
+        val result = CompletableFuture<OpaqueBatchUpdateResult>()
+        CompletableFuture.allOf(*updates.map { it.result }.toTypedArray())
+            .whenComplete { _, _ ->
+                var components = OpaqueUpdateResult()
+                var processed = 0
+                val failures = LinkedHashMap<WXZCord, Throwable>()
+
+                for (update in updates) {
+                    try {
+                        val chunkResult = update.result.join()
+                        if (chunkResult == OpaqueUpdateResult()) continue
+
+                        components += chunkResult
+                        processed++
+                    } catch (exception: CompletionException) {
+                        failures[update.location] = exception.unwrapCompletionException()
+                    } catch (exception: CancellationException) {
+                        failures[update.location] = exception
+                    }
+                }
+
+                result.complete(
+                    OpaqueBatchUpdateResult(
+                        chunksFound = processed + failures.size,
+                        chunksProcessed = processed,
+                        chunksFailed = failures.size,
+                        components = components,
+                        failures = failures
+                    )
+                )
+            }
+        return result
     }
 
-    private sealed class LifecycleOperation
-
-    private class LoadOperation : LifecycleOperation() {
-        val result = CompletableFuture<ChunkCord>()
+    private fun <T> rejectedIfNotActive(): CompletableFuture<T>? {
+        if (phase == Phase.ACTIVE) return null
+        return CompletableFuture.failedFuture(
+            IllegalStateException("Citadel storage is ${phase.name.lowercase()}")
+        )
     }
 
-    private class UnloadOperation(
-        val requiredLoad: CompletableFuture<ChunkCord>?
-    ) : LifecycleOperation() {
-        val result = CompletableFuture<Void>()
+    private fun <T> notLoadedInstance(location: WXZCord): CompletableFuture<T> {
+        return CompletableFuture.failedFuture(
+            IllegalStateException(
+                "Chunk ${location.world} [${location.x}, ${location.z}] is not the loaded instance"
+            )
+        )
     }
 
-    private class LifecycleState {
-        val operations = ArrayDeque<LifecycleOperation>()
-        var running = false
+    private fun <T> unloading(location: WXZCord): CompletableFuture<T> {
+        return CompletableFuture.failedFuture(
+            IllegalStateException(
+                "Chunk ${location.world} [${location.x}, ${location.z}] is unloading"
+            )
+        )
     }
 
-    private class SnapshotRequest(
-        val location: WXZCord,
-        val chunk: ChunkCord,
-        val result: CompletableFuture<ChunkCordSnapshot>
+    private fun CompletableFuture<*>.toVoidView(): CompletableFuture<Void> {
+        return thenApply<Void> { null }
+    }
+
+    private enum class Phase {
+        ACTIVE,
+        DRAINING,
+        CLOSED
+    }
+
+    private data class Submission<T>(
+        val result: CompletableFuture<T>,
+        val operationToStart: ChunkOperation<*>? = null
     )
+
+    private data class OperationBatch(
+        val operationsToStart: List<ChunkOperation<*>>,
+        val results: List<CompletableFuture<*>>
+    )
+
+    private data class OpaqueChunkUpdate(
+        val location: WXZCord,
+        val result: CompletableFuture<OpaqueUpdateResult>
+    )
+
 }

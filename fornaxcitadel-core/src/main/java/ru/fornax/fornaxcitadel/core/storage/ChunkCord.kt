@@ -10,7 +10,6 @@ import java.util.ArrayList
 import java.util.Collections
 import java.util.HashMap
 import java.util.LinkedHashMap
-import java.util.UUID
 
 internal class OpaqueComponentCandidate internal constructor(
     internal val ownerToken: Any,
@@ -25,7 +24,7 @@ internal class OpaqueComponentCandidate internal constructor(
     }
 }
 
-class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
+class ChunkCord(val location: WXZCord) {
     companion object {
         internal const val MIN_Y = -64
         internal const val WORLD_HEIGHT = 384

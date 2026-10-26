@@ -35,7 +35,7 @@ class ReadAndWriteAbleTest {
         val citadel = CitadelSnapshot(0, sourceComponents)
         val sourceCitadels = mutableListOf(citadel)
         val snapshot = ChunkCordSnapshot(
-            UUID.randomUUID(), 1, -2,
+            WXZCord(UUID.randomUUID(), 1, -2),
             sourceCitadels
         )
 
@@ -77,7 +77,7 @@ class ReadAndWriteAbleTest {
             String("component".toCharArray())
         )
         val snapshot = ChunkCordSnapshot(
-            UUID.randomUUID(), 0, 0,
+            WXZCord(UUID.randomUUID(), 0, 0),
             listOf(
                 CitadelSnapshot(
                     ChunkCord.packPosition(0, 0, 0),
@@ -103,7 +103,7 @@ class ReadAndWriteAbleTest {
         val packedPosition = ChunkCord.packPosition(15, 319, 0)
         val payload = byteArrayOf(4, 5, 6)
         val snapshot = ChunkCordSnapshot(
-            world, -10, 23,
+            WXZCord(world, -10, 23),
             listOf(
                 CitadelSnapshot(
                     packedPosition,
@@ -116,9 +116,9 @@ class ReadAndWriteAbleTest {
         val decodedCitadel = decoded.citadels.single()
         val decodedComponent = decodedCitadel.components.single()
 
-        assertEquals(world, decoded.world)
-        assertEquals(-10, decoded.x)
-        assertEquals(23, decoded.z)
+        assertEquals(world, decoded.location.world)
+        assertEquals(-10, decoded.location.x)
+        assertEquals(23, decoded.location.z)
         assertEquals(packedPosition, decodedCitadel.packedPosition)
         assertEquals(INT_KEY, decodedComponent.key)
         assertContentEquals(payload, decodedComponent.payload)
@@ -138,7 +138,7 @@ class ReadAndWriteAbleTest {
     @Test
     fun `serializes chunk using stable keys across registration order`() {
         val world = UUID.randomUUID()
-        val chunk = ChunkCord(world, -3, 7)
+        val chunk = ChunkCord(WXZCord(world, -3, 7))
         val entity = chunk.putCitadel(0, -64, 15)
         val sourceTypes = TypeManager()
         val sourceOtherType = sourceTypes.registerType(OTHER_KEY, OtherComponent::class.java)
@@ -157,9 +157,9 @@ class ReadAndWriteAbleTest {
         val decodedEntity = assertNotNull(decoded.getCitadel(0, -64, 15))
         val decodedComponent = assertNotNull(decoded.getComponent(decodedEntity, targetIntType))
 
-        assertEquals(world, decoded.world)
-        assertEquals(-3, decoded.x)
-        assertEquals(7, decoded.z)
+        assertEquals(world, decoded.location.world)
+        assertEquals(-3, decoded.location.x)
+        assertEquals(7, decoded.location.z)
         assertNotEquals(entity.id, decodedEntity.id)
         assertEquals(entity.packedPosition, decodedEntity.packedPosition)
         assertEquals(
@@ -172,7 +172,7 @@ class ReadAndWriteAbleTest {
 
     @Test
     fun `preserves unknown component until its type is registered again`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 4, -8)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 4, -8))
         val entity = chunk.putCitadel(3, 12, 9)
         val sourceTypes = TypeManager()
         val sourceType = sourceTypes.registerType(INT_KEY, IntComponent::class.java)
@@ -210,7 +210,7 @@ class ReadAndWriteAbleTest {
 
     @Test
     fun `removes opaque components with their owner or all owner components`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 1, 2)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 1, 2))
         val sourceTypes = TypeManager()
         val sourceType = sourceTypes.registerType(INT_KEY, IntComponent::class.java)
         val retainedEntity = chunk.putCitadel(1, 20, 2)
@@ -252,7 +252,7 @@ class ReadAndWriteAbleTest {
     fun `removeComponent also removes opaque data for its key`() {
         val sourceTypes = TypeManager()
         val sourceType = sourceTypes.registerType(INT_KEY, IntComponent::class.java)
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val entity = chunk.putCitadel(2, 30, 4)
         chunk.putComponent(entity, sourceType, IntComponent(31))
 
@@ -297,7 +297,7 @@ class ReadAndWriteAbleTest {
         val packedPosition = ChunkCord.packPosition(0, 0, 0)
         val unknownPayload = byteArrayOf(9, 8, 7)
         val snapshot = ChunkCordSnapshot(
-            world, 0, 0,
+            WXZCord(world, 0, 0),
             listOf(
                 CitadelSnapshot(
                     packedPosition,
@@ -342,7 +342,7 @@ class ReadAndWriteAbleTest {
             throw IllegalStateException("diagnostic failed")
         }
         val snapshot = ChunkCordSnapshot(
-            UUID.randomUUID(), 0, 0,
+            WXZCord(UUID.randomUUID(), 0, 0),
             listOf(
                 CitadelSnapshot(
                     ChunkCord.packPosition(0, 0, 0),
@@ -364,7 +364,7 @@ class ReadAndWriteAbleTest {
         val packedPosition = ChunkCord.packPosition(4, 50, 6)
         val unknownPayload = byteArrayOf(4, 3, 2, 1)
         val snapshot = ChunkCordSnapshot(
-            world, 7, -9,
+            WXZCord(world, 7, -9),
             listOf(
                 CitadelSnapshot(
                     packedPosition,
@@ -416,7 +416,7 @@ class ReadAndWriteAbleTest {
         val mapper = ChunkCordSnapshotMapper(types)
         val chunk = mapper.restore(
             ChunkCordSnapshot(
-                UUID.randomUUID(), 0, 0,
+                WXZCord(UUID.randomUUID(), 0, 0),
                 listOf(
                     CitadelSnapshot(
                         packedPosition,
@@ -446,7 +446,7 @@ class ReadAndWriteAbleTest {
         val types = TypeManager()
         types.registerType(INFRASTRUCTURE_KEY, RequiredArgumentComponent::class.java)
         val snapshot = ChunkCordSnapshot(
-            UUID.randomUUID(), 0, 0,
+            WXZCord(UUID.randomUUID(), 0, 0),
             listOf(
                 CitadelSnapshot(
                     ChunkCord.packPosition(0, 0, 0),
@@ -462,7 +462,7 @@ class ReadAndWriteAbleTest {
 
     @Test
     fun `does not serialize runtime citadel ids`() {
-        val chunk = ChunkCord(UUID.randomUUID(), -5, 6)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), -5, 6))
         val sourceEntity = chunk.putCitadel(6, 70, 8)
         val mapper = ChunkCordSnapshotMapper(TypeManager())
         val snapshot = ChunkCordSnapshot.fromByteArray(mapper.snapshot(chunk).toByteArray())
@@ -478,7 +478,7 @@ class ReadAndWriteAbleTest {
 
     @Test
     fun `version one record contains position but no runtime id`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 2, -4)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 2, -4))
         val entity = chunk.putCitadel(6, 70, 8)
 
         val data = ChunkCordSnapshotMapper(TypeManager()).snapshot(chunk).toByteArray()
@@ -492,7 +492,7 @@ class ReadAndWriteAbleTest {
 
     @Test
     fun `serializes packed positions at both world corners`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         chunk.putCitadel(0, -64, 0)
         chunk.putCitadel(15, 319, 15)
         val mapper = ChunkCordSnapshotMapper(TypeManager())
@@ -508,7 +508,7 @@ class ReadAndWriteAbleTest {
 
     @Test
     fun `rejects invalid packed position in serialized chunk`() {
-        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         chunk.putCitadel(0, -64, 0)
         val snapshot = ChunkCordSnapshotMapper(TypeManager()).snapshot(chunk)
 

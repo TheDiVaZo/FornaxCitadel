@@ -73,12 +73,12 @@ class ChunkCordSnapshotMapper(
             citadels.add(CitadelSnapshot(entity.packedPosition, components))
         }
 
-        return ChunkCordSnapshot(chunk.world, chunk.x, chunk.z, citadels)
+        return ChunkCordSnapshot(chunk.location, citadels)
     }
 
     @Throws(IOException::class)
     fun restore(snapshot: ChunkCordSnapshot): ChunkCord {
-        val chunk = ChunkCord(snapshot.world, snapshot.x, snapshot.z)
+        val chunk = ChunkCord(snapshot.location)
         val registeredTypes = typeManager.getTypes(
             snapshot.citadels
                 .flatMapTo(LinkedHashSet()) { citadel ->
@@ -251,7 +251,7 @@ class ChunkCordSnapshotMapper(
         try {
             corruptedComponentHandler(
                 CorruptedComponentPayload(
-                    WXZCord(chunk.world, chunk.x, chunk.z),
+                    chunk.location,
                     packedPosition,
                     key,
                     cause
