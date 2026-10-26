@@ -18,6 +18,28 @@ import kotlin.test.assertTrue
 class ChunkCordTest {
 
     @Test
+    fun `minecraft chunk load state follows rapid lifecycle events independently of contents`() {
+        val chunk = ChunkCord(UUID.randomUUID(), 0, 0)
+        assertFalse(chunk.isChunkLoaded())
+        chunk.minecraftChunkUnloaded()
+        assertFalse(chunk.isChunkLoaded())
+
+        chunk.minecraftChunkLoaded()
+        chunk.putCitadel(1, 20, 2)
+        chunk.clear()
+        assertTrue(chunk.isChunkLoaded())
+
+        repeat(100) {
+            chunk.minecraftChunkUnloaded()
+            assertFalse(chunk.isChunkLoaded())
+            chunk.minecraftChunkLoaded()
+            val loadedAfterReload = chunk.isChunkLoaded()
+            assertTrue(loadedAfterReload)
+        }
+        assertTrue(chunk.isEmpty)
+    }
+
+    @Test
     fun `putCitadel creates and stores entity`() {
         val chunk = ChunkCord(UUID.randomUUID(), 2, -3)
 

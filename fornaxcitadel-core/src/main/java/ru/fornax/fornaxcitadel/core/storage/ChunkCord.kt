@@ -9,8 +9,6 @@ import java.util.*
 
 class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
     companion object {
-        const val INVALID_TIME: Long = -1
-
         internal const val MIN_Y = -64
         internal const val WORLD_HEIGHT = 384
         internal const val CHUNK_SIZE = 16
@@ -59,8 +57,7 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
         }
     }
 
-    private var lastLoadedTime: Long = INVALID_TIME
-    private var lastUnloadedTime: Long = INVALID_TIME
+    private var minecraftChunkLoaded = false
 
     private val ownerToken = Any()
     private val citadels = CitadelsData()
@@ -222,20 +219,17 @@ class ChunkCord(world: UUID, x: Int, z: Int) : WXZCord(world, x, z) {
         entity.setComponents(0L)
     }
 
+    /** Tracks the Minecraft chunk lifecycle independently of storage residency and citadel contents. */
     fun isChunkLoaded(): Boolean {
-        if (this.lastUnloadedTime > 0) {
-            return this.lastUnloadedTime < this.lastLoadedTime
-        } else {
-            return this.lastLoadedTime > 0
-        }
+        return minecraftChunkLoaded
     }
 
     fun minecraftChunkLoaded() {
-        this.lastLoadedTime = System.currentTimeMillis()
+        minecraftChunkLoaded = true
     }
 
     fun minecraftChunkUnloaded() {
-        this.lastUnloadedTime = System.currentTimeMillis()
+        minecraftChunkLoaded = false
     }
 
     private class CitadelsData {
