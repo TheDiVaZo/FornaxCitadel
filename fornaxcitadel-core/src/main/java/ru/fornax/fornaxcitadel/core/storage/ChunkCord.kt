@@ -11,8 +11,8 @@ import java.util.Collections
 import java.util.HashMap
 import java.util.LinkedHashMap
 
+/** Must only be applied to the ChunkCord from which it was captured. */
 internal class OpaqueComponentCandidate internal constructor(
-    internal val ownerToken: Any,
     val packedPosition: Int,
     val key: Key,
     component: OpaqueComponent
@@ -77,7 +77,6 @@ class ChunkCord(val location: WXZCord) {
     private var minecraftChunkLoaded = false
     internal val dirtyState = ChunkDirtyState()
 
-    private val ownerToken = Any()
     private val citadels = CitadelsData()
     private val components = ComponentsData()
     private val opaqueComponents = OpaqueComponentsData()
@@ -119,7 +118,7 @@ class ChunkCord(val location: WXZCord) {
             "Citadel position is already occupied: [$locX, $locY, $locZ]"
         }
 
-        val entity = CitadelEntity(ownerToken, packedPosition)
+        val entity = CitadelEntity(packedPosition)
         citadels.putCitadel(locX, locY, locZ, entity)
         markDirty()
         return entity
@@ -229,14 +228,13 @@ class ChunkCord(val location: WXZCord) {
     internal fun captureOpaqueComponents(
         key: Key? = null
     ): List<OpaqueComponentCandidate> {
-        return opaqueComponents.capture(ownerToken, key)
+        return opaqueComponents.capture(key)
     }
 
     internal fun isOpaqueComponentCurrent(
         candidate: OpaqueComponentCandidate
     ): Boolean {
-        return candidate.ownerToken === ownerToken &&
-            citadels.getPacked(candidate.packedPosition) != null &&
+        return citadels.getPacked(candidate.packedPosition) != null &&
             opaqueComponents.isCurrent(candidate)
     }
 
@@ -249,7 +247,6 @@ class ChunkCord(val location: WXZCord) {
             "Opaque key ${candidate.key} does not match component type ${type.key}"
         }
 
-        if (candidate.ownerToken !== ownerToken) return false
         val entity = citadels.getPacked(candidate.packedPosition) ?: return false
         if (!opaqueComponents.isCurrent(candidate)) return false
 
@@ -260,7 +257,6 @@ class ChunkCord(val location: WXZCord) {
     internal fun discardOpaqueComponent(
         candidate: OpaqueComponentCandidate
     ): Boolean {
-        if (candidate.ownerToken !== ownerToken) return false
         if (citadels.getPacked(candidate.packedPosition) == null) return false
         if (!opaqueComponents.removeIfCurrent(candidate)) return false
         markDirty()
@@ -279,13 +275,9 @@ class ChunkCord(val location: WXZCord) {
     }
 
     private fun requireCurrentPosition(entity: CitadelEntity): Int {
-        require(entity.isOwnedBy(ownerToken)) {
-            "Citadel ${entity.id} belongs to another chunk"
-        }
-
         val packedPosition = entity.packedPosition
         check(citadels.getPacked(packedPosition) === entity) {
-            "Citadel ${entity.id} is no longer present in this chunk"
+            "Citadel ${entity.id} is not present in this chunk"
         }
         return packedPosition
     }
@@ -680,7 +672,6 @@ class ChunkCord(val location: WXZCord) {
         }
 
         fun capture(
-            ownerToken: Any,
             key: Key?
         ): List<OpaqueComponentCandidate> {
             val candidates = ArrayList<OpaqueComponentCandidate>()
@@ -689,7 +680,6 @@ class ChunkCord(val location: WXZCord) {
                     for (component in components.values) {
                         candidates.add(
                             OpaqueComponentCandidate(
-                                ownerToken,
                                 packedPosition,
                                 component.key,
                                 component
@@ -700,7 +690,6 @@ class ChunkCord(val location: WXZCord) {
                     val component = components[key] ?: continue
                     candidates.add(
                         OpaqueComponentCandidate(
-                            ownerToken,
                             packedPosition,
                             component.key,
                             component

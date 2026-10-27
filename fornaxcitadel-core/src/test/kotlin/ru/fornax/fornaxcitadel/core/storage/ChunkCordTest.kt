@@ -179,6 +179,43 @@ class ChunkCordTest {
     }
 
     @Test
+    fun `entity from another chunk instance cannot access components at the same position`() {
+        val location = WXZCord(UUID.randomUUID(), 0, 0)
+        val source = ChunkCord(location)
+        val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
+        val foreignEntity = source.putCitadel(4, 21, 5)
+        val sourceComponent = TestComponent(17)
+        source.putComponent(foreignEntity, type, sourceComponent)
+
+        for (targetLocation in listOf(location, location.copy(x = 1))) {
+            val target = ChunkCord(targetLocation)
+            val entity = target.putCitadel(4, 21, 5)
+            val component = TestComponent(23)
+            target.putComponent(entity, type, component)
+            target.resetDirty()
+
+            assertFailsWith<IllegalStateException> {
+                target.getComponent(foreignEntity, type)
+            }
+            assertFailsWith<IllegalStateException> {
+                target.putComponent(foreignEntity, type, TestComponent(99))
+            }
+            assertFailsWith<IllegalStateException> {
+                target.removeComponent(foreignEntity, type)
+            }
+            assertFailsWith<IllegalStateException> {
+                target.removeAllComponents(foreignEntity)
+            }
+
+            assertSame(component, target.getComponent(entity, type))
+            assertEquals(type.flag, entity.components())
+            assertFalse(target.isDirty)
+        }
+        assertSame(sourceComponent, source.getComponent(foreignEntity, type))
+        assertEquals(type.flag, foreignEntity.components())
+    }
+
+    @Test
     fun `clear resets masks and frees occupied positions`() {
         val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)

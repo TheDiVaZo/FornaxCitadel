@@ -6,13 +6,11 @@ public final class CitadelEntity {
 
     private static final AtomicInteger NEXT_ID = new AtomicInteger(1);
 
-    private final Object ownerToken;
     private final int packedPosition;
     private final int id;
     private long components;
 
-    CitadelEntity(Object ownerToken, int packedPosition) {
-        this.ownerToken = ownerToken;
+    CitadelEntity(int packedPosition) {
         this.packedPosition = packedPosition;
         this.id = nextId();
     }
@@ -27,10 +25,6 @@ public final class CitadelEntity {
 
     public long components() {
         return components;
-    }
-
-    boolean isOwnedBy(Object ownerToken) {
-        return this.ownerToken == ownerToken;
     }
 
     void addComponent(long bit) {
