@@ -168,7 +168,7 @@ class ChunkBackendLifecycleCoordinatorTest {
     }
 
     @Test
-    fun `clean checkpoints skip serialization and snapshot failures remain retryable`() {
+    fun `clean checkpoints skip serialization and failed components are omitted from dirty saves`() {
         val types = TypeManager()
         val type = types.registerType(INT_KEY, IntComponent::class.java)
         val location = location(7, 7)
@@ -176,6 +176,7 @@ class ChunkBackendLifecycleCoordinatorTest {
             enqueueLoad(CompletableFuture.completedFuture(opaqueSnapshot(
                 location, ComponentSnapshot(INT_KEY, IntComponent(10).toByteArray())
             )))
+            enqueueSave(CompletableFuture.completedFuture(null))
             enqueueSave(CompletableFuture.completedFuture(null))
         }
         val storage = createStorage(backend, ChunkCordSnapshotMapper(types))
@@ -187,13 +188,16 @@ class ChunkBackendLifecycleCoordinatorTest {
         storage.saveAll().join()
         assertTrue(backend.saveCalls.isEmpty())
         chunk.markDirty()
-        assertFailsWith<CompletionException> { storage.saveAll().join() }
-        assertTrue(backend.saveCalls.isEmpty())
-        assertTrue(chunk.isDirty)
+        storage.saveAll().join()
+        assertTrue(backend.saveCalls.single().citadels.single().components.isEmpty())
+        assertFalse(chunk.isDirty)
+        assertSame(component, chunk.getComponent(entity, type))
 
         component.writeFailure = null
+        chunk.markDirty()
         storage.saveAll().join()
-        assertEquals(1, backend.saveCalls.size)
+        assertEquals(2, backend.saveCalls.size)
+        assertEquals(INT_KEY, backend.saveCalls.last().citadels.single().components.single().key)
         assertFalse(chunk.isDirty)
     }
 

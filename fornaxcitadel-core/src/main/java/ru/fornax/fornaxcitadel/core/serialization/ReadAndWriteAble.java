@@ -9,6 +9,7 @@ import java.io.*;
 import java.util.UUID;
 
 public abstract class ReadAndWriteAble {
+    public ReadAndWriteAble() {}
 
     public static void writeUUID(UUID id, DataOutput output) throws IOException {
         output.writeLong(id.getMostSignificantBits());
@@ -55,7 +56,7 @@ public abstract class ReadAndWriteAble {
 
     protected abstract void read(@NotNull DataInput input) throws IOException;
 
-    public void safeWriteChecked(@NotNull DataOutput output) {
+    public final void safeWriteChecked(@NotNull DataOutput output) {
         try {
             safeWrite(output);
         } catch (IOException e) {
@@ -63,7 +64,7 @@ public abstract class ReadAndWriteAble {
         }
     }
 
-    public void safeReadChecked(@NotNull DataInput input) {
+    public final void safeReadChecked(@NotNull DataInput input) {
         try {
             safeRead(input);
         } catch (IOException e) {
@@ -71,7 +72,7 @@ public abstract class ReadAndWriteAble {
         }
     }
 
-    public void safeRead(byte[] bytes) throws IOException {
+    public final void safeRead(byte[] bytes) throws IOException {
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes))) {
             safeRead(input);
             if (input.available() != 0) {
@@ -80,7 +81,7 @@ public abstract class ReadAndWriteAble {
         }
     }
 
-    public byte[] toByteArray() {
+    public final byte[] toByteArray() {
         ByteArrayDataOutput output = ByteStreams.newDataOutput();
         try {
             safeWrite(output);

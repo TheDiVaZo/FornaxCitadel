@@ -38,16 +38,16 @@ class ChunkCord(val location: WXZCord) {
 
         internal fun packPosition(
             locX: Int,
-            locY: Int,
+            y: Int,
             locZ: Int
         ): Int {
             require(locX in 0 until CHUNK_SIZE) { "Invalid local x: $locX" }
             require(locZ in 0 until CHUNK_SIZE) { "Invalid local z: $locZ" }
-            require(locY in MIN_Y until (MIN_Y + WORLD_HEIGHT)) {
-                "Invalid y: $locY"
+            require(y in MIN_Y until (MIN_Y + WORLD_HEIGHT)) {
+                "Invalid y: $y"
             }
 
-            return ((locY - MIN_Y) shl Y_SHIFT) or
+            return ((y - MIN_Y) shl Y_SHIFT) or
                 (locZ shl Z_SHIFT) or
                 locX
         }
@@ -102,35 +102,35 @@ class ChunkCord(val location: WXZCord) {
 
     fun getCitadel(
         locX: Int,
-        locY: Int,
+        y: Int,
         locZ: Int
     ): CitadelEntity? {
-        return citadels.getCitadel(locX, locY, locZ)
+        return citadels.getCitadel(locX, y, locZ)
     }
 
     fun putCitadel(
         locX: Int,
-        locY: Int,
+        y: Int,
         locZ: Int
     ): CitadelEntity {
-        val packedPosition = packPosition(locX, locY, locZ)
-        check(citadels.getCitadel(locX, locY, locZ) == null) {
-            "Citadel position is already occupied: [$locX, $locY, $locZ]"
+        val packedPosition = packPosition(locX, y, locZ)
+        check(citadels.getCitadel(locX, y, locZ) == null) {
+            "Citadel position is already occupied: [$locX, $y, $locZ]"
         }
 
         val entity = CitadelEntity(packedPosition)
-        citadels.putCitadel(locX, locY, locZ, entity)
+        citadels.putCitadel(locX, y, locZ, entity)
         markDirty()
         return entity
     }
 
     fun removeCitadel(
         locX: Int,
-        locY: Int,
+        y: Int,
         locZ: Int
     ): CitadelEntity? {
-        val packedPosition = packPosition(locX, locY, locZ)
-        val removed = citadels.removeCitadel(locX, locY, locZ) ?: return null
+        val packedPosition = packPosition(locX, y, locZ)
+        val removed = citadels.removeCitadel(locX, y, locZ) ?: return null
         removeAllComponentsAt(removed, packedPosition)
         markDirty()
         return removed
@@ -328,13 +328,13 @@ class ChunkCord(val location: WXZCord) {
 
         fun getCitadel(
             locX: Int,
-            locY: Int,
+            y: Int,
             locZ: Int
         ): CitadelEntity? {
-            validatePosition(locX, locY, locZ)
+            validatePosition(locX, y, locZ)
 
-            return data[yGroup(locY)]
-                ?.get(yOffset(locY))
+            return data[yGroup(y)]
+                ?.get(yOffset(y))
                 ?.get(locX)
                 ?.get(locZ)
         }

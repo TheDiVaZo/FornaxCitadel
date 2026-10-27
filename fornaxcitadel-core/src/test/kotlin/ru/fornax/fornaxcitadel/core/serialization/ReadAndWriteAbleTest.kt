@@ -29,6 +29,40 @@ import kotlin.test.assertTrue
 class ReadAndWriteAbleTest {
 
     @Test
+    fun `failed writes discard partial payloads and preserve other components and positions`() {
+        for (failure in listOf(IOException("write failed"), IllegalStateException("write failed"))) {
+            val types = TypeManager()
+            val intType = types.registerType(INT_KEY, IntComponent::class.java)
+            val otherType = types.registerType(OTHER_KEY, OtherComponent::class.java)
+            val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
+            val first = chunk.putCitadel(1, 20, 2)
+            val second = chunk.putCitadel(3, 40, 4)
+            val broken = IntComponent(42).apply { writeFailure = failure }
+            chunk.putComponent(first, intType, broken)
+            chunk.putComponent(first, otherType, OtherComponent())
+            chunk.putOpaqueComponent(first, OpaqueComponent(UNKNOWN_KEY, byteArrayOf(1, 2, 3)))
+            chunk.putComponent(second, intType, IntComponent(99))
+            val mapper = ChunkCordSnapshotMapper(types)
+
+            val snapshot = ChunkCordSnapshot.fromByteArray(mapper.snapshot(chunk).toByteArray())
+
+            val firstSnapshot = snapshot.citadels.single { it.packedPosition == first.packedPosition }
+            assertEquals(setOf(OTHER_KEY, UNKNOWN_KEY), firstSnapshot.components.map { it.key }.toSet())
+            assertContentEquals(
+                byteArrayOf(1, 2, 3),
+                firstSnapshot.components.single { it.key == UNKNOWN_KEY }.payload
+            )
+            val restored = mapper.restore(snapshot)
+            val restoredFirst = assertNotNull(restored.getCitadel(1, 20, 2))
+            val restoredSecond = assertNotNull(restored.getCitadel(3, 40, 4))
+            assertNull(restored.getComponent(restoredFirst, intType))
+            assertNotNull(restored.getComponent(restoredFirst, otherType))
+            assertEquals(99, assertNotNull(restored.getComponent(restoredSecond, intType)).value)
+            assertSame(broken, chunk.getComponent(first, intType))
+        }
+    }
+
+    @Test
     fun `snapshot dto defensively copies collections and payload`() {
         val sourcePayload = byteArrayOf(1, 2, 3)
         val component = ComponentSnapshot(INT_KEY, sourcePayload)
@@ -535,8 +569,11 @@ class ReadAndWriteAbleTest {
     private class IntComponent(
         var value: Int = 0
     ) : Component() {
+        var writeFailure: Exception? = null
+
         override fun write(output: DataOutput) {
             output.writeInt(value)
+            writeFailure?.let { throw it }
         }
 
         override fun read(input: DataInput) {

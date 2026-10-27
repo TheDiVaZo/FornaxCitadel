@@ -51,6 +51,7 @@ class ChunkCordSnapshotMapper(
     private val typeManager: TypeManager,
     private val corruptedComponentHandler: (CorruptedComponentPayload) -> Unit = {}
 ) {
+    /** Omits components whose write fails; the live chunk is left unchanged. */
     fun snapshot(chunk: ChunkCord): ChunkCordSnapshot {
         val citadels = ArrayList<CitadelSnapshot>(chunk.size)
         chunk.forEachCitadel { _, _, _, entity ->
@@ -61,7 +62,13 @@ class ChunkCordSnapshotMapper(
                 check(componentKeys.add(type.key)) {
                     "Duplicate component key ${type.key} for citadel ${entity.id}"
                 }
-                components.add(ComponentSerializer.encode(type, component))
+                val snapshot = try {
+                    ComponentSerializer.encode(type, component)
+                } catch (_: Exception) {
+                    // Discard the failed component, including any partially written payload.
+                    return@forEachComponent
+                }
+                components.add(snapshot)
             }
             chunk.forEachOpaqueComponent(entity) { component ->
                 check(componentKeys.add(component.key)) {
