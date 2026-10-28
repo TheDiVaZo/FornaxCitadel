@@ -1,0 +1,40 @@
+# Queue work is performed once per server tick on the main thread.
+actions:
+  max-per-tick: 1024
+
+# Copies dirty core data into loaded chunks' PDC. Minecraft saves PDC to disk
+# with the chunk; this interval is not a disk durability guarantee.
+storage:
+  save-interval-ticks: 1200
+
+damage-per-break: 1.0
+
+health:
+  reinforced: [20.0, 40.0, 80.0]
+  maturing:
+    initial: 10.0
+    mature: 40.0
+    duration-seconds: 600
+  dev: 20.0
+
+# Supported durable full blocks. Containers, gravity and multipart blocks
+# require additional lifecycle handling and are not accepted by this prototype.
+allowed-blocks:
+  - STONE
+  - COBBLESTONE
+  - STONE_BRICKS
+  - DEEPSLATE
+  - COBBLED_DEEPSLATE
+  - DEEPSLATE_BRICKS
+  - BRICKS
+  - OBSIDIAN
+  - CRYING_OBSIDIAN
+  - BLACKSTONE
+  - POLISHED_BLACKSTONE
+  - NETHER_BRICKS
+  - END_STONE
+  - IRON_BLOCK
+  - GOLD_BLOCK
+  - DIAMOND_BLOCK
+  - EMERALD_BLOCK
+  - NETHERITE_BLOCK

@@ -4,8 +4,27 @@ prefix: FornaxCitadel
 version: '${version}'
 
 main: ru.fornax.fornaxcitadel.paper.FornaxCitadel
-paper-plugin-loader: ru.fornax.fornaxcitadel.paper.FornaxCitadelLoader
 api-version: '26.3'
 load: POSTWORLD
 
 authors: [TheDiVaZo]
+
+commands:
+  citadel:
+    description: Управление укреплениями блоков
+    usage: /citadel help
+    aliases: [fcitadel]
+
+permissions:
+  fornaxcitadel.place:
+    description: Установка укрепления предметом
+    default: true
+  fornaxcitadel.damage:
+    description: Попытка разрушить укрепление или разобрать собственное
+    default: true
+  fornaxcitadel.info:
+    description: Просмотр укрепления под прицелом
+    default: true
+  fornaxcitadel.admin:
+    description: Выдача предметов, установка dev-типов и административное удаление
+    default: op

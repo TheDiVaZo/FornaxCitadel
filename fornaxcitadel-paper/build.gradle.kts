@@ -15,6 +15,8 @@ dependencies {
     implementation(project(":fornaxcitadel-core"))
     compileOnly("io.papermc.paper:paper-api:26.3.build.+")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    testImplementation(kotlin("test"))
+    testImplementation("io.papermc.paper:paper-api:26.3.build.+")
 }
 
 kotlin {
@@ -22,6 +24,10 @@ kotlin {
 }
 
 tasks {
+    test {
+        useJUnitPlatform()
+    }
+
     build {
         dependsOn(shadowJar)
     }
