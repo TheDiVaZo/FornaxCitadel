@@ -74,6 +74,156 @@ class SimpleComponentManagerTest {
     }
 
     @Test
+    fun `height range iteration visits inclusive layers from the center with global coordinates and live components`() {
+        val fixture = Fixture()
+        val otherWorld = UUID(3L, 4L)
+        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.loadChunk(WORLD, -2, 1).join()
+        fixture.manager.loadChunk(WORLD, -1, 1).join()
+        fixture.manager.loadChunk(otherWorld, -2, 1).join()
+        val positions = listOf(
+            Triple(-32, -38, 16),
+            Triple(-17, -40, 31),
+            Triple(-32, -42, 16),
+            Triple(-32, -39, 16),
+            Triple(-32, -40, 16),
+            Triple(-32, -41, 16)
+        )
+        val components = positions.mapIndexed { index, position -> position to ValueComponent(index) }.toMap()
+        for ((position, component) in components) {
+            fixture.manager.putComponent(ValueComponent::class.java, WORLD, position.first, position.second, position.third, component)
+        }
+        for (y in listOf(-43, -37)) {
+            fixture.manager.putComponent(ValueComponent::class.java, WORLD, -32, y, 16, ValueComponent(99))
+        }
+        fixture.manager.putComponent(OtherComponent::class.java, WORLD, -32, -40, 16, OtherComponent())
+        fixture.manager.putComponent(OtherComponent::class.java, WORLD, -30, -40, 19, OtherComponent())
+        fixture.manager.putComponent(ValueComponent::class.java, WORLD, -16, -40, 16, ValueComponent(99))
+        fixture.manager.putComponent(ValueComponent::class.java, otherWorld, -32, -40, 16, ValueComponent(99))
+        fixture.manager.saveAll().join()
+        val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(WORLD, -2, 1)))
+        val visited = mutableListOf<Triple<Int, Int, Int>>()
+
+        fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, -2, 1, -40, 2) { citadelId, x, y, z, component ->
+            val position = Triple(x, y, z)
+            assertEquals(assertNotNull(chunk.getCitadel(x and 15, y, z and 15)).id, citadelId)
+            assertSame(components.getValue(position), component)
+            visited.add(position)
+        }
+
+        assertEquals(listOf(-40, -40, -41, -39, -42, -38), visited.map { it.second })
+        assertEquals(components.keys, visited.toSet())
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
+    fun `zero height delta visits every matching citadel on the center layer once`() {
+        val fixture = Fixture()
+        fixture.load()
+        val positions = listOf(Triple(0, 11, 0), Triple(0, 12, 0), Triple(15, 12, 15), Triple(0, 13, 0))
+        for (position in positions) {
+            fixture.manager.putComponent(ValueComponent::class.java, WORLD, position.first, position.second, position.third, ValueComponent())
+        }
+        val visited = mutableListOf<Triple<Int, Int, Int>>()
+
+        fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 12, 0) { _, x, y, z, _ ->
+            visited.add(Triple(x, y, z))
+        }
+
+        assertEquals(2, visited.size)
+        assertEquals(setOf(Triple(0, 12, 0), Triple(15, 12, 15)), visited.toSet())
+    }
+
+    @Test
+    fun `height range iteration clips at world boundaries without losing valid layers`() {
+        val fixture = Fixture()
+        fixture.load()
+        for (y in listOf(-64, -63, -62, -61, 316, 317, 318, 319)) {
+            fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, y, 0, ValueComponent())
+        }
+
+        for ((center, expected) in listOf(-64 to listOf(-64, -63, -62), 319 to listOf(319, 318, 317))) {
+            val visited = mutableListOf<Int>()
+            fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, center, 2) { _, _, y, _, _ ->
+                visited.add(y)
+            }
+
+            assertEquals(expected, visited)
+        }
+    }
+
+    @Test
+    fun `maximum height delta visits the whole world without overflow and skips empty layers`() {
+        val fixture = Fixture()
+        fixture.load()
+        for (y in listOf(-64, -1, 0, 1, 319)) {
+            fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, y, 0, ValueComponent())
+        }
+
+        val cases = listOf(
+            -64 to listOf(-64, -1, 0, 1, 319),
+            0 to listOf(0, -1, 1, -64, 319),
+            319 to listOf(319, 1, 0, -1, -64)
+        )
+        for ((center, expected) in cases) {
+            val visited = mutableListOf<Int>()
+            fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, center, Int.MAX_VALUE) { _, _, y, _, _ ->
+                visited.add(y)
+            }
+
+            assertEquals(expected, visited)
+        }
+    }
+
+    @Test
+    fun `height range iteration rejects invalid arguments even when the chunk is unloaded`() {
+        for (loaded in listOf(false, true)) {
+            val fixture = Fixture()
+            if (loaded) fixture.load()
+            val invalidArguments = listOf(
+                -65 to 0,
+                320 to 0,
+                Int.MIN_VALUE to 0,
+                Int.MAX_VALUE to 0,
+                0 to -1,
+                0 to Int.MIN_VALUE
+            )
+
+            for ((y, yDelta) in invalidArguments) {
+                assertFailsWith<IllegalArgumentException> {
+                    fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, y, yDelta) { _, _, _, _, _ ->
+                        error("Invalid arguments must not invoke the callback")
+                    }
+                }
+            }
+            assertFailsWith<IllegalArgumentException> {
+                fixture.manager.forEachComponentOfType(OtherComponent::class.java, WORLD, 0, 0, 0, 0) { _, _, _, _, _ ->
+                    error("An unregistered type must not invoke the callback")
+                }
+            }
+            assertEquals(loaded, fixture.manager.isChunkLoaded(WORLD, 0, 0))
+        }
+    }
+
+    @Test
+    fun `height range iteration skips unloaded and empty chunks and ranges without the selected type`() {
+        val fixture = Fixture()
+        val action: (Int, Int, Int, Int, ValueComponent) -> Unit = { _, _, _, _, _ ->
+            error("No matching component should be visited")
+        }
+
+        fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
+        assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
+        fixture.load()
+        fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
+        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
+        fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
+        fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, 20, 0, ValueComponent())
+        fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
+    }
+
+    @Test
     fun `global block coordinates resolve the correct chunk and local position`() {
         val fixture = Fixture()
         val positions = listOf(-17 to -1, -16 to 16, 0 to 0, 16 to 31)

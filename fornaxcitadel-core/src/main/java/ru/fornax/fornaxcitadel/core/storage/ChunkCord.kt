@@ -67,6 +67,11 @@ class ChunkCord(val location: WXZCord) {
             return (packedPosition ushr Z_SHIFT) and LOCAL_COORDINATE_MASK
         }
 
+        internal fun requireValidYRange(y: Int, yDelta: Int) {
+            require(y in MIN_Y until (MIN_Y + WORLD_HEIGHT)) { "Invalid y: $y" }
+            require(yDelta >= 0) { "Invalid yDelta: $yDelta" }
+        }
+
         private fun requireValidPackedPosition(packedPosition: Int) {
             require(packedPosition in 0..MAX_PACKED_POSITION) {
                 "Invalid packed position: $packedPosition"
@@ -205,6 +210,25 @@ class ChunkCord(val location: WXZCord) {
         action: (CitadelEntity, T) -> Unit
     ) {
         components.forEachOfType(type, action)
+    }
+
+    /**
+     * Visits components on layers `y, y - 1, y + 1, ...` within [yDelta] blocks, inclusively.
+     * [y] must be a valid storage height and [yDelta] nonnegative. The range is clipped to
+     * the storage bounds. Do not structurally modify the chunk during iteration.
+     * Reading does not mark dirty; call [markDirty] after mutating a component's fields.
+     */
+    fun <T : Component> forEachComponentOfType(
+        type: ComponentType<T>,
+        y: Int,
+        yDelta: Int,
+        action: (CitadelEntity, T) -> Unit
+    ) {
+        citadels.forEachCitadel(y, yDelta) { entity ->
+            val component = components.getComponent(entity.packedPosition, type)
+                ?: return@forEachCitadel
+            action(entity, component)
+        }
     }
 
     internal fun putOpaqueComponent(
@@ -430,6 +454,29 @@ class ChunkCord(val location: WXZCord) {
                             action(x, y, z, entity)
                         }
                     }
+                }
+            }
+        }
+
+        fun forEachCitadel(y: Int, yDelta: Int, action: (CitadelEntity) -> Unit) {
+            requireValidYRange(y, yDelta)
+            // Bound distances before arithmetic so even Int.MAX_VALUE visits at most WORLD_HEIGHT layers.
+            val below = minOf(yDelta, y - MIN_Y)
+            val above = minOf(yDelta, MIN_Y + WORLD_HEIGHT - 1 - y)
+            forEachCitadelAtY(y, action)
+            for (distance in 1..maxOf(below, above)) {
+                if (distance <= below) forEachCitadelAtY(y - distance, action)
+                if (distance <= above) forEachCitadelAtY(y + distance, action)
+            }
+        }
+
+        private fun forEachCitadelAtY(y: Int, action: (CitadelEntity) -> Unit) {
+            val plane = data[yGroup(y)]?.get(yOffset(y)) ?: return
+            for (row in plane) {
+                if (row == null) continue
+                for (entity in row) {
+                    if (entity == null) continue
+                    action(entity)
                 }
             }
         }

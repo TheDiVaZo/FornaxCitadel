@@ -74,6 +74,45 @@ class SimpleComponentManager(
     }
 
     /**
+     * Visits this component type within the inclusive range `y - yDelta..y + yDelta`.
+     * Layers are visited in order `y, y - 1, y + 1, y - 2, y + 2, ...`, skipping heights
+     * outside the storage bounds. [y] must be a valid storage height and [yDelta] nonnegative;
+     * zero visits only the center layer. Arguments are checked even if the chunk is unloaded.
+     *
+     * [chunkX] and [chunkZ] are chunk coordinates; [action] receives the runtime citadel ID,
+     * global block coordinates, and the live component. An unloaded chunk or a missing
+     * component type in the chunk produces no callbacks.
+     *
+     * Do not add, remove, or replace components, or unload the chunk, during iteration.
+     * Reading does not mark the chunk dirty; call [markDirty] after mutating a component's fields.
+     */
+    fun <T : Component> forEachComponentOfType(
+        componentClass: Class<T>,
+        world: UUID,
+        chunkX: Int,
+        chunkZ: Int,
+        y: Int,
+        yDelta: Int,
+        action: (citadelId: Int, x: Int, y: Int, z: Int, component: T) -> Unit
+    ) {
+        val type = requireType(componentClass)
+        ChunkCord.requireValidYRange(y, yDelta)
+        val chunk = citadelStorage.getIfChunkLoaded(pool.get(world, chunkX, chunkZ)) ?: return
+        val baseX = chunkX shl 4
+        val baseZ = chunkZ shl 4
+        chunk.forEachComponentOfType(type, y, yDelta) { entity, component ->
+            val position = entity.packedPosition
+            action(
+                entity.id,
+                baseX + ChunkCord.unpackX(position),
+                ChunkCord.unpackY(position),
+                baseZ + ChunkCord.unpackZ(position),
+                component
+            )
+        }
+    }
+
+    /**
      * Inserts a live instance, creating the position if necessary, and returns the previous one.
      * The chunk must already be loaded. Marks the chunk dirty; does not immediately save it.
      */
