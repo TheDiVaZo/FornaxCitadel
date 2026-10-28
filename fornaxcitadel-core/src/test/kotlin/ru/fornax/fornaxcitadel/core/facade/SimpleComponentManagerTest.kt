@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
 
 class SimpleComponentManagerTest {
     @Test
-    fun `iteration selects the type and chunk and exposes global coordinates with live components`() {
+    fun `iteration selects the type and chunk and exposes citadel ids and global coordinates with live components`() {
         val fixture = Fixture()
         val otherWorld = UUID(3L, 4L)
         fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
@@ -43,23 +43,24 @@ class SimpleComponentManagerTest {
         fixture.manager.putComponent(ValueComponent::class.java, WORLD, -16, 0, 16, ValueComponent(3))
         fixture.manager.putComponent(ValueComponent::class.java, otherWorld, -32, -64, 16, ValueComponent(4))
         fixture.manager.saveAll().join()
+        val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(WORLD, -2, 1)))
         val visited = mutableListOf<Pair<Triple<Int, Int, Int>, ValueComponent>>()
 
-        fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, -2, 1) { x, y, z, component ->
+        fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, -2, 1) { citadelId, x, y, z, component ->
+            assertEquals(assertNotNull(chunk.getCitadel(x and 15, y, z and 15)).id, citadelId)
             visited.add(Triple(x, y, z) to component)
         }
 
         assertEquals(2, visited.size)
         assertSame(first, visited.single { it.first == Triple(-32, -64, 16) }.second)
         assertSame(second, visited.single { it.first == Triple(-17, 319, 31) }.second)
-        val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(WORLD, -2, 1)))
         assertFalse(chunk.isDirty)
     }
 
     @Test
     fun `iteration skips unloaded and empty chunks and positions without the selected type`() {
         val fixture = Fixture()
-        val action: (Int, Int, Int, ValueComponent) -> Unit = { _, _, _, _ ->
+        val action: (Int, Int, Int, Int, ValueComponent) -> Unit = { _, _, _, _, _ ->
             error("No matching component should be visited")
         }
 

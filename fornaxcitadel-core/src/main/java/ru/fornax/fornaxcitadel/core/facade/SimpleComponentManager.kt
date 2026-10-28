@@ -44,6 +44,7 @@ class SimpleComponentManager(
     /**
      * Visits positions with this component type in the specified loaded chunk.
      * [chunkX] and [chunkZ] are chunk coordinates; [action] receives global block coordinates.
+     * The first callback argument is the citadel's runtime ID, which changes after reloading.
      * An unloaded chunk or a missing component type in the chunk produces no callbacks.
      *
      * Do not add, remove, or replace components, or unload the chunk, during iteration.
@@ -54,7 +55,7 @@ class SimpleComponentManager(
         world: UUID,
         chunkX: Int,
         chunkZ: Int,
-        action: (x: Int, y: Int, z: Int, component: T) -> Unit
+        action: (citadelId: Int, x: Int, y: Int, z: Int, component: T) -> Unit
     ) {
         val type = requireType(componentClass)
         val chunk = citadelStorage.getIfChunkLoaded(pool.get(world, chunkX, chunkZ)) ?: return
@@ -63,6 +64,7 @@ class SimpleComponentManager(
         chunk.forEachComponentOfType(type) { entity, component ->
             val position = entity.packedPosition
             action(
+                entity.id,
                 baseX + ChunkCord.unpackX(position),
                 ChunkCord.unpackY(position),
                 baseZ + ChunkCord.unpackZ(position),
