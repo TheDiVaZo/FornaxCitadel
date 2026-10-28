@@ -22,7 +22,7 @@ class ValidatorCoordinator {
      * if all validators abstain or none apply, returns [Result.Neutral].
      * Exceptions from validators propagate to the caller.
      */
-    fun validate(action: Action): Result {
+    fun validate(action: ActionData): Result {
         var result: Result = Result.Neutral
         for (validator in validators) {
             when (validateAction(validator, action)) {
@@ -34,7 +34,7 @@ class ValidatorCoordinator {
         return result
     }
 
-    private fun <T : Action> validateAction(validator: ActionValidator<T>, action: Action): Result {
+    private fun <T : ActionData> validateAction(validator: ActionValidator<T>, action: ActionData): Result {
         val actionClass = validator.actionClass
         if (!actionClass.isInstance(action)) return Result.Neutral
         return validator.validate(actionClass.cast(action))

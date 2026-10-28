@@ -1,5 +1,7 @@
 package ru.fornax.fornaxcitadel.core.facade
 
+import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
@@ -8,6 +10,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
+import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import java.io.DataInput
 import java.io.DataOutput
 import java.util.UUID
@@ -27,6 +30,160 @@ import kotlin.test.assertTrue
 
 class SimpleComponentManagerTest {
     @Test
+    fun `draft creation publishes all components and consumes the draft`() {
+        val fixture = Fixture()
+        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.loadChunk(WORLD, -2, 1).join()
+        val position = CitadelPosition(WORLD, -17, 319, 31)
+        val value = ValueComponent(42)
+        val other = OtherComponent()
+        val draft = MutableCitadelDraft(position).apply {
+            addComponent(ValueComponent::class.java, value)
+            addComponent(OtherComponent::class.java, other)
+        }
+        assertNull(fixture.manager.findCitadel(WORLD, position.x, position.y, position.z))
+
+        assertEquals(ActionResult.SUCCESS, fixture.manager.createCitadel(draft))
+
+        val handle = assertNotNull(fixture.manager.findCitadel(WORLD, position.x, position.y, position.z))
+        assertEquals(position, handle.position)
+        assertTrue(handle.isCurrent)
+        assertSame(value, handle.getComponent(ValueComponent::class.java))
+        assertSame(other, handle.getComponent(OtherComponent::class.java))
+        assertTrue(assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(WORLD, -2, 1))).isDirty)
+        assertFailsWith<IllegalStateException> { draft.getComponent(ValueComponent::class.java) }
+        assertFailsWith<IllegalStateException> { draft.addComponent(ValueComponent::class.java, ValueComponent()) }
+        assertFailsWith<IllegalStateException> { fixture.manager.createCitadel(draft) }
+    }
+
+    @Test
+    fun `draft validation rejects duplicate and mismatched component types without replacing data`() {
+        val draft = MutableCitadelDraft(CitadelPosition(WORLD, 0, 0, 0))
+        val original = ValueComponent(42)
+        draft.addComponent(ValueComponent::class.java, original)
+
+        assertFailsWith<IllegalArgumentException> {
+            draft.addComponent(ValueComponent::class.java, ValueComponent(99))
+        }
+        @Suppress("UNCHECKED_CAST")
+        val incorrectClass = OtherComponent::class.java as Class<Component>
+        assertFailsWith<IllegalArgumentException> {
+            draft.addComponent(incorrectClass, original)
+        }
+        assertSame(original, draft.getComponent(ValueComponent::class.java))
+        assertNull(draft.getComponent(OtherComponent::class.java))
+    }
+
+    @Test
+    fun `creation rejects unavailable positions and validates every component before mutation`() {
+        val fixture = Fixture()
+        val position = CitadelPosition(WORLD, 0, 0, 0)
+        val draft = MutableCitadelDraft(position).apply {
+            addComponent(ValueComponent::class.java, ValueComponent(42))
+        }
+        assertEquals(ActionResult.DENIED, fixture.manager.createCitadel(draft))
+        assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
+        fixture.load()
+
+        draft.addComponent(OtherComponent::class.java, OtherComponent())
+        assertFailsWith<IllegalArgumentException> { fixture.manager.createCitadel(draft) }
+        assertTrue(fixture.chunk().isEmpty)
+        assertFalse(fixture.chunk().isDirty)
+        for (y in listOf(-65, 320)) {
+            val invalidPosition = MutableCitadelDraft(CitadelPosition(WORLD, 0, y, 0))
+            assertFailsWith<IllegalArgumentException> { fixture.manager.createCitadel(invalidPosition) }
+        }
+        assertTrue(fixture.chunk().isEmpty)
+        assertFalse(fixture.chunk().isDirty)
+
+        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        assertEquals(ActionResult.SUCCESS, fixture.manager.createCitadel(draft))
+        fixture.manager.saveAll().join()
+        val handle = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        assertEquals(ActionResult.DENIED, fixture.manager.createCitadel(MutableCitadelDraft(position)))
+        assertTrue(handle.isCurrent)
+        assertEquals(42, assertNotNull(handle.getComponent(ValueComponent::class.java)).value)
+        assertFalse(fixture.chunk().isDirty)
+    }
+
+    @Test
+    fun `put cannot implicitly create a position`() {
+        val fixture = Fixture()
+        fixture.load()
+
+        assertFailsWith<IllegalStateException> {
+            fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, 0, 0, ValueComponent())
+        }
+        assertTrue(fixture.chunk().isEmpty)
+        assertFalse(fixture.chunk().isDirty)
+    }
+
+    @Test
+    fun `stale and foreign handles cannot access or remove a replacement entity`() {
+        val fixture = Fixture()
+        fixture.load()
+        val original = fixture.put(1)
+        val old = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        val foreignManager = SimpleComponentManager(fixture.storage, fixture.types)
+        assertFalse(foreignManager.isCurrent(old))
+        assertFalse(foreignManager.removeCitadel(old))
+        assertTrue(old.isCurrent)
+
+        assertTrue(fixture.manager.removeCitadel(old))
+        val replacement = fixture.put(2)
+        val current = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        fixture.manager.saveAll().join()
+
+        assertFalse(old.isCurrent)
+        assertNull(old.getComponent(ValueComponent::class.java))
+        assertFalse(old.editComponent(ValueComponent::class.java) { error("Stale handle must not invoke callback") })
+        assertFalse(old.markDirty(ValueComponent::class.java, original))
+        assertFalse(fixture.manager.removeCitadel(old))
+        assertTrue(current.isCurrent)
+        assertSame(replacement, current.getComponent(ValueComponent::class.java))
+        assertFalse(fixture.chunk().isDirty)
+    }
+
+    @Test
+    fun `handles expire on unload and cannot affect a restored entity`() {
+        val fixture = Fixture()
+        fixture.load()
+        fixture.put(42)
+        val old = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        fixture.manager.unloadChunk(WORLD, 0, 0).join()
+        assertFalse(old.isCurrent)
+        fixture.load()
+
+        assertFalse(old.isCurrent)
+        assertFalse(fixture.manager.removeCitadel(old))
+        assertNull(old.getComponent(ValueComponent::class.java))
+        val current = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        assertTrue(current.isCurrent)
+        assertEquals(42, assertNotNull(current.getComponent(ValueComponent::class.java)).value)
+        assertFalse(fixture.chunk().isDirty)
+    }
+
+    @Test
+    fun `handle edits mark partial mutations dirty when the callback fails`() {
+        val fixture = Fixture()
+        fixture.load()
+        fixture.put(1)
+        val handle = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        fixture.manager.saveAll().join()
+
+        assertFailsWith<IllegalStateException> {
+            handle.editComponent(ValueComponent::class.java) {
+                it.value = 2
+                error("Failed after mutation")
+            }
+        }
+
+        assertTrue(fixture.chunk().isDirty)
+        fixture.manager.saveAll().join()
+        assertEquals(2, fixture.savedValue())
+    }
+
+    @Test
     fun `iteration selects the type and chunk and exposes citadel ids and global coordinates with live components`() {
         val fixture = Fixture()
         val otherWorld = UUID(3L, 4L)
@@ -36,12 +193,12 @@ class SimpleComponentManagerTest {
         fixture.manager.loadChunk(otherWorld, -2, 1).join()
         val first = ValueComponent(1)
         val second = ValueComponent(2)
-        fixture.manager.putComponent(ValueComponent::class.java, WORLD, -32, -64, 16, first)
-        fixture.manager.putComponent(ValueComponent::class.java, WORLD, -17, 319, 31, second)
-        fixture.manager.putComponent(OtherComponent::class.java, WORLD, -17, 319, 31, OtherComponent())
-        fixture.manager.putComponent(OtherComponent::class.java, WORLD, -30, 20, 19, OtherComponent())
-        fixture.manager.putComponent(ValueComponent::class.java, WORLD, -16, 0, 16, ValueComponent(3))
-        fixture.manager.putComponent(ValueComponent::class.java, otherWorld, -32, -64, 16, ValueComponent(4))
+        fixture.putComponent(ValueComponent::class.java, WORLD, -32, -64, 16, first)
+        fixture.putComponent(ValueComponent::class.java, WORLD, -17, 319, 31, second)
+        fixture.putComponent(OtherComponent::class.java, WORLD, -17, 319, 31, OtherComponent())
+        fixture.putComponent(OtherComponent::class.java, WORLD, -30, 20, 19, OtherComponent())
+        fixture.putComponent(ValueComponent::class.java, WORLD, -16, 0, 16, ValueComponent(3))
+        fixture.putComponent(ValueComponent::class.java, otherWorld, -32, -64, 16, ValueComponent(4))
         fixture.manager.saveAll().join()
         val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(WORLD, -2, 1)))
         val visited = mutableListOf<Pair<Triple<Int, Int, Int>, ValueComponent>>()
@@ -69,7 +226,7 @@ class SimpleComponentManagerTest {
         fixture.load()
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, action)
         fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
-        fixture.manager.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
+        fixture.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, action)
     }
 
@@ -91,15 +248,15 @@ class SimpleComponentManagerTest {
         )
         val components = positions.mapIndexed { index, position -> position to ValueComponent(index) }.toMap()
         for ((position, component) in components) {
-            fixture.manager.putComponent(ValueComponent::class.java, WORLD, position.first, position.second, position.third, component)
+            fixture.putComponent(ValueComponent::class.java, WORLD, position.first, position.second, position.third, component)
         }
         for (y in listOf(-43, -37)) {
-            fixture.manager.putComponent(ValueComponent::class.java, WORLD, -32, y, 16, ValueComponent(99))
+            fixture.putComponent(ValueComponent::class.java, WORLD, -32, y, 16, ValueComponent(99))
         }
-        fixture.manager.putComponent(OtherComponent::class.java, WORLD, -32, -40, 16, OtherComponent())
-        fixture.manager.putComponent(OtherComponent::class.java, WORLD, -30, -40, 19, OtherComponent())
-        fixture.manager.putComponent(ValueComponent::class.java, WORLD, -16, -40, 16, ValueComponent(99))
-        fixture.manager.putComponent(ValueComponent::class.java, otherWorld, -32, -40, 16, ValueComponent(99))
+        fixture.putComponent(OtherComponent::class.java, WORLD, -32, -40, 16, OtherComponent())
+        fixture.putComponent(OtherComponent::class.java, WORLD, -30, -40, 19, OtherComponent())
+        fixture.putComponent(ValueComponent::class.java, WORLD, -16, -40, 16, ValueComponent(99))
+        fixture.putComponent(ValueComponent::class.java, otherWorld, -32, -40, 16, ValueComponent(99))
         fixture.manager.saveAll().join()
         val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(WORLD, -2, 1)))
         val visited = mutableListOf<Triple<Int, Int, Int>>()
@@ -122,7 +279,7 @@ class SimpleComponentManagerTest {
         fixture.load()
         val positions = listOf(Triple(0, 11, 0), Triple(0, 12, 0), Triple(15, 12, 15), Triple(0, 13, 0))
         for (position in positions) {
-            fixture.manager.putComponent(ValueComponent::class.java, WORLD, position.first, position.second, position.third, ValueComponent())
+            fixture.putComponent(ValueComponent::class.java, WORLD, position.first, position.second, position.third, ValueComponent())
         }
         val visited = mutableListOf<Triple<Int, Int, Int>>()
 
@@ -139,7 +296,7 @@ class SimpleComponentManagerTest {
         val fixture = Fixture()
         fixture.load()
         for (y in listOf(-64, -63, -62, -61, 316, 317, 318, 319)) {
-            fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, y, 0, ValueComponent())
+            fixture.putComponent(ValueComponent::class.java, WORLD, 0, y, 0, ValueComponent())
         }
 
         for ((center, expected) in listOf(-64 to listOf(-64, -63, -62), 319 to listOf(319, 318, 317))) {
@@ -157,7 +314,7 @@ class SimpleComponentManagerTest {
         val fixture = Fixture()
         fixture.load()
         for (y in listOf(-64, -1, 0, 1, 319)) {
-            fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, y, 0, ValueComponent())
+            fixture.putComponent(ValueComponent::class.java, WORLD, 0, y, 0, ValueComponent())
         }
 
         val cases = listOf(
@@ -217,9 +374,9 @@ class SimpleComponentManagerTest {
         fixture.load()
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
         fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
-        fixture.manager.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
+        fixture.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
-        fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, 20, 0, ValueComponent())
+        fixture.putComponent(ValueComponent::class.java, WORLD, 0, 20, 0, ValueComponent())
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
     }
 
@@ -236,7 +393,7 @@ class SimpleComponentManagerTest {
             assertNull(fixture.manager.loadChunk(WORLD, chunkX, chunkZ).join())
             val component = ValueComponent(index)
 
-            fixture.manager.putComponent(ValueComponent::class.java, WORLD, x, y, z, component)
+            fixture.putComponent(ValueComponent::class.java, WORLD, x, y, z, component)
 
             val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(WORLD, chunkX, chunkZ)))
             val entity = assertNotNull(chunk.getCitadel(Math.floorMod(x, 16), y, Math.floorMod(z, 16)))
@@ -257,10 +414,10 @@ class SimpleComponentManagerTest {
         val replacement = ValueComponent(2)
         val other = OtherComponent()
         val foreign = ValueComponent(3)
-        fixture.manager.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, other)
-        fixture.manager.putComponent(ValueComponent::class.java, otherWorld, 0, 0, 0, foreign)
+        fixture.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, other)
+        fixture.putComponent(ValueComponent::class.java, otherWorld, 0, 0, 0, foreign)
 
-        assertSame(first, fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, 0, 0, replacement))
+        assertSame(first, fixture.putComponent(ValueComponent::class.java, WORLD, 0, 0, 0, replacement))
         assertSame(replacement, fixture.current())
         assertSame(replacement, fixture.manager.removeComponent(ValueComponent::class.java, WORLD, 0, 0, 0))
         assertNull(fixture.current())
@@ -432,7 +589,7 @@ class SimpleComponentManagerTest {
             fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
             fixture.load()
             fixture.put(1).writeFailure = IllegalStateException("Cannot serialize")
-            fixture.manager.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
+            fixture.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
 
             val saving = if (close) fixture.manager.closeAndSaveAll()
                 else fixture.manager.unloadChunk(WORLD, 0, 0)
@@ -477,7 +634,16 @@ class SimpleComponentManagerTest {
         fun load() { manager.loadChunk(WORLD, 0, 0).join() }
 
         fun put(value: Int): ValueComponent = ValueComponent(value).also {
-            manager.putComponent(ValueComponent::class.java, WORLD, 0, 0, 0, it)
+            putComponent(ValueComponent::class.java, WORLD, 0, 0, 0, it)
+        }
+
+        fun <T : Component> putComponent(
+            componentClass: Class<T>, world: UUID, x: Int, y: Int, z: Int, component: T
+        ): T? {
+            if (manager.findCitadel(world, x, y, z) == null) {
+                check(manager.createCitadel(MutableCitadelDraft(CitadelPosition(world, x, y, z))) == ActionResult.SUCCESS)
+            }
+            return manager.putComponent(componentClass, world, x, y, z, component)
         }
 
         fun current(): ValueComponent? = manager.getComponent(ValueComponent::class.java, WORLD, 0, 0, 0)

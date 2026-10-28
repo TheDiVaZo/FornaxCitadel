@@ -1,11 +1,14 @@
 package ru.fornax.fornaxcitadel.core.facade
 
+import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
 import ru.fornax.fornaxcitadel.core.component.ComponentType
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.pool.WXZCordPool
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
+import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
@@ -29,6 +32,79 @@ class SimpleComponentManager(
     /** Register before loading chunks. Does not decode opaque data in already loaded chunks. */
     fun <T : Component> registerComponent(namespace: String, key: String, componentClass: Class<T>) {
         typeManager.registerType(Key(namespace, key), componentClass)
+    }
+
+    /**
+     * Low-level creation used by the placement service after its validators and initializers.
+     * All types are checked before insertion. A successful call consumes the draft and marks
+     * the loaded chunk dirty. This method does not publish gameplay lifecycle notifications.
+     */
+    fun createCitadel(draft: MutableCitadelDraft): ActionResult {
+        val prepared = draft.componentsForCommit().map { (componentClass, component) ->
+            prepareComponent(componentClass, component)
+        }
+        val position = draft.position
+        val chunk = findChunk(position.world, position.x, position.y, position.z)
+            ?: return ActionResult.DENIED
+        if (chunk.getCitadel(position.x and 15, position.y, position.z and 15) != null) {
+            return ActionResult.DENIED
+        }
+
+        val entity = chunk.putCitadel(position.x and 15, position.y, position.z and 15)
+        try {
+            for ((type, component) in prepared) chunk.putComponent(entity, type, component)
+            draft.markCommitted()
+        } catch (failure: Exception) {
+            chunk.removeCitadel(position.x and 15, position.y, position.z and 15)
+            throw failure
+        }
+        return ActionResult.SUCCESS
+    }
+
+    fun findCitadel(world: UUID, x: Int, y: Int, z: Int): CitadelHandle? {
+        val chunk = findChunk(world, x, y, z) ?: return null
+        val entity = chunk.getCitadel(x and 15, y, z and 15) ?: return null
+        return CitadelHandle(this, chunk, entity, CitadelPosition(world, x, y, z))
+    }
+
+    /** False for a handle owned by a different manager, removed entity, or unloaded chunk. */
+    fun isCurrent(handle: CitadelHandle): Boolean {
+        if (handle.manager !== this) return false
+        val chunk = findChunk(handle.world, handle.x, handle.y, handle.z) ?: return false
+        return chunk === handle.chunk &&
+            chunk.getCitadel(handle.x and 15, handle.y, handle.z and 15) === handle.entity
+    }
+
+    /** Removes only the original entity. A replacement at the same position is left untouched. */
+    fun removeCitadel(handle: CitadelHandle): Boolean {
+        if (!isCurrent(handle)) return false
+        return handle.chunk.removeCitadel(handle.x and 15, handle.y, handle.z and 15) != null
+    }
+
+    internal fun <T : Component> getComponent(handle: CitadelHandle, componentClass: Class<T>): T? {
+        val type = requireType(componentClass)
+        if (!isCurrent(handle)) return null
+        return handle.chunk.getComponent(handle.entity, type)
+    }
+
+    internal fun <T : Component> editComponent(
+        handle: CitadelHandle, componentClass: Class<T>, action: (T) -> Unit
+    ): Boolean {
+        val component = getComponent(handle, componentClass) ?: return false
+        try {
+            action(component)
+        } finally {
+            handle.chunk.markDirty()
+        }
+        return true
+    }
+
+    internal fun <T : Component> markDirty(
+        handle: CitadelHandle, componentClass: Class<T>, component: T
+    ): Boolean {
+        if (getComponent(handle, componentClass) !== component) return false
+        handle.chunk.markDirty()
+        return true
     }
 
     /** Returns the live instance, or null if the chunk, position, or component is absent. */
@@ -113,8 +189,9 @@ class SimpleComponentManager(
     }
 
     /**
-     * Inserts a live instance, creating the position if necessary, and returns the previous one.
-     * The chunk must already be loaded. Marks the chunk dirty; does not immediately save it.
+     * Inserts a live instance into an existing position and returns the previous one.
+     * The chunk and position must already exist. Use the placement service to create a citadel.
+     * Marks the chunk dirty; does not immediately save it.
      */
     fun <T : Component> putComponent(
         componentClass: Class<T>, world: UUID, x: Int, y: Int, z: Int, component: T
@@ -126,8 +203,9 @@ class SimpleComponentManager(
         val chunk = checkNotNull(findChunk(world, x, y, z)) {
             "Chunk $world [${x shr 4}, ${z shr 4}] is not loaded"
         }
-        val entity = chunk.getCitadel(x and 15, y, z and 15)
-            ?: chunk.putCitadel(x and 15, y, z and 15)
+        val entity = checkNotNull(chunk.getCitadel(x and 15, y, z and 15)) {
+            "Citadel $world [$x, $y, $z] does not exist"
+        }
         return chunk.putComponent(entity, type, component)
     }
 
@@ -207,6 +285,16 @@ class SimpleComponentManager(
         return requireNotNull(typeManager.getType(componentClass)) {
             "Component ${componentClass.name} is not registered"
         }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun prepareComponent(
+        componentClass: Class<out Component>, component: Component
+    ): Pair<ComponentType<Component>, Component> {
+        require(componentClass.isInstance(component)) {
+            "Component ${component.javaClass.name} does not match ${componentClass.name}"
+        }
+        return requireType(componentClass as Class<Component>) to component
     }
 
     private fun findChunk(world: UUID, x: Int, y: Int, z: Int): ChunkCord? {

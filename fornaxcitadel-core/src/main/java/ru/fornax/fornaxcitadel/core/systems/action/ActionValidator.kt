@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.core.systems.action
 
-interface ActionValidator<T : Action> {
+interface ActionValidator<T : ActionData> {
     val actionClass: Class<T>
 
     fun validate(action: T): Result

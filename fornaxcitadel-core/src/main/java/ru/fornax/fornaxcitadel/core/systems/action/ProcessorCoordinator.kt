@@ -3,7 +3,7 @@ package ru.fornax.fornaxcitadel.core.systems.action
 import ru.fornax.fornaxcitadel.core.util.Key
 
 /**
- * Routes actions by [Action.type] and executes processors synchronously on the calling thread.
+ * Routes actions by [ActionData.type] and executes processors synchronously on the calling thread.
  * Not thread-safe; use on the owning game thread, like the processors' component manager.
  */
 class ProcessorCoordinator {
@@ -21,16 +21,16 @@ class ProcessorCoordinator {
     fun getProcessor(actionKey: Key): ActionProcessor<*>? = processors[actionKey]
 
     /**
-     * Returns the processor's result, or false if no processor is registered for [action].
+     * Returns the processor's result, or [ActionResult.DENIED] if none is registered.
      * Throws [IllegalArgumentException] if the action's class does not match the processor's type.
      * Exceptions from the processor propagate to the caller.
      */
-    fun execute(action: Action): Boolean {
-        val processor = getProcessor(action.type) ?: return false
+    fun execute(action: ActionData): ActionResult {
+        val processor = getProcessor(action.type) ?: return ActionResult.DENIED
         return executeProcessor(processor, action)
     }
 
-    private fun <T : Action> executeProcessor(processor: ActionProcessor<T>, action: Action): Boolean {
+    private fun <T : ActionData> executeProcessor(processor: ActionProcessor<T>, action: ActionData): ActionResult {
         require(processor.actionClass.isInstance(action)) {
             "Action ${action.javaClass.name} does not match ${processor.actionClass.name} for key ${action.type}"
         }

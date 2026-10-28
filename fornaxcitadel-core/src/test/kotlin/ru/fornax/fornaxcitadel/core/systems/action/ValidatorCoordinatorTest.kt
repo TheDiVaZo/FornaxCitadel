@@ -9,7 +9,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
 
 class ValidatorCoordinatorTest {
-    private val action = Action(Key("test", "action"), UUID(0L, 0L), 1, 2, 3)
+    private val action = ActionData(Key("test", "action"), UUID(0L, 0L), 1, 2, 3)
 
     @Test
     fun `no compatible validators produces neutral without invoking unrelated validators`() {
@@ -28,7 +28,7 @@ class ValidatorCoordinatorTest {
         val coordinator = ValidatorCoordinator()
         var calls = 0
         repeat(2) {
-            coordinator.registerValidator(validator(Action::class.java) {
+            coordinator.registerValidator(validator(ActionData::class.java) {
                 calls++
                 Result.Neutral
             })
@@ -48,7 +48,7 @@ class ValidatorCoordinatorTest {
             val coordinator = ValidatorCoordinator()
             val visited = mutableListOf<Result>()
             for (result in results) {
-                coordinator.registerValidator(validator(Action::class.java) {
+                coordinator.registerValidator(validator(ActionData::class.java) {
                     visited.add(result)
                     result
                 })
@@ -64,7 +64,7 @@ class ValidatorCoordinatorTest {
         val coordinator = ValidatorCoordinator()
         val visited = mutableListOf<Result>()
         for (result in listOf(Result.Success, Result.Rejected, Result.Success)) {
-            coordinator.registerValidator(validator(Action::class.java) {
+            coordinator.registerValidator(validator(ActionData::class.java) {
                 visited.add(result)
                 result
             })
@@ -79,7 +79,7 @@ class ValidatorCoordinatorTest {
         val coordinator = ValidatorCoordinator()
         val special = SpecialAction()
         val visited = mutableListOf<String>()
-        coordinator.registerValidator(validator(Action::class.java) {
+        coordinator.registerValidator(validator(ActionData::class.java) {
             assertSame(special, it)
             visited.add("base")
             Result.Neutral
@@ -99,8 +99,8 @@ class ValidatorCoordinatorTest {
         val coordinator = ValidatorCoordinator()
         var firstCalls = 0
         var secondCalls = 0
-        val first = validator(Action::class.java) { firstCalls++; Result.Neutral }
-        val second = validator(Action::class.java) { secondCalls++; Result.Success }
+        val first = validator(ActionData::class.java) { firstCalls++; Result.Neutral }
+        val second = validator(ActionData::class.java) { secondCalls++; Result.Success }
         coordinator.registerValidator(first)
         coordinator.registerValidator(second)
         coordinator.registerValidator(first)
@@ -114,12 +114,12 @@ class ValidatorCoordinatorTest {
     fun `validator exceptions propagate unchanged`() {
         val coordinator = ValidatorCoordinator()
         val failure = IllegalStateException("Validation failed unexpectedly")
-        coordinator.registerValidator(validator(Action::class.java) { throw failure })
+        coordinator.registerValidator(validator(ActionData::class.java) { throw failure })
 
         assertSame(failure, assertFailsWith<IllegalStateException> { coordinator.validate(action) })
     }
 
-    private fun <T : Action> validator(
+    private fun <T : ActionData> validator(
         actionClass: Class<T>,
         validate: (T) -> Result
     ): ActionValidator<T> = object : ActionValidator<T> {
@@ -127,5 +127,5 @@ class ValidatorCoordinatorTest {
         override fun validate(action: T): Result = validate.invoke(action)
     }
 
-    private class SpecialAction : Action(Key("test", "special"), UUID(0L, 0L), 1, 2, 3)
+    private class SpecialAction : ActionData(Key("test", "special"), UUID(0L, 0L), 1, 2, 3)
 }
