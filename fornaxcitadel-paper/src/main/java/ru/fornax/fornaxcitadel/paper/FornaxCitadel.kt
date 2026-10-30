@@ -8,6 +8,15 @@ import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
+import ru.fornax.fornaxcitadel.paper.material.CitadelItems
+import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
+import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
+import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.CreativeModeDamageModifier
+import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.NerfingNewcomersModifier
+import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
+import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import ru.fornax.fornaxcitadel.paper.storage.PaperChunkListener
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
@@ -15,6 +24,16 @@ import java.util.concurrent.Executor
 import java.util.logging.Level
 
 class FornaxCitadel : JavaPlugin() {
+    /** Register material providers and placement bindings on the server's main thread after enable. */
+    lateinit var materials: CombineMaterialRegistry
+        private set
+    lateinit var placement: PaperPlacementService
+        private set
+    lateinit var citadelTypes: PaperCitadelTypes
+        private set
+    /** Additional player damage modifiers can be registered on the main thread after enable. */
+    lateinit var playerDamage: PlayerDamageModifierService
+        private set
     private var schedulerAdapter: PaperScheduler? = null
     private var chunkListener: PaperChunkListener? = null
 
@@ -32,21 +51,38 @@ class FornaxCitadel : JavaPlugin() {
             // Do not replace this executor with a worker pool without redesigning chunk unload.
             val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor { it.run() })
             val manager = SimpleComponentManager(storage, types)
-            val permissions = PaperPermissionValidator(server, settings)
+            citadelTypes = PaperCitadelTypes(settings.citadelTypes)
+            val permissions = PaperPermissionValidator(server, citadelTypes)
             val module = CitadelModule(manager, RemovalPolicy { context, _ -> permissions.canAdminister(context) })
-            PaperCitadelTypes.register(module, settings)
+            citadelTypes.register(module)
             module.actions.validatorCoordinator.registerValidator(permissions)
 
             val chunks = PaperChunkListener(this, manager, backend).also { chunkListener = it }
-            val items = CitadelItems(this)
-            val commands = CitadelCommand(this, manager, module, items, chunks::saveAll)
+            val items = CitadelItems(this, citadelTypes)
+            materials = CombineMaterialRegistry("fornaxcitadel" to items)
+            placement = PaperPlacementService(materials, settings.placement)
+            citadelTypes.keys.forEach { type ->
+                placement.registerMaterial(requireNotNull(citadelTypes.itemKey(type)), type)
+            }
+            val commands = CitadelCommand(this, manager, module, materials, citadelTypes, chunks::saveAll)
             requireNotNull(getCommand("citadel")) { "The citadel command is missing from plugin.yml" }.apply {
                 setExecutor(commands)
                 tabCompleter = commands
             }
             server.pluginManager.registerEvents(chunks, this)
-            server.pluginManager.registerEvents(PaperPlayerListener(this, manager, module, items, settings.damagePerBreak), this)
-            server.pluginManager.registerEvents(PaperEnvironmentListener(manager), this)
+            placement.init(this, module)
+            playerDamage = PlayerDamageModifierService().apply {
+                if (settings.playerDamage.newcomersEnabled) {
+                    register(NerfingNewcomersModifier(
+                        settings.playerDamage.newcomerFirstJoin,
+                        settings.playerDamage.newcomerPlayTimeTicks
+                    ))
+                }
+                if (settings.playerDamage.creativeModeEnabled) register(CreativeModeDamageModifier())
+            }
+            PaperBreakingService(playerDamage).init(this, module)
+            PaperExplosionService(settings.explosionPowers).init(this, module)
+            PaperEnvironmentService().init(this, module)
             chunks.loadAlreadyLoadedChunks()
 
             server.scheduler.runTaskTimer(this, Runnable {

@@ -20,11 +20,11 @@ permissions:
     description: Установка укрепления предметом
     default: true
   fornaxcitadel.damage:
-    description: Попытка разрушить укрепление или разобрать собственное
+    description: Нанесение урона укреплению
     default: true
   fornaxcitadel.info:
     description: Просмотр укрепления под прицелом
     default: true
   fornaxcitadel.admin:
-    description: Выдача предметов, установка dev-типов и административное удаление
+    description: Выдача предметов, установка неуязвимых укреплений и административное удаление
     default: op

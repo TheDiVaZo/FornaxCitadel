@@ -5,6 +5,7 @@ import org.bukkit.event.world.ChunkLoadEvent
 import org.bukkit.event.world.ChunkUnloadEvent
 import org.bukkit.event.world.WorldUnloadEvent
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
+import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
@@ -14,12 +15,10 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.breaking.DamageBreakPolicy
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
-import ru.fornax.fornaxcitadel.modules.ownership.Owner
-import ru.fornax.fornaxcitadel.modules.ownership.OwnerInitializer
-import ru.fornax.fornaxcitadel.modules.ownership.OwnerOrDamagePolicy
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.storage.PaperChunkListener
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
@@ -41,7 +40,7 @@ class PaperChunkPersistenceTest {
         val fixture = Fixture()
         fixture.listener.loadAlreadyLoadedChunks()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
-            fixture.paper.context(fixture.paper.owner), fixture.paper.position, PaperCitadelTypes.REINFORCED
+            fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         val event = WorldUnloadEvent(fixture.paper.world)
 
@@ -62,7 +61,7 @@ class PaperChunkPersistenceTest {
         val fixture = Fixture()
         fixture.listener.loadAlreadyLoadedChunks()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
-            fixture.paper.context(fixture.paper.owner), fixture.paper.position, PaperCitadelTypes.REINFORCED
+            fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         val event = WorldUnloadEvent(fixture.paper.world)
         dispatch(fixture.listener, event, fixture.paper.plugin)
@@ -72,7 +71,8 @@ class PaperChunkPersistenceTest {
         fixture.paper.runScheduledTasks()
 
         val restored = assertNotNull(fixture.manager.findCitadel(fixture.paper.worldId, 1, 64, 2))
-        assertEquals(fixture.paper.owner.id, restored.getComponent(Owner::class.java)?.playerId)
+        assertEquals(PaperCitadelTypes.REINFORCED, restored.getComponent(CitadelKind::class.java)?.definitionKey)
+        assertEquals(100.0, restored.getComponent(Health::class.java)?.health)
         assertEquals(1, fixture.backend.registeredChunks(fixture.paper.worldId).size)
     }
 
@@ -87,11 +87,11 @@ class PaperChunkPersistenceTest {
     }
 
     @Test
-    fun `dirty unload synchronously writes PDC before unregister and reload restores owner and damage`() {
+    fun `dirty unload synchronously writes PDC before unregister and reload restores type and damage`() {
         val fixture = Fixture()
         fixture.listener.loadAlreadyLoadedChunks()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
-            fixture.paper.context(fixture.paper.owner), fixture.paper.position, PaperCitadelTypes.REINFORCED
+            fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(DamageAction(
             fixture.paper.context(fixture.paper.stranger), fixture.paper.position, 25.0
@@ -110,7 +110,7 @@ class PaperChunkPersistenceTest {
         fixture.listener.onLoad(ChunkLoadEvent(fixture.paper.chunk, false))
 
         val restored = assertNotNull(fixture.manager.findCitadel(fixture.paper.worldId, 1, 64, 2))
-        assertEquals(fixture.paper.owner.id, restored.getComponent(Owner::class.java)?.playerId)
+        assertEquals(PaperCitadelTypes.REINFORCED, restored.getComponent(CitadelKind::class.java)?.definitionKey)
         assertEquals(75.0, restored.getComponent(Health::class.java)?.health)
         assertFalse(fixture.backend.hasPendingChunkSave(fixture.paper.chunk))
     }
@@ -157,7 +157,7 @@ class PaperChunkPersistenceTest {
         val fixture = Fixture()
         fixture.listener.loadAlreadyLoadedChunks()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
-            fixture.paper.context(fixture.paper.owner), fixture.paper.position, PaperCitadelTypes.REINFORCED
+            fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         fixture.paper.enabled = false
 
@@ -198,7 +198,7 @@ class PaperChunkPersistenceTest {
         val fixture = Fixture()
         fixture.listener.loadAlreadyLoadedChunks()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
-            fixture.paper.context(fixture.paper.owner), fixture.paper.position, PaperCitadelTypes.REINFORCED
+            fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         fixture.listener.saveAll()
         val newWrapper = fixture.paper.chunkWrapper()
@@ -239,8 +239,8 @@ class PaperChunkPersistenceTest {
 
         init {
             module.registerDefinition(
-                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(OwnerInitializer())),
-                OwnerOrDamagePolicy,
+                CitadelDefinition(PaperCitadelTypes.REINFORCED, emptyList()),
+                DamageBreakPolicy,
                 SimpleHealthBehavior(100.0)
             )
         }

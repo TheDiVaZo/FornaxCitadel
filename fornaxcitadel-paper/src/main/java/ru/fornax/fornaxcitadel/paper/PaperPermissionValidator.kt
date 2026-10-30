@@ -10,11 +10,12 @@ import ru.fornax.fornaxcitadel.modules.breaking.BreakAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionDamageAction
 
 /** Platform permissions are checked for every request, including commands and posted actions. */
 class PaperPermissionValidator(
     private val server: Server,
-    private val settings: PaperSettings
+    private val citadelTypes: PaperCitadelTypes
 ) : ActionValidator<ActionData> {
     override val actionClass = ActionData::class.java
 
@@ -25,14 +26,18 @@ class PaperPermissionValidator(
 
     override fun validate(action: ActionData): ActionValidator.Result {
         val permission = when (action) {
+            // Environmental eligibility is typed; context.source is attribution, not permission.
+            is ExplosionDamageAction -> null
             is PlaceAction -> "fornaxcitadel.place"
             is BreakAction, is DamageAction -> "fornaxcitadel.damage"
             is RemoveAction -> "fornaxcitadel.admin"
             else -> return ActionValidator.Result.Neutral
         }
-        val player = action.context.actorId?.let(server::getPlayer) ?: return ActionValidator.Result.Rejected
-        if (!player.isOnline || player.gameMode == GameMode.SPECTATOR || !player.hasPermission(permission)) {
-            return ActionValidator.Result.Rejected
+        if (permission != null) {
+            val player = action.context.actorId?.let(server::getPlayer) ?: return ActionValidator.Result.Rejected
+            if (!player.isOnline || player.gameMode == GameMode.SPECTATOR || !player.hasPermission(permission)) {
+                return ActionValidator.Result.Rejected
+            }
         }
         if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) {
             return ActionValidator.Result.Rejected
@@ -42,10 +47,7 @@ class PaperPermissionValidator(
             return ActionValidator.Result.Rejected
         }
         if (action is PlaceAction) {
-            if (PaperCitadelTypes.requiresAdmin(action.definitionKey) && !canAdminister(action.context)) {
-                return ActionValidator.Result.Rejected
-            }
-            if (world.getBlockAt(action.citadelX, action.citadelY, action.citadelZ).type !in settings.allowedBlocks) {
+            if (citadelTypes.requiresAdmin(action.definitionKey) && !canAdminister(action.context)) {
                 return ActionValidator.Result.Rejected
             }
         }

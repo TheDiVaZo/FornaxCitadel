@@ -7,34 +7,110 @@ actions:
 storage:
   save-interval-ticks: 1200
 
-damage-per-break: 1.0
+# Every player hit starts at 1 damage before applying player-specific modifiers.
+player-damage:
+  # Creative hits remove damageable reinforcement, while permissions still apply.
+  creative-mode: true
+  newcomers:
+    enabled: false
+    # Damage grows from 10% to 100%; reaching either threshold restores full damage.
+    first-join-hours: 48
+    play-time-hours: 12
 
-health:
-  reinforced: [20.0, 40.0, 80.0]
+# Entity power comes from ExplosionPrimeEvent; this value is its fallback.
+explosions:
+  default-entity-power: 4.0
+  default-block-power: 4.0
+  # Defaults for beds and respawn anchors. Other materials can be added.
+  block-powers:
+    RESPAWN_ANCHOR: 5.0
+    STRAW_BED: 5.0
+    WHITE_BED: 5.0
+    ORANGE_BED: 5.0
+    MAGENTA_BED: 5.0
+    LIGHT_BLUE_BED: 5.0
+    YELLOW_BED: 5.0
+    LIME_BED: 5.0
+    PINK_BED: 5.0
+    GRAY_BED: 5.0
+    LIGHT_GRAY_BED: 5.0
+    CYAN_BED: 5.0
+    PURPLE_BED: 5.0
+    BLUE_BED: 5.0
+    BROWN_BED: 5.0
+    GREEN_BED: 5.0
+    RED_BED: 5.0
+    BLACK_BED: 5.0
+
+citadel-types:
+  # IDs become fornaxcitadel:<id> and are used by items, commands and saved citadels.
+  # Changing behavior or deleting IDs does not migrate existing citadel data.
+  # break-policy defaults to damage, which requires a health behavior.
+  # item is required and must be unique across types. Bare keys use minecraft (e.g. diamond).
+  # fornaxcitadel:<id> selects a built-in tagged item; other namespaces use registered material providers.
+  reinforced_light:
+    item: fornaxcitadel:reinforced_light
+    health:
+      behavior: simple
+      max: 10.0
+  reinforced:
+    item: fornaxcitadel:reinforced
+    health:
+      behavior: simple
+      max: 20.0
+  reinforced_heavy:
+    item: fornaxcitadel:reinforced_heavy
+    health:
+      behavior: simple
+      max: 30.0
+  maturing_fast:
+    item: fornaxcitadel:maturing_fast
+    health:
+      behavior: maturing
+      initial: 10.0
+      mature: 20.0
+      duration-seconds: 300
   maturing:
-    initial: 10.0
-    mature: 40.0
-    duration-seconds: 600
-  dev: 20.0
+    item: fornaxcitadel:maturing
+    health:
+      behavior: maturing
+      initial: 10.0
+      mature: 40.0
+      duration-seconds: 600
+  maturing_strong:
+    item: fornaxcitadel:maturing_strong
+    health:
+      behavior: maturing
+      initial: 20.0
+      mature: 80.0
+      duration-seconds: 1800
+  invulnerable:
+    item: fornaxcitadel:invulnerable
+    # Unbreakable types require administrator permission to install.
+    break-policy: unbreakable
 
-# Supported durable full blocks. Containers, gravity and multipart blocks
-# require additional lifecycle handling and are not accepted by this prototype.
-allowed-blocks:
-  - STONE
-  - COBBLESTONE
-  - STONE_BRICKS
-  - DEEPSLATE
-  - COBBLED_DEEPSLATE
-  - DEEPSLATE_BRICKS
-  - BRICKS
-  - OBSIDIAN
-  - CRYING_OBSIDIAN
-  - BLACKSTONE
-  - POLISHED_BLACKSTONE
-  - NETHER_BRICKS
-  - END_STONE
-  - IRON_BLOCK
-  - GOLD_BLOCK
-  - DIAMOND_BLOCK
-  - EMERALD_BLOCK
-  - NETHERITE_BLOCK
+placement:
+  # Solid blocks only; pistons and piston parts are always rejected.
+  block-list:
+    # WHITELIST permits only listed materials; BLACKLIST permits everything except them.
+    type: WHITELIST
+    # Uses material registry identities. Plugin materials use their own namespace, e.g. otherplugin:stone.
+    blocks:
+      - minecraft:stone
+      - minecraft:cobblestone
+      - minecraft:stone_bricks
+      - minecraft:deepslate
+      - minecraft:cobbled_deepslate
+      - minecraft:deepslate_bricks
+      - minecraft:bricks
+      - minecraft:obsidian
+      - minecraft:crying_obsidian
+      - minecraft:blackstone
+      - minecraft:polished_blackstone
+      - minecraft:nether_bricks
+      - minecraft:end_stone
+      - minecraft:iron_block
+      - minecraft:gold_block
+      - minecraft:diamond_block
+      - minecraft:emerald_block
+      - minecraft:netherite_block

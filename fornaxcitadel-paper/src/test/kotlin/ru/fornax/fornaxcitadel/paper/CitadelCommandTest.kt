@@ -13,14 +13,14 @@ class CitadelCommandTest {
     @Test
     fun `admin commands reject unauthorized callers before target lookup or save`() {
         val fixture = PaperTestFixture(permissions = true)
-        fixture.owner.target = fixture.block()
+        fixture.installer.target = fixture.block()
         var saves = 0
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.items) { saves++ }
+        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.materials, fixture.citadelTypes) { saves++ }
 
-        commands.onCommand(fixture.owner.player, TestCommand, "citadel", arrayOf("place", "dev"))
-        commands.onCommand(fixture.owner.player, TestCommand, "citadel", arrayOf("save"))
+        commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "invulnerable"))
+        commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("save"))
 
-        assertEquals(0, fixture.owner.targetLookups)
+        assertEquals(0, fixture.installer.targetLookups)
         assertEquals(0, saves)
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
     }
@@ -28,15 +28,15 @@ class CitadelCommandTest {
     @Test
     fun `admin target placement and removal go through core and leave the block intact`() {
         val fixture = PaperTestFixture(permissions = true)
-        fixture.owner.permissions.add("fornaxcitadel.admin")
-        fixture.owner.target = fixture.block()
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.items) {}
+        fixture.installer.permissions.add("fornaxcitadel.admin")
+        fixture.installer.target = fixture.block()
+        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.materials, fixture.citadelTypes) {}
 
-        commands.onCommand(fixture.owner.player, TestCommand, "citadel", arrayOf("place", "dev"))
+        commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "invulnerable"))
 
         val placed = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-        assertEquals(PaperCitadelTypes.DEV, placed.getComponent(CitadelKind::class.java)?.definitionKey)
-        commands.onCommand(fixture.owner.player, TestCommand, "citadel", arrayOf("remove"))
+        assertEquals(PaperCitadelTypes.INVULNERABLE, placed.getComponent(CitadelKind::class.java)?.definitionKey)
+        commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("remove"))
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(0, fixture.vanillaBlockChanges)
     }
@@ -44,15 +44,15 @@ class CitadelCommandTest {
     @Test
     fun `missing target and invalid give quantity do not mutate state`() {
         val fixture = PaperTestFixture(permissions = true)
-        fixture.owner.permissions.add("fornaxcitadel.admin")
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.items) {}
+        fixture.installer.permissions.add("fornaxcitadel.admin")
+        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.materials, fixture.citadelTypes) {}
 
-        commands.onCommand(fixture.owner.player, TestCommand, "citadel", arrayOf("place", "dev"))
-        commands.onCommand(fixture.owner.player, TestCommand, "citadel", arrayOf("give", "dev", "owner", "0"))
+        commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "invulnerable"))
+        commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("give", "invulnerable", "installer", "0"))
 
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-        assertEquals(0, fixture.owner.held.amount)
-        assertTrue(fixture.owner.messages.isNotEmpty())
+        assertEquals(0, fixture.installer.held.amount)
+        assertTrue(fixture.installer.messages.isNotEmpty())
     }
 
     private object TestCommand : Command("citadel") {

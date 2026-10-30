@@ -6,16 +6,23 @@ import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
 import org.bukkit.Server
+import org.bukkit.Statistic
 import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.block.data.Directional
 import org.bukkit.entity.Player
+import org.bukkit.event.Event
+import org.bukkit.event.EventHandler
+import org.bukkit.event.Listener
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
 import org.bukkit.inventory.meta.ItemMeta
 import org.bukkit.persistence.PersistentDataContainer
+import org.bukkit.plugin.EventExecutor
 import org.bukkit.plugin.Plugin
+import org.bukkit.plugin.PluginManager
+import org.bukkit.plugin.RegisteredListener
 import org.bukkit.scheduler.BukkitScheduler
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
@@ -32,14 +39,23 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.breaking.DamageBreakPolicy
-import ru.fornax.fornaxcitadel.modules.breaking.UnbreakablePolicy
+import ru.fornax.fornaxcitadel.modules.breaking.BreakPolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
-import ru.fornax.fornaxcitadel.modules.ownership.OwnerInitializer
-import ru.fornax.fornaxcitadel.modules.ownership.OwnerOrDamagePolicy
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
+import ru.fornax.fornaxcitadel.paper.material.CitadelItems
+import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingListener
+import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
+import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
+import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentListener
+import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
+import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
+import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
+import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.UUID
@@ -51,7 +67,20 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 /** Real core lifecycle with a deliberately small Bukkit interface boundary. */
-internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = false, registerTypes: Boolean = true) {
+internal class PaperTestFixture(
+    load: Boolean = true,
+    permissions: Boolean = false,
+    registerTypes: Boolean = true,
+    breakPolicy: BreakPolicy? = null,
+    initializeSystems: Boolean = true,
+    explosionPowers: ExplosionPowerSettings = ExplosionPowerSettings(),
+    placementSettings: PlacementSettings = PlacementSettings(),
+    citadelSettings: CitadelTypesSettings = CitadelTypesSettings(linkedMapOf(
+        "reinforced" to CitadelTypeSettings(PaperCitadelTypes.REINFORCED, health = HealthBehaviorSettings.Simple(100.0)),
+        "maturing" to CitadelTypeSettings(PaperCitadelTypes.MATURING, health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
+        "invulnerable" to CitadelTypeSettings(PaperCitadelTypes.INVULNERABLE, breakPolicy = CitadelBreakPolicy.UNBREAKABLE)
+    ))
+) {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
     var mainThread = true
@@ -62,10 +91,12 @@ internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = fal
     var pdcAccesses = 0
     var freshChunkWrappers = false
     var vanillaBlockChanges = 0
+    var blockLookups = 0
     val scheduledTasks = mutableListOf<TestScheduledTask>()
+    val listenerRegistrations = mutableListOf<Pair<Listener, Plugin>>()
     val players = mutableMapOf<UUID, TestPlayer>()
     private val blocks = mutableMapOf<Triple<Int, Int, Int>, Block>()
-    private val materials = mutableMapOf<Triple<Int, Int, Int>, Material>()
+    private val blockMaterials = mutableMapOf<Triple<Int, Int, Int>, Material>()
     val chunkData = TestPersistentData()
     val chunk: Chunk by lazy { chunkWrapper() }
     val world: World = paperProxy("world") { method, args ->
@@ -77,8 +108,11 @@ internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = fal
             "isChunkLoaded" -> worldChunkLoaded && args[0] == 0 && args[1] == 0
             "getLoadedChunks" -> if (worldChunkLoaded) arrayOf(if (freshChunkWrappers) chunkWrapper() else chunk) else emptyArray<Chunk>()
             "save" -> { worldSaveCount++; null }
-            "getBlockAt" -> if (args.size == 3) block(args[0] as Int, args[1] as Int, args[2] as Int)
+            "getBlockAt" -> {
+                blockLookups++
+                if (args.size == 3) block(args[0] as Int, args[1] as Int, args[2] as Int)
                 else (args[0] as Location).let { block(it.blockX, it.blockY, it.blockZ) }
+            }
             "getChunkAt" -> error("Tests must never auto-load a Bukkit chunk")
             else -> unsupported(method)
         }
@@ -93,12 +127,22 @@ internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = fal
             "getLogger" -> Logger.getLogger("PaperTest")
             "getName", "getVersion", "getBukkitVersion" -> "PaperTest"
             "getScheduler" -> bukkitScheduler
+            "getPluginManager" -> pluginManager
             else -> unsupported(method)
         }
     }
     private val bukkitScheduler: BukkitScheduler = paperProxy("scheduler") { method, args ->
         when (method.name) {
             "runTask" -> TestScheduledTask(args[1] as Runnable).also(scheduledTasks::add).task
+            else -> unsupported(method)
+        }
+    }
+    private val pluginManager: PluginManager = paperProxy("plugin manager") { method, args ->
+        when (method.name) {
+            "registerEvents" -> {
+                listenerRegistrations.add((args[0] as Listener) to (args[1] as Plugin))
+                null
+            }
             else -> unsupported(method)
         }
     }
@@ -119,22 +163,44 @@ internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = fal
     val module = CitadelModule(manager, RemovalPolicy { context, _ ->
         context.actorId?.let(players::get)?.let { it.online && "fornaxcitadel.admin" in it.permissions } == true
     })
-    val items = CitadelItems(plugin)
-    val listener = PaperPlayerListener(plugin, manager, module, items, 25.0)
-    val owner = player(UUID(3L, 4L), "owner")
+    val citadelTypes = PaperCitadelTypes(citadelSettings)
+    val items = CitadelItems(plugin, citadelTypes)
+    val materials = CombineMaterialRegistry("fornaxcitadel" to items)
+    val placementService = PaperPlacementService(materials, placementSettings).also { service ->
+        citadelTypes.keys.forEach { definition ->
+            service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
+        }
+    }
+    val playerDamage = PlayerDamageModifierService()
+    val breakingService = PaperBreakingService(playerDamage)
+    val explosionService = PaperExplosionService(explosionPowers)
+    val environmentService = PaperEnvironmentService()
+    val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
+    val breakingListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperBreakingListener>().single()
+    val explosionListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperExplosionListener>().single()
+    val environmentListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperEnvironmentListener>().single()
+    val installer = player(UUID(3L, 4L), "installer")
     val stranger = player(UUID(5L, 6L), "stranger")
 
     init {
         if (registerTypes) {
-            module.registerDefinition(
-                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(OwnerInitializer())),
-                OwnerOrDamagePolicy,
-                SimpleHealthBehavior(100.0)
-            )
-            module.registerDefinition(CitadelDefinition(PaperCitadelTypes.DEV, emptyList()), DamageBreakPolicy, SimpleHealthBehavior(100.0))
-            module.registerDefinition(CitadelDefinition(PaperCitadelTypes.INVULNERABLE, emptyList()), UnbreakablePolicy)
+            if (breakPolicy == null) {
+                citadelTypes.register(module)
+            } else {
+                val reinforced = citadelSettings.types.getValue("reinforced")
+                module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, emptyList()),
+                    breakPolicy, reinforced.health?.createBehavior())
+                val remaining = citadelSettings.types.filterKeys { it != "reinforced" }
+                if (remaining.isNotEmpty()) PaperCitadelTypes(CitadelTypesSettings(remaining)).register(module)
+            }
         }
-        if (permissions) module.actions.validatorCoordinator.registerValidator(PaperPermissionValidator(server, PaperSettings()))
+        if (permissions) module.actions.validatorCoordinator.registerValidator(PaperPermissionValidator(server, citadelTypes))
+        if (initializeSystems) {
+            placementService.init(plugin, module)
+            breakingService.init(plugin, module)
+            explosionService.init(plugin, module)
+            environmentService.init(plugin, module)
+        }
         if (load) manager.loadChunk(worldId, 0, 0).join()
     }
 
@@ -159,7 +225,7 @@ internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = fal
                     "getX" -> x
                     "getY" -> y
                     "getZ" -> z
-                    "getType" -> materials[key] ?: Material.STONE
+                    "getType" -> blockMaterials[key] ?: Material.STONE
                     "getBlockData" -> paperProxy<Directional>("piston facing") { property, _ ->
                         if (property.name == "getFacing") BlockFace.SOUTH else unsupported(property)
                     }
@@ -171,7 +237,7 @@ internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = fal
                         val distance = if (args.size == 2) args[1] as Int else 1
                         block(x + direction.modX * distance, y + direction.modY * distance, z + direction.modZ * distance)
                     } else block(x + args[0] as Int, y + args[1] as Int, z + args[2] as Int)
-                    "setType" -> { vanillaBlockChanges++; materials[key] = args[0] as Material; null }
+                    "setType" -> { vanillaBlockChanges++; blockMaterials[key] = args[0] as Material; null }
                     else -> unsupported(method)
                 }
             }
@@ -179,11 +245,11 @@ internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = fal
     }
 
     fun material(material: Material, position: CitadelPosition = this.position) {
-        materials[Triple(position.x, position.y, position.z)] = material
+        blockMaterials[Triple(position.x, position.y, position.z)] = material
     }
 
     fun place(type: Key = PaperCitadelTypes.REINFORCED) {
-        assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(context(owner), position, type)))
+        assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(context(installer), position, type)))
     }
 
     fun context(player: TestPlayer) = ActionContext(player.id, Key("test", "player"))
@@ -206,15 +272,23 @@ internal class PaperTestFixture(load: Boolean = true, permissions: Boolean = fal
 internal class TestPlayer(val id: UUID, val name: String, private val world: World) {
     var online = true
     var gameMode = GameMode.SURVIVAL
+    var firstPlayed = 0L
+    var playTimeTicks = 0
+    var actionBarFailure: RuntimeException? = null
     var held: ItemStack = TestItemStack(Material.AIR, 0)
     var target: Block? = null
     var targetLookups = 0
     val permissions = mutableSetOf("fornaxcitadel.place", "fornaxcitadel.damage")
     val messages = mutableListOf<Any?>()
+    val addedItems = mutableListOf<ItemStack>()
     val inventory: PlayerInventory = paperProxy("inventory $name") { method, args ->
         when (method.name) {
             "getItemInMainHand" -> held
             "setItemInMainHand" -> { held = args[0] as ItemStack? ?: TestItemStack(Material.AIR, 0); null }
+            "addItem" -> {
+                (args[0] as Array<*>).forEach { addedItems.add(it as ItemStack) }
+                hashMapOf<Int, ItemStack>()
+            }
             else -> unsupported(method)
         }
     }
@@ -224,12 +298,19 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
             "getName" -> name
             "getWorld" -> world
             "getGameMode" -> gameMode
+            "getFirstPlayed" -> firstPlayed
+            "getStatistic" -> if (args.contentEquals(arrayOf(Statistic.PLAY_ONE_MINUTE))) playTimeTicks else unsupported(method)
             "getInventory" -> inventory
             "getTargetBlockExact" -> { targetLookups++; target }
             "isOnline" -> online
             "isDead" -> false
             "hasPermission" -> args[0] in permissions
-            "sendMessage", "sendActionBar" -> { messages.add(args.lastOrNull()); null }
+            "sendMessage" -> { messages.add(args.lastOrNull()); null }
+            "sendActionBar" -> {
+                actionBarFailure?.let { throw it }
+                messages.add(args.lastOrNull())
+                null
+            }
             else -> unsupported(method)
         }
     }
@@ -317,3 +398,16 @@ internal inline fun <reified T> paperProxy(
 } as T
 
 internal fun unsupported(method: Method): Nothing = error("Unexpected Bukkit call: ${method.declaringClass.simpleName}.${method.name}")
+
+/** Uses Bukkit's own cancellation dispatch instead of bypassing EventHandler semantics. */
+internal fun dispatch(listener: Listener, event: Event, plugin: Plugin) {
+    val methods = listener.javaClass.methods.filter {
+        it.isAnnotationPresent(EventHandler::class.java) && it.parameterTypes.contentEquals(arrayOf(event.javaClass))
+    }.sortedBy { it.getAnnotation(EventHandler::class.java).priority.ordinal }
+    check(methods.isNotEmpty()) { "No handler for ${event.javaClass.simpleName}" }
+    for (method in methods) {
+        val handler = method.getAnnotation(EventHandler::class.java)
+        RegisteredListener(listener, EventExecutor { _, received -> method.invoke(listener, received) },
+            handler.priority, plugin, handler.ignoreCancelled).callEvent(event)
+    }
+}

@@ -16,10 +16,10 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.fortification.Fortification
-import ru.fornax.fornaxcitadel.modules.ownership.Owner
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.Locale
 import java.util.logging.Level
 
@@ -27,7 +27,8 @@ class CitadelCommand(
     private val plugin: Plugin,
     private val manager: SimpleComponentManager,
     private val module: CitadelModule,
-    private val items: CitadelItems,
+    private val materials: MaterialRegistry,
+    private val citadelTypes: PaperCitadelTypes,
     private val save: () -> Unit
 ) : CommandExecutor, TabCompleter {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
@@ -38,7 +39,7 @@ class CitadelCommand(
                 if (sender.hasPermission(ADMIN)) {
                     sender.message("/citadel give <тип> [игрок] [1–64]")
                     sender.message("/citadel place <тип>, /citadel remove, /citadel save")
-                    sender.message("Типы: ${PaperCitadelTypes.names.joinToString()}")
+                    sender.message("Типы: ${citadelTypes.names.joinToString()}")
                 }
                 return true
             }
@@ -68,9 +69,9 @@ class CitadelCommand(
     }
 
     private fun give(sender: CommandSender, args: Array<out String>) {
-        val type = args.getOrNull(1)?.let(PaperCitadelTypes::find)
+        val type = args.getOrNull(1)?.let(citadelTypes::find)
         if (type == null || args.size !in 2..4) {
-            usage(sender, "/citadel give <${PaperCitadelTypes.names.joinToString("|")}> [игрок] [1–64]")
+            usage(sender, "/citadel give <${citadelTypes.names.joinToString("|")}> [игрок] [1–64]")
             return
         }
         val recipient = args.getOrNull(2)?.let(plugin.server::getPlayerExact) ?: if (args.size == 2) sender as? Player else null
@@ -83,7 +84,17 @@ class CitadelCommand(
             sender.message("Количество должно быть от 1 до 64.", error = true)
             return
         }
-        val remaining = recipient.inventory.addItem(items.create(type, amount)).values.sumOf { it.amount }
+        val itemKey = citadelTypes.itemKey(type)
+        if (itemKey == null) {
+            sender.message("Для типа ${citadelTypes.name(type) ?: type.asString()} не задан предмет.", error = true)
+            return
+        }
+        val material = materials.getType(itemKey)
+        if (material == null) {
+            sender.message("Предмет ${itemKey.asString()} не зарегистрирован.", error = true)
+            return
+        }
+        val remaining = recipient.inventory.addItem(material.createItemStack(amount)).values.sumOf { it.amount }
         val given = amount - remaining
         sender.message("Выдано ${recipient.name}: $given из $amount.", error = given == 0)
         if (remaining > 0) sender.message("Для остальных предметов нет места в инвентаре.", error = true)
@@ -111,7 +122,7 @@ class CitadelCommand(
         val context = ActionContext(player.uniqueId, COMMAND_SOURCE)
         when (operation) {
             "place" -> {
-                val type = PaperCitadelTypes.find(args[1])
+                val type = citadelTypes.find(args[1])
                 if (type == null) {
                     sender.message("Неизвестный тип: ${args[1]}", error = true)
                     return
@@ -130,15 +141,11 @@ class CitadelCommand(
                     return
                 }
                 val kind = citadel.getComponent(CitadelKind::class.java)?.definitionKey
-                sender.message("Тип: ${kind?.let(PaperCitadelTypes::name) ?: kind?.asString() ?: "неизвестен"}")
+                sender.message("Тип: ${kind?.let(citadelTypes::name) ?: kind?.asString() ?: "неизвестен"}")
                 val health = module.health.getCurrentHealth(position.world, position.x, position.y, position.z)
                 val maximum = module.health.getCurrentMaxHealth(position.world, position.x, position.y, position.z)
                 if (health != null && maximum != null) sender.message(String.format(Locale.ROOT, "Здоровье: %.1f / %.1f", health, maximum))
-                if (kind == PaperCitadelTypes.INVULNERABLE) sender.message("Неуязвимое укрепление.")
-                citadel.getComponent(Fortification::class.java)?.let { sender.message("Уровень: ${it.level}") }
-                citadel.getComponent(Owner::class.java)?.let {
-                    sender.message("Владелец: ${plugin.server.getPlayer(it.playerId)?.name ?: it.playerId}")
-                }
+                if (kind != null && citadelTypes.isUnbreakable(kind)) sender.message("Неуязвимое укрепление.")
             }
         }
     }
@@ -147,7 +154,7 @@ class CitadelCommand(
         val candidates = when {
             args.size == 1 -> if (sender.hasPermission(ADMIN)) OPERATIONS else listOf("info", "help")
             !sender.hasPermission(ADMIN) -> emptyList()
-            args.size == 2 && args[0].lowercase(Locale.ROOT) in listOf("give", "place") -> PaperCitadelTypes.names
+            args.size == 2 && args[0].lowercase(Locale.ROOT) in listOf("give", "place") -> citadelTypes.names
             args.size == 3 && args[0].equals("give", ignoreCase = true) -> plugin.server.onlinePlayers.map { it.name }
             args.size == 4 && args[0].equals("give", ignoreCase = true) -> listOf("1", "16", "64")
             else -> emptyList()
