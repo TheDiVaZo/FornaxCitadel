@@ -16,8 +16,6 @@ import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.health.Maturing
-import ru.fornax.fornaxcitadel.modules.fortification.Fortification
-import ru.fornax.fornaxcitadel.modules.ownership.Owner
 import ru.fornax.fornaxcitadel.modules.place.PlaceProcessor
 import ru.fornax.fornaxcitadel.modules.place.PlaceService
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
@@ -28,7 +26,7 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
  * Core lifecycle entry point. Construct and register definitions before loading chunks.
  *
  * Register external protection checks on [actions.validatorCoordinator]. A rejection always
- * wins, including for owners. Explicit administrative removal is denied unless [removalPolicy]
+ * wins. Explicit administrative removal is denied unless [removalPolicy]
  * authorizes it. Source keys are attribution.
  *
  * Services and the component manager expose trusted low-level operations; external requests
@@ -50,10 +48,8 @@ class CitadelModule @JvmOverloads constructor(
 
     init {
         manager.registerComponent(CitadelKind.KEY.namespace, CitadelKind.KEY.key, CitadelKind::class.java)
-        manager.registerComponent(Owner.KEY.namespace, Owner.KEY.key, Owner::class.java)
         manager.registerComponent(Health.KEY.namespace, Health.KEY.key, Health::class.java)
         manager.registerComponent(Maturing.KEY.namespace, Maturing.KEY.key, Maturing::class.java)
-        manager.registerComponent(Fortification.KEY.namespace, Fortification.KEY.key, Fortification::class.java)
         actions.processorCoordinator.registerProcessor(PlaceProcessor(place))
         actions.processorCoordinator.registerProcessor(BreakProcessor(breaking))
         actions.processorCoordinator.registerProcessor(RemoveProcessor(remove))
@@ -74,7 +70,7 @@ class CitadelModule @JvmOverloads constructor(
 
     /**
      * Registers a type with its rules. When [healthBehavior] is supplied, a HealthInitializer
-     * is appended after custom initializers so it can see Owner/Fortification/etc. in the draft.
+     * is appended after custom initializers so it can see their components in the draft.
      * Do not also add a HealthInitializer manually. Existing definitions cannot be replaced.
      */
     @JvmOverloads

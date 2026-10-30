@@ -21,20 +21,16 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.breaking.BreakAction
+import ru.fornax.fornaxcitadel.modules.breaking.BreakDecision
 import ru.fornax.fornaxcitadel.modules.breaking.BreakPolicy
+import ru.fornax.fornaxcitadel.modules.breaking.DamageBreakPolicy
 import ru.fornax.fornaxcitadel.modules.breaking.UnbreakablePolicy
-import ru.fornax.fornaxcitadel.modules.fortification.Fortification
-import ru.fornax.fornaxcitadel.modules.fortification.FortificationInitializer
-import ru.fornax.fornaxcitadel.modules.fortification.FortifiedHealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturingHealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
-import ru.fornax.fornaxcitadel.modules.ownership.Owner
-import ru.fornax.fornaxcitadel.modules.ownership.OwnerInitializer
-import ru.fornax.fornaxcitadel.modules.ownership.OwnerOrDamagePolicy
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
@@ -61,14 +57,12 @@ class CitadelModuleTest {
         val clock = MutableClock(1_793_204_123_456L)
         fixture.register(behavior = MaturingHealthBehavior(20.0, 100.0, 1_000L, clock))
         fixture.load()
-        var observedOwner: UUID? = null
         var observedKind: Key? = null
         var observedHealth: Double? = null
         var observedStart: Long? = null
         fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
             override fun onPlaced(position: CitadelPosition, runtimeId: Int) {
                 val handle = fixture.find(position) ?: return
-                observedOwner = handle.getComponent(Owner::class.java)?.playerId
                 observedKind = handle.getComponent(CitadelKind::class.java)?.definitionKey
                 observedHealth = handle.getComponent(Health::class.java)?.health
                 observedStart = handle.getComponent(Maturing::class.java)?.startedAtMillis
@@ -77,15 +71,17 @@ class CitadelModuleTest {
 
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
-        assertEquals(OWNER, observedOwner)
         assertEquals(DEFAULT_KIND, observedKind)
         assertEquals(20.0, observedHealth)
         assertEquals(clock.timeMillis, observedStart)
         assertEquals(listOf(POSITION), fixture.placements)
+        val original = fixture.handle()
         fixture.chunk().resetDirty()
 
         assertEquals(ActionResult.DENIED, fixture.place(context = STRANGER_CONTEXT))
-        assertEquals(OWNER, fixture.handle().getComponent(Owner::class.java)?.playerId)
+        assertTrue(original.isCurrent)
+        assertEquals(20.0, fixture.health().health)
+        assertEquals(clock.timeMillis, fixture.handle().getComponent(Maturing::class.java)?.startedAtMillis)
         assertEquals(1, fixture.placements.size)
         assertFalse(fixture.chunk().isDirty)
     }
@@ -123,33 +119,33 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `owner dismantles immediately only after global validation allows the action`() {
+    fun `custom removal policy dismantles immediately only after global validation allows the action`() {
         val fixture = Fixture()
-        fixture.register()
+        fixture.register(policy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(OWNER_CONTEXT, 1.0))
+        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(PLACER_CONTEXT, 1.0))
 
         assertNull(fixture.find())
         assertEquals(listOf(RemovalCause.OWNER_DISMANTLE), fixture.removals.map { it.second })
         assertEquals(listOf(false), fixture.removalSawExistingEntity)
 
         val protected = Fixture()
-        protected.register()
+        protected.register(policy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
         protected.load()
         assertEquals(ActionResult.SUCCESS, protected.place())
         protected.chunk().resetDirty()
         protected.reject(BreakAction::class.java)
 
-        assertEquals(ActionResult.DENIED, protected.breakCitadel(OWNER_CONTEXT, 1.0))
+        assertEquals(ActionResult.DENIED, protected.breakCitadel(PLACER_CONTEXT, 1.0))
         assertEquals(100.0, protected.health().health)
         assertFalse(protected.chunk().isDirty)
         assertTrue(protected.removals.isEmpty())
     }
 
     @Test
-    fun `outsider damages health and death removes once without running removal vetoes`() {
+    fun `breaking damages health and death removes once without running removal vetoes`() {
         val fixture = Fixture()
         fixture.register()
         fixture.load()
@@ -183,7 +179,7 @@ class CitadelModuleTest {
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
 
-        assertEquals(ActionResult.DENIED, fixture.breakCitadel(OWNER_CONTEXT, 1_000.0))
+        assertEquals(ActionResult.DENIED, fixture.breakCitadel(PLACER_CONTEXT, 1_000.0))
         assertEquals(ActionResult.DENIED, fixture.breakCitadel(STRANGER_CONTEXT, 1_000.0))
         assertEquals(
             ActionResult.DENIED,
@@ -204,37 +200,13 @@ class CitadelModuleTest {
 
         assertNull(fixture.handle().getComponent(Health::class.java))
         assertNull(fixture.module.health.getCurrentHealth(WORLD, POSITION.x, POSITION.y, POSITION.z))
-        assertEquals(ActionResult.DENIED, fixture.breakCitadel(OWNER_CONTEXT, 100.0))
+        assertEquals(ActionResult.DENIED, fixture.breakCitadel(PLACER_CONTEXT, 100.0))
         assertEquals(
             ActionResult.DENIED,
             fixture.module.actions.execute(DamageAction(STRANGER_CONTEXT, POSITION, 100.0))
         )
         assertNotNull(fixture.find())
         assertTrue(fixture.removals.isEmpty())
-    }
-
-    @Test
-    fun `fortified definition initializes from its level and later changes preserve the damaged fraction`() {
-        val fixture = Fixture()
-        fixture.register(
-            behavior = FortifiedHealthBehavior(listOf(100.0, 200.0, 400.0)),
-            initializers = listOf(OwnerInitializer(), FortificationInitializer(2))
-        )
-        fixture.load()
-        assertEquals(ActionResult.SUCCESS, fixture.place())
-        assertEquals(2, fixture.handle().getComponent(Fortification::class.java)?.level)
-        assertEquals(200.0, fixture.health().maxHealth)
-        assertEquals(200.0, fixture.health().health)
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(STRANGER_CONTEXT, 50.0))
-        assertEquals(150.0, fixture.health().health)
-
-        assertTrue(fixture.handle().editComponent(Fortification::class.java) { it.level = 3 })
-        fixture.chunk().resetDirty()
-
-        assertEquals(300.0, fixture.module.health.getCurrentHealth(WORLD, POSITION.x, POSITION.y, POSITION.z))
-        assertEquals(400.0, fixture.health().maxHealth)
-        assertEquals(3, fixture.handle().getComponent(Fortification::class.java)?.level)
-        assertTrue(fixture.chunk().isDirty)
     }
 
     @Test
@@ -284,7 +256,7 @@ class CitadelModuleTest {
         val forgedSource = ActionContext(STRANGER, Key("test", "admin"))
 
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RemoveAction(forgedSource, POSITION)))
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RemoveAction(OWNER_CONTEXT, POSITION)))
+        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RemoveAction(PLACER_CONTEXT, POSITION)))
         assertNotNull(fixture.find())
         assertEquals(
             ActionResult.SUCCESS,
@@ -309,7 +281,7 @@ class CitadelModuleTest {
     @Test
     fun `observer failures do not undo committed actions or skip subsequent observers`() {
         val fixture = Fixture()
-        fixture.register()
+        fixture.register(policy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
         fixture.load()
         var laterPlaced = 0
         var laterRemoved = 0
@@ -324,7 +296,7 @@ class CitadelModuleTest {
 
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertNotNull(fixture.find())
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(OWNER_CONTEXT, 1.0))
+        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(PLACER_CONTEXT, 1.0))
 
         assertNull(fixture.find())
         assertEquals(1, laterPlaced)
@@ -334,7 +306,7 @@ class CitadelModuleTest {
     @Test
     fun `observers can post removal but cannot mutate or recursively execute before other observers finish`() {
         val fixture = Fixture()
-        fixture.register()
+        fixture.register(policy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
         fixture.load()
         var directRemovalFailure: IllegalStateException? = null
         var nestedExecutionFailure: IllegalStateException? = null
@@ -348,7 +320,7 @@ class CitadelModuleTest {
                     directRemovalFailure = failure
                 }
                 try {
-                    fixture.module.actions.execute(BreakAction(OWNER_CONTEXT, position, 1.0))
+                    fixture.module.actions.execute(BreakAction(PLACER_CONTEXT, position, 1.0))
                 } catch (failure: IllegalStateException) {
                     nestedExecutionFailure = failure
                 }
@@ -357,7 +329,7 @@ class CitadelModuleTest {
                 } catch (failure: IllegalStateException) {
                     nestedDrainFailure = failure
                 }
-                fixture.module.actions.post(BreakAction(OWNER_CONTEXT, position, 1.0))
+                fixture.module.actions.post(BreakAction(PLACER_CONTEXT, position, 1.0))
             }
         })
         fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
@@ -447,7 +419,7 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `save and reload preserve owner type damage and maturation without another placement`() {
+    fun `save and reload preserve type damage and maturation without another placement`() {
         val fixture = Fixture()
         val startedAt = 1_793_204_123_456L
         val clock = MutableClock(startedAt)
@@ -463,7 +435,6 @@ class CitadelModuleTest {
 
         val restored = fixture.handle()
         assertFalse(oldHandle.isCurrent)
-        assertEquals(OWNER, restored.getComponent(Owner::class.java)?.playerId)
         assertEquals(DEFAULT_KIND, restored.getComponent(CitadelKind::class.java)?.definitionKey)
         assertEquals(startedAt, restored.getComponent(Maturing::class.java)?.startedAtMillis)
         assertEquals(5.0, fixture.health().health)
@@ -480,13 +451,16 @@ class CitadelModuleTest {
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         val oldHandle = fixture.handle()
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(OWNER_CONTEXT, 1.0))
+        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(PLACER_CONTEXT, 100.0))
         assertEquals(ActionResult.SUCCESS, fixture.place(context = STRANGER_CONTEXT))
+        val replacement = fixture.handle()
         fixture.chunk().resetDirty()
 
         assertEquals(ActionResult.DENIED, fixture.module.remove.remove(oldHandle, RemovalCause.DESTROYED))
 
-        assertEquals(STRANGER, fixture.handle().getComponent(Owner::class.java)?.playerId)
+        assertFalse(oldHandle.isCurrent)
+        assertTrue(replacement.isCurrent)
+        assertEquals(100.0, fixture.health().health)
         assertEquals(1, fixture.removals.size)
         assertFalse(fixture.chunk().isDirty)
     }
@@ -518,8 +492,8 @@ class CitadelModuleTest {
         fun register(
             key: Key = DEFAULT_KIND,
             behavior: HealthBehavior? = SimpleHealthBehavior(100.0),
-            policy: BreakPolicy = OwnerOrDamagePolicy,
-            initializers: List<CitadelInitializer> = listOf(OwnerInitializer())
+            policy: BreakPolicy = DamageBreakPolicy,
+            initializers: List<CitadelInitializer> = emptyList()
         ) {
             module.registerDefinition(CitadelDefinition(key, initializers), policy, behavior)
         }
@@ -529,7 +503,7 @@ class CitadelModuleTest {
         fun place(
             position: CitadelPosition = POSITION,
             key: Key = DEFAULT_KIND,
-            context: ActionContext = OWNER_CONTEXT
+            context: ActionContext = PLACER_CONTEXT
         ): ActionResult = module.actions.execute(PlaceAction(context, position, key))
 
         fun breakCitadel(context: ActionContext, damage: Double, position: CitadelPosition = POSITION): ActionResult =
@@ -589,7 +563,7 @@ class CitadelModuleTest {
 
     private companion object {
         val WORLD: UUID = UUID(1L, 2L)
-        val OWNER: UUID = UUID(3L, 4L)
+        val PLACER: UUID = UUID(3L, 4L)
         val STRANGER: UUID = UUID(5L, 6L)
         val ADMIN: UUID = UUID(7L, 8L)
         val POSITION = CitadelPosition(WORLD, 1, 64, 2)
@@ -598,7 +572,7 @@ class CitadelModuleTest {
         val MATURING_KIND = Key("test", "maturing")
         val PLAYER_SOURCE = Key("test", "player")
         val PROBE_KEY = Key("test", "probe")
-        val OWNER_CONTEXT = ActionContext(OWNER, PLAYER_SOURCE)
+        val PLACER_CONTEXT = ActionContext(PLACER, PLAYER_SOURCE)
         val STRANGER_CONTEXT = ActionContext(STRANGER, PLAYER_SOURCE)
     }
 }
