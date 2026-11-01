@@ -51,7 +51,7 @@ class PersistContainerChunkStorage(
     fun hasPendingChunkSave(chunk: Chunk): Boolean {
         checkMainThread()
         val registered = chunks[locationOf(chunk)]
-        return registered != null && registered.chunk.world === chunk.world && registered.written
+        return registered != null && registered.chunk.world === chunk.world && registered.pendingData != null
     }
 
     fun clearRegisteredChunks() {
@@ -66,15 +66,48 @@ class PersistContainerChunkStorage(
         }
     }
 
+    /** Snapshot of every binding, including those retained after a failed save. */
+    fun registeredChunks(): List<Chunk> {
+        checkMainThread()
+        return chunks.values.map { it.chunk }
+    }
+
+    /** Flushes PDC writes before detaching listeners/bindings; failures retain all retry state. */
+    fun flushPendingWorldSaves() {
+        checkMainThread()
+        var failure: Exception? = null
+        val pendingWorlds = chunks.values.filter { it.pendingData != null }.groupBy { it.chunk.world }
+        for ((world, pending) in pendingWorlds) {
+            try {
+                check(server.getWorld(world.uid) === world) { "Bukkit world is no longer available: ${world.uid}" }
+                check(pending.all { world.isChunkLoaded(it.chunk.x, it.chunk.z) }) {
+                    "A Bukkit chunk with pending PDC writes is no longer loaded in ${world.uid}"
+                }
+                // A failed suspension may be followed by an unsaved Bukkit unload/reload.
+                // Retained bytes remain authoritative until the binding is safely released.
+                pending.forEach(::restorePendingData)
+                world.save()
+            } catch (problem: Exception) {
+                if (failure == null) failure = problem else if (failure !== problem) failure.addSuppressed(problem)
+            }
+        }
+        if (failure != null) throw failure
+    }
+
     override fun loadChunk(
         location: WXZCord
     ): CompletableFuture<ChunkCordSnapshot?> {
         return try {
             scheduler.schedule<ByteArray?>(location) {
-                registeredChunk(location).chunk
-                    .persistentDataContainer
-                    .get(dataKey, PersistentDataType.BYTE_ARRAY)
-                    ?.copyOf()
+                val registered = registeredChunk(location)
+                val pending = registered.pendingData
+                if (pending != null) {
+                    restorePendingData(registered)
+                    pending.copyOf()
+                } else {
+                    registered.chunk.persistentDataContainer
+                        .get(dataKey, PersistentDataType.BYTE_ARRAY)?.copyOf()
+                }
             }.thenApply { data ->
                 data?.let { decodeSnapshot(location, it) }
             }
@@ -91,8 +124,8 @@ class PersistContainerChunkStorage(
             scheduler.schedule(snapshot.location) {
                 val registered = registeredChunk(snapshot.location)
                 registered.chunk.persistentDataContainer
-                    .set(dataKey, PersistentDataType.BYTE_ARRAY, data)
-                registered.written = true
+                    .set(dataKey, PersistentDataType.BYTE_ARRAY, data.copyOf())
+                registered.pendingData = data
             }.thenAccept { }
         } catch (exception: Exception) {
             CompletableFuture.failedFuture(exception)
@@ -126,13 +159,18 @@ class PersistContainerChunkStorage(
         return registered
     }
 
+    private fun restorePendingData(registered: RegisteredChunk) {
+        val data = registered.pendingData ?: return
+        registered.chunk.persistentDataContainer.set(dataKey, PersistentDataType.BYTE_ARRAY, data.copyOf())
+    }
+
     private fun checkMainThread() = check(server.isPrimaryThread) {
         "Chunk PDC access must run on the main thread"
     }
 
     private fun locationOf(chunk: Chunk) = WXZCord(chunk.world.uid, chunk.x, chunk.z)
 
-    private class RegisteredChunk(var chunk: Chunk, var written: Boolean = false)
+    private class RegisteredChunk(var chunk: Chunk, var pendingData: ByteArray? = null)
 
     private companion object {
         const val DEFAULT_KEY = "chunk_data"

@@ -91,6 +91,7 @@ internal class PaperTestFixture(
     var worldChunkLoaded = true
     var worldAvailable = true
     var worldSaveCount = 0
+    var worldSaveFailure: RuntimeException? = null
     var schedulerFailure: RuntimeException? = null
     var pdcAccesses = 0
     var freshChunkWrappers = false
@@ -118,7 +119,7 @@ internal class PaperTestFixture(
             "getMaxHeight" -> 320
             "isChunkLoaded" -> worldChunkLoaded && args[0] == 0 && args[1] == 0
             "getLoadedChunks" -> if (worldChunkLoaded) arrayOf(if (freshChunkWrappers) chunkWrapper() else chunk) else emptyArray<Chunk>()
-            "save" -> { worldSaveCount++; null }
+            "save" -> { worldSaveFailure?.let { throw it }; worldSaveCount++; null }
             "getBlockAt" -> {
                 blockLookups++
                 if (args.size == 3) block(args[0] as Int, args[1] as Int, args[2] as Int)
@@ -388,12 +389,13 @@ internal class TestScheduledTask(
 
 internal class TestPersistentData {
     val values = mutableMapOf<NamespacedKey, Any>()
+    var writeFailure: RuntimeException? = null
     val container: PersistentDataContainer = paperProxy("PDC") { method, args ->
         when (method.name) {
             "get" -> values[args[0]]
             "getOrDefault" -> values[args[0]] ?: args[2]
             "has" -> values.containsKey(args[0])
-            "set" -> { values[args[0] as NamespacedKey] = args[2]!!; null }
+            "set" -> { writeFailure?.let { throw it }; values[args[0] as NamespacedKey] = args[2]!!; null }
             "remove" -> { values.remove(args[0]); null }
             "isEmpty" -> values.isEmpty()
             "getKeys" -> values.keys.toSet()

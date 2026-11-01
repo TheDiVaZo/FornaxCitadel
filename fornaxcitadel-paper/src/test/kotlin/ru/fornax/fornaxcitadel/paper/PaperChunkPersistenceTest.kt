@@ -20,7 +20,8 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
-import ru.fornax.fornaxcitadel.paper.storage.PaperChunkListener
+import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkListener
+import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
@@ -38,7 +39,7 @@ class PaperChunkPersistenceTest {
     @Test
     fun `world unload writes pending PDC and detaches all chunks before world disappearance`() {
         val fixture = Fixture()
-        fixture.listener.loadAlreadyLoadedChunks()
+        fixture.service.enable()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
@@ -59,7 +60,7 @@ class PaperChunkPersistenceTest {
     @Test
     fun `late cancellation of world unload restores core from the saved PDC`() {
         val fixture = Fixture()
-        fixture.listener.loadAlreadyLoadedChunks()
+        fixture.service.enable()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
@@ -79,7 +80,7 @@ class PaperChunkPersistenceTest {
     @Test
     fun `world unload without core changes does not force a world save`() {
         val fixture = Fixture()
-        fixture.listener.loadAlreadyLoadedChunks()
+        fixture.service.enable()
 
         dispatch(fixture.listener, WorldUnloadEvent(fixture.paper.world), fixture.paper.plugin)
 
@@ -89,7 +90,7 @@ class PaperChunkPersistenceTest {
     @Test
     fun `dirty unload synchronously writes PDC before unregister and reload restores type and damage`() {
         val fixture = Fixture()
-        fixture.listener.loadAlreadyLoadedChunks()
+        fixture.service.enable()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
@@ -118,6 +119,7 @@ class PaperChunkPersistenceTest {
     @Test
     fun `clean empty chunk unload leaves another callers no-save choice unchanged`() {
         val fixture = Fixture()
+        fixture.service.enable()
         fixture.listener.onLoad(ChunkLoadEvent(fixture.paper.chunk, false))
         val unload = ChunkUnloadEvent(fixture.paper.chunk, false)
 
@@ -133,10 +135,11 @@ class PaperChunkPersistenceTest {
         val corrupt = byteArrayOf(1, 2, 3)
         fixture.paper.chunkData.values[fixture.key] = corrupt
 
+        fixture.service.enable()
         fixture.listener.onLoad(ChunkLoadEvent(fixture.paper.chunk, false))
 
         assertFalse(fixture.manager.isChunkLoaded(fixture.paper.worldId, 0, 0))
-        fixture.listener.closeAndSaveAll()
+        fixture.closeStorage()
         assertContentEquals(corrupt, fixture.paper.chunkData.values[fixture.key] as ByteArray)
     }
 
@@ -155,13 +158,13 @@ class PaperChunkPersistenceTest {
     @Test
     fun `shutdown writes dirty state inline and releases backend chunk references`() {
         val fixture = Fixture()
-        fixture.listener.loadAlreadyLoadedChunks()
+        fixture.service.enable()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         fixture.paper.enabled = false
 
-        fixture.listener.closeAndSaveAll()
+        fixture.closeStorage()
 
         val snapshot = ChunkCordSnapshot.fromByteArray(fixture.paper.chunkData.values[fixture.key] as ByteArray)
         assertEquals(1, snapshot.citadels.size)
@@ -174,9 +177,10 @@ class PaperChunkPersistenceTest {
             override fun <T> schedule(location: WXZCord, task: Callable<T>) = CompletableFuture<T>()
         }
         val fixture = Fixture(pendingScheduler)
+        fixture.service.enable()
         fixture.listener.onLoad(ChunkLoadEvent(fixture.paper.chunk, false))
 
-        assertFailsWith<IllegalStateException> { fixture.listener.saveAll() }
+        assertFailsWith<IllegalStateException> { fixture.service.saveAll() }
         assertFalse(fixture.manager.isChunkLoaded(fixture.paper.worldId, 0, 0))
     }
 
@@ -196,11 +200,11 @@ class PaperChunkPersistenceTest {
     @Test
     fun `different Bukkit wrappers share pending save status and unload registration`() {
         val fixture = Fixture()
-        fixture.listener.loadAlreadyLoadedChunks()
+        fixture.service.enable()
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
-        fixture.listener.saveAll()
+        fixture.service.saveAll()
         val newWrapper = fixture.paper.chunkWrapper()
 
         fixture.backend.registerChunk(newWrapper)
@@ -235,7 +239,15 @@ class PaperChunkPersistenceTest {
         private val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
         val manager = SimpleComponentManager(storage, types)
         val module = CitadelModule(manager)
-        val listener = PaperChunkListener(paper.plugin, manager, backend)
+        val service = PaperChunkService(paper.plugin, manager, backend, 20L)
+        val listener = PaperChunkListener(service)
+
+        fun closeStorage() {
+            service.disable()
+            manager.closeAndSaveAll().join()
+            backend.flushPendingWorldSaves()
+            backend.clearRegisteredChunks()
+        }
 
         init {
             module.registerDefinition(
