@@ -43,11 +43,6 @@ explosions:
     BLACK_BED: 5.0
 
 citadel-types:
-  # IDs become fornaxcitadel:<id> and are used by items, commands and saved citadels.
-  # Changing behavior or deleting IDs does not migrate existing citadel data.
-  # break-policy defaults to damage, which requires a health behavior.
-  # item is required and must be unique across types. Bare keys use minecraft (e.g. diamond).
-  # fornaxcitadel:<id> selects a built-in tagged item; other namespaces use registered material providers.
   reinforced_light:
     item: fornaxcitadel:reinforced_light
     health:
