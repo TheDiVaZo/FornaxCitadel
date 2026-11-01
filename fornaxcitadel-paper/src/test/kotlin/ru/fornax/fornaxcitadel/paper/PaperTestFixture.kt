@@ -91,11 +91,13 @@ internal class PaperTestFixture(
     var worldChunkLoaded = true
     var worldAvailable = true
     var worldSaveCount = 0
+    var schedulerFailure: RuntimeException? = null
     var pdcAccesses = 0
     var freshChunkWrappers = false
     var vanillaBlockChanges = 0
     var blockLookups = 0
     val scheduledTasks = mutableListOf<TestScheduledTask>()
+    private var currentTick = 0L
     private val listenerHistory = mutableListOf<Pair<Listener, Plugin>>()
     private val listenerHandlers by lazy { HandlerList() }
     var listenerRegistrationFailure: RuntimeException? = null
@@ -142,7 +144,13 @@ internal class PaperTestFixture(
     }
     private val bukkitScheduler: BukkitScheduler = paperProxy("scheduler") { method, args ->
         when (method.name) {
-            "runTask" -> TestScheduledTask(args[1] as Runnable).also(scheduledTasks::add).task
+            "runTask", "runTaskTimer" -> {
+                schedulerFailure?.let { throw it }
+                val delay = if (method.name == "runTaskTimer") args[2] as Long else 1L
+                val period = if (method.name == "runTaskTimer") args[3] as Long else 0L
+                TestScheduledTask(args[1] as Runnable, delay, period, currentTick + delay.coerceAtLeast(1L))
+                    .also(scheduledTasks::add).task
+            }
             else -> unsupported(method)
         }
     }
@@ -279,11 +287,27 @@ internal class PaperTestFixture(
             data.values[NamespacedKey(plugin, "citadel_type")] = type.asString()
         }
 
-    fun runScheduledTasks() {
+    fun runScheduledTasks() = advanceTicks(1)
+
+    fun advanceTicks(ticks: Int) {
+        require(ticks >= 0)
         mainThread = true
-        val batch = scheduledTasks.toList()
-        scheduledTasks.clear()
-        batch.filterNot { it.cancelled }.forEach { it.action.run() }
+        repeat(ticks) {
+            currentTick++
+            val batch = scheduledTasks.filter { !it.cancelled && it.nextRunTick <= currentTick }
+            scheduledTasks.removeAll { it.cancelled || it in batch }
+            for (task in batch) {
+                if (task.cancelled) continue
+                try {
+                    task.action.run()
+                } finally {
+                    if (task.repeating && !task.cancelled) {
+                        task.nextRunTick = currentTick + task.periodTicks
+                        scheduledTasks.add(task)
+                    }
+                }
+            }
+        }
     }
 
     override fun close() {
@@ -343,8 +367,14 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
     }
 }
 
-internal class TestScheduledTask(val action: Runnable) {
+internal class TestScheduledTask(
+    val action: Runnable,
+    val delayTicks: Long = 1L,
+    val periodTicks: Long = 0L,
+    var nextRunTick: Long = 1L
+) {
     var cancelled = false
+    val repeating: Boolean get() = periodTicks > 0L
     val task: BukkitTask = paperProxy("scheduled task") { method, _ ->
         when (method.name) {
             "cancel" -> { cancelled = true; null }

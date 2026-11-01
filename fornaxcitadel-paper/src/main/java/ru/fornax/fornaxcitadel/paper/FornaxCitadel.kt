@@ -18,6 +18,8 @@ import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.NerfingNe
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
+import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
+import ru.fornax.fornaxcitadel.paper.modules.queue.PaperActionQueueService
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import ru.fornax.fornaxcitadel.paper.storage.PaperChunkListener
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
@@ -37,8 +39,6 @@ class FornaxCitadel : JavaPlugin() {
         private set
     private var schedulerAdapter: PaperScheduler? = null
     private var chunkListener: PaperChunkListener? = null
-    private var coreModule: CitadelModule? = null
-    private var permissionValidator: PaperPermissionValidator? = null
     private val services = mutableListOf<LifecycleService>()
 
     override fun onEnable() {
@@ -56,11 +56,11 @@ class FornaxCitadel : JavaPlugin() {
             val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor { it.run() })
             val manager = SimpleComponentManager(storage, types)
             citadelTypes = PaperCitadelTypes(settings.citadelTypes)
-            val permissions = PaperPermissionValidator(server, citadelTypes).also { permissionValidator = it }
+            val permissions = PaperPermissionValidator(server, citadelTypes)
             val module = CitadelModule(manager, RemovalPolicy { context, _ -> permissions.canAdminister(context) })
-                .also { coreModule = it; services.add(it) }
             citadelTypes.register(module)
-            module.actions.validatorCoordinator.registerValidator(permissions)
+            services.add(PaperPermissionService(module.actions, permissions))
+            services.add(module)
 
             val chunks = PaperChunkListener(this, manager, backend).also { chunkListener = it }
             val items = CitadelItems(this, citadelTypes)
@@ -91,13 +91,10 @@ class FornaxCitadel : JavaPlugin() {
             server.pluginManager.registerEvents(chunks, this)
             chunks.loadAlreadyLoadedChunks()
 
-            server.scheduler.runTaskTimer(this, Runnable {
-                try {
-                    module.actions.drainPosted(settings.postedActionLimit)
-                } catch (exception: Exception) {
-                    logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", exception)
-                }
-            }, 1L, 1L)
+            PaperActionQueueService(this, module.actions, settings.postedActionLimit).also {
+                services.add(it)
+                it.enable()
+            }
             server.scheduler.runTaskTimer(this, Runnable {
                 try {
                     chunks.saveAll()
@@ -121,9 +118,6 @@ class FornaxCitadel : JavaPlugin() {
             }
         }
         services.clear()
-        permissionValidator?.let { coreModule?.actions?.validatorCoordinator?.unregisterValidator(it) }
-        permissionValidator = null
-        coreModule = null
         HandlerList.unregisterAll(this)
         try {
             schedulerAdapter?.close()
