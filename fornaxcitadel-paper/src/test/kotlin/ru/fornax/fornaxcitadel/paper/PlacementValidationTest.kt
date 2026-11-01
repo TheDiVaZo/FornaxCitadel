@@ -114,7 +114,7 @@ class PlacementValidationTest {
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "reinforced"))
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
 
-            fixture.installer.held = fixture.markedStack(amount = 2)
+            fixture.installer.held = fixture.reinforcementStack(amount = 2)
             val interaction = PlayerInteractEvent(fixture.installer.player, Action.RIGHT_CLICK_BLOCK,
                 fixture.installer.held, fixture.block(), BlockFace.UP, EquipmentSlot.HAND)
             dispatch(fixture.placementListener, interaction, fixture.plugin)

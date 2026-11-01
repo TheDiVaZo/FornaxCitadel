@@ -1,7 +1,6 @@
 package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.Material
-import org.bukkit.NamespacedKey
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.material.BukkitMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
@@ -10,7 +9,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -130,23 +128,16 @@ class MaterialRegistryTest {
     }
 
     @Test
-    fun `citadel items are a tagged registry that never claims ordinary blocks or unmarked shards`() {
+    fun `default registry supplies only vanilla materials until an external provider registers`() {
         val fixture = PaperTestFixture(initializeSystems = false)
-        val marked = fixture.markedStack()
-        val material = assertNotNull(fixture.items.getType(PaperCitadelTypes.REINFORCED))
+        assertNull(fixture.materials.getType(PaperCitadelTypes.REINFORCED))
+        assertSame(BukkitMaterialRegistry[Material.AMETHYST_SHARD],
+            fixture.materials.getTypeOrNull(TestItemStack(Material.AMETHYST_SHARD, 1)))
+        assertSame(BukkitMaterialRegistry[Material.STONE], fixture.materials.getTypeOrNull(fixture.block()))
 
-        assertSame(material, fixture.items.getTypeOrNull(marked))
-        assertSame(material, fixture.materials.getTypeOrNull(marked))
-        assertEquals(PaperCitadelTypes.REINFORCED, material.getKey())
-        assertEquals(PaperCitadelTypes.REINFORCED, fixture.items.typeOf(marked))
-        assertTrue(material.isConsists(marked))
-        assertFalse(material.isConsists(fixture.block()))
-        assertNull(fixture.items.getTypeOrNull(fixture.block()))
-        assertNull(fixture.items.getTypeOrNull(TestItemStack(Material.AMETHYST_SHARD, 1)))
-        assertNull(fixture.items.getTypeOrNull(fixture.markedStack(amount = 0)))
-        assertNull(fixture.items.getType(Key("other", "reinforced")))
-        marked.data.values[NamespacedKey(fixture.plugin, "citadel_type")] = "other:reinforced"
-        assertNull(fixture.items.getTypeOrNull(marked))
-        assertNull(fixture.items.typeOf(marked))
+        val custom = TestMaterialAdapter(PaperCitadelTypes.REINFORCED)
+        assertTrue(fixture.materials.register("fornaxcitadel", TestMaterialRegistry(custom)))
+        assertSame(custom, fixture.materials.getType(PaperCitadelTypes.REINFORCED))
+        assertSame(custom, fixture.materials.getTypeOrNull(custom.createItemStack(1)))
     }
 }

@@ -22,19 +22,19 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 
     companion object {
         val DEFAULT_TYPES: Map<String, CitadelTypeSettings> = linkedMapOf(
-            "reinforced_light" to CitadelTypeSettings(Key("fornaxcitadel", "reinforced_light"),
+            "reinforced_light" to CitadelTypeSettings(Key("minecraft", "copper_ingot"),
                 health = HealthBehaviorSettings.Simple(10.0)),
-            "reinforced" to CitadelTypeSettings(Key("fornaxcitadel", "reinforced"),
+            "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"),
                 health = HealthBehaviorSettings.Simple(20.0)),
-            "reinforced_heavy" to CitadelTypeSettings(Key("fornaxcitadel", "reinforced_heavy"),
+            "reinforced_heavy" to CitadelTypeSettings(Key("minecraft", "diamond"),
                 health = HealthBehaviorSettings.Simple(30.0)),
-            "maturing_fast" to CitadelTypeSettings(Key("fornaxcitadel", "maturing_fast"),
+            "maturing_fast" to CitadelTypeSettings(Key("minecraft", "amethyst_shard"),
                 health = HealthBehaviorSettings.Maturing(10.0, 20.0, 300)),
-            "maturing" to CitadelTypeSettings(Key("fornaxcitadel", "maturing"),
+            "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"),
                 health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
-            "maturing_strong" to CitadelTypeSettings(Key("fornaxcitadel", "maturing_strong"),
+            "maturing_strong" to CitadelTypeSettings(Key("minecraft", "netherite_ingot"),
                 health = HealthBehaviorSettings.Maturing(20.0, 80.0, 1800)),
-            "invulnerable" to CitadelTypeSettings(Key("fornaxcitadel", "invulnerable"), CitadelBreakPolicy.UNBREAKABLE)
+            "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelBreakPolicy.UNBREAKABLE)
         )
         private val ID_PATTERN = Regex("[a-z0-9_-]+")
 

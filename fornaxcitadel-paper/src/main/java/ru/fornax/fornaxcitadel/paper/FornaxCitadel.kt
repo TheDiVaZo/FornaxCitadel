@@ -10,7 +10,6 @@ import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
-import ru.fornax.fornaxcitadel.paper.material.CitadelItems
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
@@ -29,7 +28,10 @@ import java.util.concurrent.Executor
 import java.util.logging.Level
 
 class FornaxCitadel : JavaPlugin() {
-    /** Register material providers and placement bindings on the server's main thread after enable. */
+    /**
+     * Register external material providers on the server's main thread after enable.
+     * Configured item and block keys resolve on use, so providers may register later.
+     */
     lateinit var materials: CombineMaterialRegistry
         private set
     lateinit var placement: PaperPlacementService
@@ -71,8 +73,7 @@ class FornaxCitadel : JavaPlugin() {
             services.add(module)
 
             val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)
-            val items = CitadelItems(this, citadelTypes)
-            materials = CombineMaterialRegistry("fornaxcitadel" to items)
+            materials = CombineMaterialRegistry()
             placement = PaperPlacementService(this, module, materials, settings.placement).also(services::add)
             citadelTypes.keys.forEach { type ->
                 placement.registerMaterial(requireNotNull(citadelTypes.itemKey(type)), type)

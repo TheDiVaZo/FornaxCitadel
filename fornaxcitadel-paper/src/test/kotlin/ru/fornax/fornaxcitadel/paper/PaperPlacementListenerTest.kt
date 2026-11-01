@@ -18,9 +18,9 @@ import kotlin.test.assertTrue
 
 class PaperPlacementListenerTest {
     @Test
-    fun `marked main hand placement consumes once and duplicate placement consumes nothing`() {
+    fun `configured main hand placement consumes once and duplicate placement consumes nothing`() {
         val fixture = PaperTestFixture(permissions = true)
-        val held = fixture.markedStack(amount = 2)
+        val held = fixture.reinforcementStack(amount = 2)
         fixture.installer.held = held
         val placed = fixture.interact()
 
@@ -35,9 +35,9 @@ class PaperPlacementListenerTest {
     }
 
     @Test
-    fun `off hand unmarked and explicitly denied item interactions do not place`() {
+    fun `off hand unconfigured and explicitly denied item interactions do not place`() {
         val fixture = PaperTestFixture()
-        fixture.installer.held = fixture.markedStack()
+        fixture.installer.held = fixture.reinforcementStack()
         dispatch(fixture.placementListener, fixture.interact(EquipmentSlot.OFF_HAND), fixture.plugin)
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(2, fixture.installer.held.amount)
@@ -54,9 +54,9 @@ class PaperPlacementListenerTest {
     }
 
     @Test
-    fun `vanilla block no-op permits marked item while creative placement keeps its stack`() {
+    fun `vanilla block no-op permits configured item while creative placement keeps its stack`() {
         val fixture = PaperTestFixture(permissions = true)
-        fixture.installer.held = fixture.markedStack()
+        fixture.installer.held = fixture.reinforcementStack()
         fixture.installer.gameMode = GameMode.CREATIVE
         val event = fixture.interact().apply { setUseInteractedBlock(Event.Result.DENY) }
 
@@ -69,14 +69,14 @@ class PaperPlacementListenerTest {
     @Test
     fun `placement permission and admin type rejection preserve the item stack`() {
         val fixture = PaperTestFixture(permissions = true)
-        fixture.installer.held = fixture.markedStack()
+        fixture.installer.held = fixture.reinforcementStack()
         fixture.installer.permissions.remove("fornaxcitadel.place")
         dispatch(fixture.placementListener, fixture.interact(), fixture.plugin)
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(2, fixture.installer.held.amount)
 
         fixture.installer.permissions.add("fornaxcitadel.place")
-        fixture.installer.held = fixture.markedStack(PaperCitadelTypes.INVULNERABLE)
+        fixture.installer.held = fixture.reinforcementStack(PaperCitadelTypes.INVULNERABLE)
         dispatch(fixture.placementListener, fixture.interact(), fixture.plugin)
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(2, fixture.installer.held.amount)

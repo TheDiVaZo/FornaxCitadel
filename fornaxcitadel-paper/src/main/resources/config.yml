@@ -42,45 +42,48 @@ explosions:
     RED_BED: 5.0
     BLACK_BED: 5.0
 
+# Item keys default to the minecraft namespace when omitted.
+# External providers register their own namespace (e.g. otherplugin:reinforcement).
+# Materials are resolved on use; providers may register after FornaxCitadel enables.
 citadel-types:
   reinforced_light:
-    item: fornaxcitadel:reinforced_light
+    item: minecraft:copper_ingot
     health:
       behavior: simple
       max: 10.0
   reinforced:
-    item: fornaxcitadel:reinforced
+    item: minecraft:iron_ingot
     health:
       behavior: simple
       max: 20.0
   reinforced_heavy:
-    item: fornaxcitadel:reinforced_heavy
+    item: minecraft:diamond
     health:
       behavior: simple
       max: 30.0
   maturing_fast:
-    item: fornaxcitadel:maturing_fast
+    item: minecraft:amethyst_shard
     health:
       behavior: maturing
       initial: 10.0
       mature: 20.0
       duration-seconds: 300
   maturing:
-    item: fornaxcitadel:maturing
+    item: minecraft:emerald
     health:
       behavior: maturing
       initial: 10.0
       mature: 40.0
       duration-seconds: 600
   maturing_strong:
-    item: fornaxcitadel:maturing_strong
+    item: minecraft:netherite_ingot
     health:
       behavior: maturing
       initial: 20.0
       mature: 80.0
       duration-seconds: 1800
   invulnerable:
-    item: fornaxcitadel:invulnerable
+    item: minecraft:nether_star
     # Unbreakable types require administrator permission to install.
     break-policy: unbreakable
 

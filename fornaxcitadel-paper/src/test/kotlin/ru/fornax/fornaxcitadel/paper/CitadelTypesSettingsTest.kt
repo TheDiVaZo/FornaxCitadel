@@ -4,10 +4,12 @@ import org.bukkit.configuration.file.YamlConfiguration
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.MaturingHealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
+import ru.fornax.fornaxcitadel.paper.material.BukkitMaterialRegistry
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CitadelTypesSettingsTest {
@@ -20,20 +22,21 @@ class CitadelTypesSettingsTest {
         val types = CitadelTypesSettings.read(config).types
 
         assertEquals(linkedMapOf(
-            "reinforced_light" to CitadelTypeSettings(Key("fornaxcitadel", "reinforced_light"),
+            "reinforced_light" to CitadelTypeSettings(Key("minecraft", "copper_ingot"),
                 health = HealthBehaviorSettings.Simple(10.0)),
-            "reinforced" to CitadelTypeSettings(Key("fornaxcitadel", "reinforced"),
+            "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"),
                 health = HealthBehaviorSettings.Simple(20.0)),
-            "reinforced_heavy" to CitadelTypeSettings(Key("fornaxcitadel", "reinforced_heavy"),
+            "reinforced_heavy" to CitadelTypeSettings(Key("minecraft", "diamond"),
                 health = HealthBehaviorSettings.Simple(30.0)),
-            "maturing_fast" to CitadelTypeSettings(Key("fornaxcitadel", "maturing_fast"),
+            "maturing_fast" to CitadelTypeSettings(Key("minecraft", "amethyst_shard"),
                 health = HealthBehaviorSettings.Maturing(10.0, 20.0, 300)),
-            "maturing" to CitadelTypeSettings(Key("fornaxcitadel", "maturing"),
+            "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"),
                 health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
-            "maturing_strong" to CitadelTypeSettings(Key("fornaxcitadel", "maturing_strong"),
+            "maturing_strong" to CitadelTypeSettings(Key("minecraft", "netherite_ingot"),
                 health = HealthBehaviorSettings.Maturing(20.0, 80.0, 1800)),
-            "invulnerable" to CitadelTypeSettings(Key("fornaxcitadel", "invulnerable"), CitadelBreakPolicy.UNBREAKABLE)
+            "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelBreakPolicy.UNBREAKABLE)
         ), types)
+        types.values.forEach { assertNotNull(BukkitMaterialRegistry.getType(it.item)) }
     }
 
     @Test
@@ -52,7 +55,7 @@ class CitadelTypesSettingsTest {
                 break-policy: unbreakable
                 health: {behavior: simple, max: 100}
               protected_marker:
-                item: fornaxcitadel:invulnerable
+                item: custommaterials:protected_marker
                 break-policy: unbreakable
         """)
         val types = CitadelTypesSettings.read(config).types
@@ -65,7 +68,7 @@ class CitadelTypesSettingsTest {
         assertEquals(CitadelTypeSettings(Key("custommaterials", "wand/defender"),
             CitadelBreakPolicy.UNBREAKABLE, HealthBehaviorSettings.Simple(100.0)),
             types["protected_wall"])
-        assertEquals(CitadelTypeSettings(Key("fornaxcitadel", "invulnerable"), CitadelBreakPolicy.UNBREAKABLE),
+        assertEquals(CitadelTypeSettings(Key("custommaterials", "protected_marker"), CitadelBreakPolicy.UNBREAKABLE),
             types["protected_marker"])
         assertIs<SimpleHealthBehavior>(types.getValue("copper_wall").health!!.createBehavior())
         assertIs<MaturingHealthBehavior>(types.getValue("growing-wall").health!!.createBehavior())
@@ -76,10 +79,10 @@ class CitadelTypesSettingsTest {
         val bundled = yaml("""
             citadel-types:
               reinforced:
-                item: fornaxcitadel:reinforced
+                item: iron_ingot
                 health: {behavior: simple, max: 20}
               bundled_only:
-                item: fornaxcitadel:bundled_only
+                item: nether_star
                 break-policy: unbreakable
         """)
         val custom = yaml("""
@@ -112,7 +115,7 @@ class CitadelTypesSettingsTest {
         val bundled = yaml("""
             citadel-types:
               reinforced:
-                item: fornaxcitadel:reinforced
+                item: iron_ingot
                 health: {behavior: simple, max: 20}
         """)
         val invalidItems = listOf(

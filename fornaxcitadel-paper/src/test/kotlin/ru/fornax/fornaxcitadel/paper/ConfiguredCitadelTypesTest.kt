@@ -55,18 +55,16 @@ class ConfiguredCitadelTypesTest {
     }
 
     @Test
-    fun `installation items recognize configured keys and placement uses their definition`() {
+    fun `configured vanilla materials select independent citadel definitions`() {
         val fixture = PaperTestFixture(permissions = true, citadelSettings = CUSTOM_TYPES)
-        fixture.installer.held = fixture.markedStack(PaperCitadelTypes.REINFORCED)
-        assertNull(fixture.items.typeOf(fixture.installer.held))
+        fixture.installer.held = TestItemStack(Material.AMETHYST_SHARD, 2)
         dispatch(fixture.placementListener, fixture.interact(), fixture.plugin)
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(2, fixture.installer.held.amount)
 
         val key = assertNotNull(fixture.citadelTypes.find("clay_guard"))
-        fixture.installer.held = fixture.markedStack(key)
-        assertEquals(key, fixture.items.typeOf(fixture.installer.held))
-        assertEquals(key, fixture.materials.getTypeOrNull(fixture.installer.held)?.getKey())
+        fixture.installer.held = fixture.reinforcementStack(key)
+        assertEquals(Key("minecraft", "clay_ball"), fixture.materials.getTypeOrNull(fixture.installer.held)?.getKey())
 
         dispatch(fixture.placementListener, fixture.interact(), fixture.plugin)
 
@@ -111,7 +109,7 @@ class ConfiguredCitadelTypesTest {
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
             PlaceAction(fixture.context(fixture.installer), fixture.position, sanctuary)
         ))
-        fixture.installer.held = fixture.markedStack(sanctuary)
+        fixture.installer.held = fixture.reinforcementStack(sanctuary)
         dispatch(fixture.placementListener, fixture.interact(), fixture.plugin)
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(2, fixture.installer.held.amount)
@@ -133,7 +131,7 @@ class ConfiguredCitadelTypesTest {
     }
 
     @Test
-    fun `a parsed vanilla item installs its configured type and replaces the old same-id installation item`() {
+    fun `a parsed vanilla item installs its configured type without metadata`() {
         val config = YamlConfiguration().apply {
             loadFromString("""
                 citadel-types:
@@ -147,7 +145,7 @@ class ConfiguredCitadelTypesTest {
         val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
         val definition = assertNotNull(fixture.citadelTypes.find("diamond_wall"))
         assertEquals(Key("minecraft", "diamond"), fixture.citadelTypes.itemKey(definition))
-        fixture.installer.held = fixture.markedStack(definition)
+        fixture.installer.held = TestItemStack(Material.AMETHYST_SHARD, 2)
 
         dispatch(fixture.placementListener, fixture.interact(), fixture.plugin)
 
@@ -229,6 +227,37 @@ class ConfiguredCitadelTypesTest {
         assertTrue(fixture.installer.addedItems.isEmpty())
     }
 
+    @Test
+    fun `give retries an unresolved configured item after its provider registers`() {
+        val config = YamlConfiguration().apply {
+            loadFromString("""
+                citadel-types:
+                  steel_guard:
+                    item: thirdparty:steel_plate
+                    health: {behavior: simple, max: 29.0}
+            """.trimIndent())
+        }
+        val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
+        fixture.installer.permissions.add("fornaxcitadel.admin")
+        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
+            fixture.materials, fixture.citadelTypes) {}
+        val args = arrayOf("give", "steel_guard", "stranger", "3")
+
+        commands.onCommand(fixture.installer.player, TestCommand, "citadel", args)
+
+        assertTrue(fixture.stranger.addedItems.isEmpty())
+        assertTrue(fixture.installer.messages.filterIsInstance<TextComponent>()
+            .any { it.content().contains("thirdparty:steel_plate") && it.content().contains("не зарегистрирован") })
+        val adapter = TestMaterialAdapter(Key("thirdparty", "steel_plate"))
+        assertTrue(fixture.materials.register("thirdparty", TestMaterialRegistry(adapter)))
+
+        commands.onCommand(fixture.installer.player, TestCommand, "citadel", args)
+
+        val received = fixture.stranger.addedItems.single()
+        assertEquals(3, received.amount)
+        assertTrue(adapter.isConsists(received))
+    }
+
     private fun PaperTestFixture.interact(): PlayerInteractEvent = PlayerInteractEvent(
         installer.player, Action.RIGHT_CLICK_BLOCK, installer.held, block(), BlockFace.UP, EquipmentSlot.HAND
     )
@@ -240,10 +269,10 @@ class ConfiguredCitadelTypesTest {
 
     private companion object {
         val CUSTOM_TYPES = CitadelTypesSettings(linkedMapOf(
-            "clay_guard" to CitadelTypeSettings(Key("fornaxcitadel", "clay_guard"), health = HealthBehaviorSettings.Simple(13.0)),
-            "titanium" to CitadelTypeSettings(Key("fornaxcitadel", "titanium"), health = HealthBehaviorSettings.Simple(73.0)),
-            "growing_wall" to CitadelTypeSettings(Key("fornaxcitadel", "growing_wall"), health = HealthBehaviorSettings.Maturing(6.0, 48.0, 30)),
-            "sanctuary" to CitadelTypeSettings(Key("fornaxcitadel", "sanctuary"), CitadelBreakPolicy.UNBREAKABLE)
+            "clay_guard" to CitadelTypeSettings(Key("minecraft", "clay_ball"), health = HealthBehaviorSettings.Simple(13.0)),
+            "titanium" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), health = HealthBehaviorSettings.Simple(73.0)),
+            "growing_wall" to CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(6.0, 48.0, 30)),
+            "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelBreakPolicy.UNBREAKABLE)
         ))
     }
 }

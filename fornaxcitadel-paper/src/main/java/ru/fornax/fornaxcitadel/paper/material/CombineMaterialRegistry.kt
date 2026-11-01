@@ -4,7 +4,10 @@ import org.bukkit.block.Block
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.util.Key
 
-/** Custom registries are consulted in registration order, followed by vanilla materials. */
+/**
+ * Custom registries are consulted in registration order, followed by vanilla materials.
+ * Each lookup consults the current providers without caching unresolved materials.
+ */
 class CombineMaterialRegistry(vararg namespaceToRegistry: Pair<String, MaterialRegistry>) : MaterialRegistry {
     private val registries = linkedMapOf<String, MaterialRegistry>()
 
@@ -14,6 +17,7 @@ class CombineMaterialRegistry(vararg namespaceToRegistry: Pair<String, MaterialR
         }
     }
 
+    /** Register on the server's main thread; existing configuration bindings take effect on the next lookup. */
     fun register(namespace: String, registry: MaterialRegistry): Boolean {
         require(namespace.isNotBlank()) { "Material namespace must not be blank" }
         Key(namespace, "material")

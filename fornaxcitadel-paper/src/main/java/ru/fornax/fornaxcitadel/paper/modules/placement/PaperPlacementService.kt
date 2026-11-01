@@ -57,7 +57,10 @@ class PaperPlacementService @JvmOverloads constructor(
         module.actions.validatorCoordinator.unregisterValidator(blockValidator)
     }
 
-    /** Material identity and citadel definition are independent, including for third-party items. */
+    /**
+     * Binds an item key to a citadel definition without resolving its adapter.
+     * The material provider may register later; item recognition uses the current registry on each interaction.
+     */
     fun registerMaterial(materialKey: Key, definitionKey: Key) {
         val existing = definitionsByMaterial.putIfAbsent(materialKey, definitionKey)
         require(existing == null || existing == definitionKey) {

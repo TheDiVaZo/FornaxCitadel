@@ -45,7 +45,6 @@ import ru.fornax.fornaxcitadel.modules.breaking.BreakPolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
-import ru.fornax.fornaxcitadel.paper.material.CitadelItems
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingListener
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
@@ -79,9 +78,9 @@ internal class PaperTestFixture(
     explosionPowers: ExplosionPowerSettings = ExplosionPowerSettings(),
     placementSettings: PlacementSettings = PlacementSettings(),
     citadelSettings: CitadelTypesSettings = CitadelTypesSettings(linkedMapOf(
-        "reinforced" to CitadelTypeSettings(PaperCitadelTypes.REINFORCED, health = HealthBehaviorSettings.Simple(100.0)),
-        "maturing" to CitadelTypeSettings(PaperCitadelTypes.MATURING, health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
-        "invulnerable" to CitadelTypeSettings(PaperCitadelTypes.INVULNERABLE, breakPolicy = CitadelBreakPolicy.UNBREAKABLE)
+        "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), health = HealthBehaviorSettings.Simple(100.0)),
+        "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
+        "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), breakPolicy = CitadelBreakPolicy.UNBREAKABLE)
     ))
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
@@ -190,8 +189,7 @@ internal class PaperTestFixture(
         context.actorId?.let(players::get)?.let { it.online && "fornaxcitadel.admin" in it.permissions } == true
     })
     val citadelTypes = PaperCitadelTypes(citadelSettings)
-    val items = CitadelItems(plugin, citadelTypes)
-    val materials = CombineMaterialRegistry("fornaxcitadel" to items)
+    val materials = CombineMaterialRegistry()
     val placementService = PaperPlacementService(plugin, module, materials, placementSettings).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
@@ -283,10 +281,11 @@ internal class PaperTestFixture(
     fun health(): Double = assertNotNull(manager.findCitadel(worldId, position.x, position.y, position.z))
         .getComponent(Health::class.java)!!.health
 
-    fun markedStack(type: Key = PaperCitadelTypes.REINFORCED, amount: Int = 2): TestItemStack =
-        TestItemStack(Material.AMETHYST_SHARD, amount).apply {
-            data.values[NamespacedKey(plugin, "citadel_type")] = type.asString()
-        }
+    fun reinforcementStack(type: Key = PaperCitadelTypes.REINFORCED, amount: Int = 2): TestItemStack {
+        val item = checkNotNull(citadelTypes.itemKey(type))
+        require(item.namespace == "minecraft") { "Use an external adapter to create custom test items" }
+        return TestItemStack(checkNotNull(Material.matchMaterial(item.asString())), amount)
+    }
 
     fun runScheduledTasks() = advanceTicks(1)
 
