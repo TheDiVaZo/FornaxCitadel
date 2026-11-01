@@ -10,13 +10,13 @@ import java.util.UUID
  * Delegates to [manager]; its threading and live component lifetime rules apply.
  */
 class CitadelReference(
-    val manager: SimpleComponentManager,
+    val manager: ComponentManager,
     override var world: UUID,
     override var x: Int,
     override var y: Int,
     override var z: Int,
 ): ICitadelReference {
-    constructor(manager: SimpleComponentManager) : this(manager, UUID(0, 0), 0,0,0)
+    constructor(manager: ComponentManager) : this(manager, UUID(0, 0), 0,0,0)
 
     fun loadOf(action: ActionData) {
         this.world = action.citadelW

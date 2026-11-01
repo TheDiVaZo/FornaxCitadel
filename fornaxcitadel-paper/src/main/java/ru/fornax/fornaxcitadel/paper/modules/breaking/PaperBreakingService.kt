@@ -6,19 +6,17 @@ import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
-import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.breaking.BreakAction
-import ru.fornax.fornaxcitadel.modules.breaking.BreakDecision
+import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
 
-/** Resolves player mining attempts through core break policies and actions. */
+/** Calculates player mining damage and submits it through the shared damage action pipeline. */
 class PaperBreakingService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
@@ -45,24 +43,17 @@ class PaperBreakingService @JvmOverloads constructor(
         enabled = false
     }
 
-    fun prepareBreak(player: Player, block: Block): MiningDecision {
-        if (!enabled) return MiningDecision.DEFAULT
-        if (!block.supportsCitadelData()) return MiningDecision.DEFAULT
+    fun canStartBreaking(player: Player, block: Block): Boolean {
+        if (!enabled || !block.supportsCitadelData()) return true
         return try {
             if (!manager.isChunkLoaded(block.world.uid, block.x shr 4, block.z shr 4)) {
                 deny(player, "Данные чанка пока недоступны.")
-                return MiningDecision.DENY
+                return false
             }
-            val citadel = manager.findCitadel(block.world.uid, block.x, block.y, block.z)
-                ?: return MiningDecision.DEFAULT
-            val kind = citadel.getComponent(CitadelKind::class.java) ?: return MiningDecision.DEFAULT
-            val policy = module.breaking.findPolicy(kind.definitionKey) ?: return MiningDecision.DEFAULT
-            val context = ActionContext(player.uniqueId, BREAK_SOURCE)
-            if (policy.decide(context, citadel) == BreakDecision.REMOVE) MiningDecision.INSTANT
-            else MiningDecision.DEFAULT
+            true
         } catch (exception: Exception) {
             report(player, "Could not check a citadel breaking attempt", exception)
-            MiningDecision.DENY
+            false
         }
     }
 
@@ -77,7 +68,7 @@ class PaperBreakingService @JvmOverloads constructor(
             }
             val citadel = manager.findCitadel(block.world.uid, block.x, block.y, block.z) ?: return false
             val damage = damageModifiers.getDamage(citadel, player)
-            val result = module.actions.execute(BreakAction(
+            val result = module.actions.execute(DamageAction(
                 ActionContext(player.uniqueId, BREAK_SOURCE), citadel.position, damage
             ))
             if (result != ActionResult.SUCCESS) {
@@ -102,8 +93,6 @@ class PaperBreakingService @JvmOverloads constructor(
         plugin.logger.log(Level.SEVERE, message, exception)
         deny(player, "Не удалось выполнить действие. Сообщите администратору.")
     }
-
-    enum class MiningDecision { DEFAULT, INSTANT, DENY }
 
     private companion object {
         val BREAK_SOURCE = Key("paper", "player_break")

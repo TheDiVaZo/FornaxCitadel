@@ -7,7 +7,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.component.TypeManager
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -20,14 +20,11 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.breaking.BreakAction
-import ru.fornax.fornaxcitadel.modules.breaking.BreakDecision
-import ru.fornax.fornaxcitadel.modules.breaking.BreakPolicy
-import ru.fornax.fornaxcitadel.modules.breaking.DamageBreakPolicy
-import ru.fornax.fornaxcitadel.modules.breaking.UnbreakablePolicy
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
+import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturingHealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
@@ -120,32 +117,32 @@ class CitadelModuleTest {
 
     @Test
     fun `custom removal policy dismantles immediately only after global validation allows the action`() {
-        val fixture = Fixture()
-        fixture.register(policy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
+        val fixture = Fixture(RemovalPolicy { context, _ -> context.actorId == PLACER })
+        fixture.register(policy = DamagePolicy.DENY)
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(PLACER_CONTEXT, 1.0))
+        assertEquals(ActionResult.SUCCESS, fixture.remove(PLACER_CONTEXT))
 
         assertNull(fixture.find())
-        assertEquals(listOf(RemovalCause.OWNER_DISMANTLE), fixture.removals.map { it.second })
+        assertEquals(listOf(RemovalCause.ADMIN), fixture.removals.map { it.second })
         assertEquals(listOf(false), fixture.removalSawExistingEntity)
 
-        val protected = Fixture()
-        protected.register(policy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
+        val protected = Fixture(RemovalPolicy { context, _ -> context.actorId == PLACER })
+        protected.register(policy = DamagePolicy.DENY)
         protected.load()
         assertEquals(ActionResult.SUCCESS, protected.place())
         protected.chunk().resetDirty()
-        protected.reject(BreakAction::class.java)
+        protected.reject(RemoveAction::class.java)
 
-        assertEquals(ActionResult.DENIED, protected.breakCitadel(PLACER_CONTEXT, 1.0))
+        assertEquals(ActionResult.DENIED, protected.remove(PLACER_CONTEXT))
         assertEquals(100.0, protected.health().health)
         assertFalse(protected.chunk().isDirty)
         assertTrue(protected.removals.isEmpty())
     }
 
     @Test
-    fun `breaking damages health and death removes once without running removal vetoes`() {
+    fun `damage updates health and death removes once without running removal vetoes`() {
         val fixture = Fixture()
         fixture.register()
         fixture.load()
@@ -159,31 +156,31 @@ class CitadelModuleTest {
             }
         })
 
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(STRANGER_CONTEXT, 25.0))
+        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 25.0))
         assertEquals(75.0, fixture.health().health)
         assertTrue(fixture.removals.isEmpty())
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(STRANGER_CONTEXT, 75.0))
+        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 75.0))
 
         assertNull(fixture.find())
         assertEquals(0, removalValidationCalls)
         assertEquals(listOf(RemovalCause.DESTROYED), fixture.removals.map { it.second })
-        assertEquals(ActionResult.DENIED, fixture.breakCitadel(STRANGER_CONTEXT, 1.0))
+        assertEquals(ActionResult.DENIED, fixture.damage(STRANGER_CONTEXT, 1.0))
         assertEquals(1, fixture.removals.size)
     }
 
     @Test
-    fun `invulnerable type rejects both break attempts and direct damage even with a health component`() {
+    fun `invulnerable type rejects damage from players and specialized sources even with health`() {
         val fixture = Fixture()
-        fixture.register(policy = UnbreakablePolicy)
+        fixture.register(policy = DamagePolicy.DENY)
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
 
-        assertEquals(ActionResult.DENIED, fixture.breakCitadel(PLACER_CONTEXT, 1_000.0))
-        assertEquals(ActionResult.DENIED, fixture.breakCitadel(STRANGER_CONTEXT, 1_000.0))
+        assertEquals(ActionResult.DENIED, fixture.damage(PLACER_CONTEXT, 1_000.0))
+        assertEquals(ActionResult.DENIED, fixture.damage(STRANGER_CONTEXT, 1_000.0))
         assertEquals(
             ActionResult.DENIED,
-            fixture.module.actions.execute(DamageAction(STRANGER_CONTEXT, POSITION, 1_000.0))
+            fixture.module.actions.execute(SpecializedDamage(ActionContext.SYSTEM, POSITION, 1_000.0))
         )
 
         assertEquals(100.0, fixture.health().health)
@@ -194,18 +191,66 @@ class CitadelModuleTest {
     @Test
     fun `invulnerable definition needs no artificial health component`() {
         val fixture = Fixture()
-        fixture.register(behavior = null, policy = UnbreakablePolicy)
+        fixture.register(behavior = null, policy = DamagePolicy.DENY)
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
         assertNull(fixture.handle().getComponent(Health::class.java))
         assertNull(fixture.module.health.getCurrentHealth(WORLD, POSITION.x, POSITION.y, POSITION.z))
-        assertEquals(ActionResult.DENIED, fixture.breakCitadel(PLACER_CONTEXT, 100.0))
+        assertEquals(ActionResult.DENIED, fixture.damage(PLACER_CONTEXT, 100.0))
         assertEquals(
             ActionResult.DENIED,
-            fixture.module.actions.execute(DamageAction(STRANGER_CONTEXT, POSITION, 100.0))
+            fixture.module.actions.execute(SpecializedDamage(ActionContext.SYSTEM, POSITION, 100.0))
         )
         assertNotNull(fixture.find())
+        assertTrue(fixture.removals.isEmpty())
+    }
+
+    @Test
+    fun `custom type policies and common validators apply to every damage action`() {
+        val fixture = Fixture()
+        fixture.register(policy = DamagePolicy { context, citadel ->
+            context.actorId == PLACER && citadel.position == POSITION
+        })
+        fixture.load()
+        assertEquals(ActionResult.SUCCESS, fixture.place())
+        fixture.chunk().resetDirty()
+
+        assertEquals(ActionResult.DENIED, fixture.damage(STRANGER_CONTEXT, 10.0))
+        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+            SpecializedDamage(ActionContext.SYSTEM, POSITION, 10.0)
+        ))
+        assertEquals(100.0, fixture.health().health)
+        assertFalse(fixture.chunk().isDirty)
+
+        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+            SpecializedDamage(PLACER_CONTEXT, POSITION, 10.0)
+        ))
+        assertEquals(90.0, fixture.health().health)
+        fixture.chunk().resetDirty()
+        fixture.reject(DamageAction::class.java)
+
+        assertEquals(ActionResult.DENIED, fixture.damage(PLACER_CONTEXT, 10.0))
+        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+            SpecializedDamage(PLACER_CONTEXT, POSITION, 10.0)
+        ))
+        assertEquals(90.0, fixture.health().health)
+        assertFalse(fixture.chunk().isDirty)
+    }
+
+    @Test
+    fun `a type with health but no registered damage policy rejects damage`() {
+        val fixture = Fixture()
+        val behavior = SimpleHealthBehavior(100.0)
+        fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(behavior))))
+        fixture.module.health.registerBehavior(DEFAULT_KIND, behavior)
+        fixture.load()
+        assertEquals(ActionResult.SUCCESS, fixture.place())
+        fixture.chunk().resetDirty()
+
+        assertEquals(ActionResult.DENIED, fixture.damage(PLACER_CONTEXT, 100.0))
+        assertEquals(100.0, fixture.health().health)
+        assertFalse(fixture.chunk().isDirty)
         assertTrue(fixture.removals.isEmpty())
     }
 
@@ -215,9 +260,9 @@ class CitadelModuleTest {
         fixture.register()
 
         assertEquals(ActionResult.DENIED, fixture.place())
-        assertEquals(ActionResult.DENIED, fixture.breakCitadel(STRANGER_CONTEXT, 1.0))
+        assertEquals(ActionResult.DENIED, fixture.damage(STRANGER_CONTEXT, 1.0))
         fixture.load()
-        assertEquals(ActionResult.DENIED, fixture.breakCitadel(STRANGER_CONTEXT, 1.0))
+        assertEquals(ActionResult.DENIED, fixture.damage(STRANGER_CONTEXT, 1.0))
         assertEquals(ActionResult.DENIED, fixture.place(key = Key("test", "missing")))
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.DENIED, fixture.place())
@@ -241,8 +286,8 @@ class CitadelModuleTest {
 
         assertEquals(25.0, fixture.module.health.getCurrentMaxHealth(WORLD, POSITION.x, POSITION.y, POSITION.z))
         assertEquals(60.0, fixture.module.health.getCurrentMaxHealth(WORLD, SECOND_POSITION.x, SECOND_POSITION.y, SECOND_POSITION.z))
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(STRANGER_CONTEXT, 5.0))
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(STRANGER_CONTEXT, 10.0, SECOND_POSITION))
+        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 5.0))
+        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 10.0, SECOND_POSITION))
         assertEquals(20.0, fixture.health().health)
         assertEquals(50.0, fixture.health(SECOND_POSITION).health)
     }
@@ -280,8 +325,8 @@ class CitadelModuleTest {
 
     @Test
     fun `observer failures do not undo committed actions or skip subsequent observers`() {
-        val fixture = Fixture()
-        fixture.register(policy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
+        val fixture = Fixture(RemovalPolicy { context, _ -> context.actorId == PLACER })
+        fixture.register()
         fixture.load()
         var laterPlaced = 0
         var laterRemoved = 0
@@ -296,7 +341,7 @@ class CitadelModuleTest {
 
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertNotNull(fixture.find())
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(PLACER_CONTEXT, 1.0))
+        assertEquals(ActionResult.SUCCESS, fixture.remove(PLACER_CONTEXT))
 
         assertNull(fixture.find())
         assertEquals(1, laterPlaced)
@@ -305,8 +350,8 @@ class CitadelModuleTest {
 
     @Test
     fun `observers can post removal but cannot mutate or recursively execute before other observers finish`() {
-        val fixture = Fixture()
-        fixture.register(policy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
+        val fixture = Fixture(RemovalPolicy { context, _ -> context.actorId == PLACER })
+        fixture.register()
         fixture.load()
         var directRemovalFailure: IllegalStateException? = null
         var nestedExecutionFailure: IllegalStateException? = null
@@ -320,7 +365,7 @@ class CitadelModuleTest {
                     directRemovalFailure = failure
                 }
                 try {
-                    fixture.module.actions.execute(BreakAction(PLACER_CONTEXT, position, 1.0))
+                    fixture.module.actions.execute(RemoveAction(PLACER_CONTEXT, position))
                 } catch (failure: IllegalStateException) {
                     nestedExecutionFailure = failure
                 }
@@ -329,7 +374,7 @@ class CitadelModuleTest {
                 } catch (failure: IllegalStateException) {
                     nestedDrainFailure = failure
                 }
-                fixture.module.actions.post(BreakAction(PLACER_CONTEXT, position, 1.0))
+                fixture.module.actions.post(RemoveAction(PLACER_CONTEXT, position))
             }
         })
         fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
@@ -348,7 +393,7 @@ class CitadelModuleTest {
         assertTrue(fixture.removals.isEmpty())
         assertEquals(1, fixture.module.actions.drainPosted())
         assertNull(fixture.find())
-        assertEquals(listOf(RemovalCause.OWNER_DISMANTLE), fixture.removals.map { it.second })
+        assertEquals(listOf(RemovalCause.ADMIN), fixture.removals.map { it.second })
         assertEquals(0, fixture.module.actions.drainPosted())
     }
 
@@ -426,7 +471,7 @@ class CitadelModuleTest {
         fixture.register(behavior = MaturingHealthBehavior(20.0, 100.0, 1_000L, clock))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(STRANGER_CONTEXT, 15.0))
+        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 15.0))
         val oldHandle = fixture.handle()
 
         fixture.manager.unloadChunk(WORLD, 0, 0).join()
@@ -451,7 +496,7 @@ class CitadelModuleTest {
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         val oldHandle = fixture.handle()
-        assertEquals(ActionResult.SUCCESS, fixture.breakCitadel(PLACER_CONTEXT, 100.0))
+        assertEquals(ActionResult.SUCCESS, fixture.damage(PLACER_CONTEXT, 100.0))
         assertEquals(ActionResult.SUCCESS, fixture.place(context = STRANGER_CONTEXT))
         val replacement = fixture.handle()
         fixture.chunk().resetDirty()
@@ -470,7 +515,7 @@ class CitadelModuleTest {
         val mapper = ChunkCordSnapshotMapper(types)
         val backend = MemoryBackend()
         val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, mapper, Executor(Runnable::run))
-        val manager = SimpleComponentManager(storage, types)
+        val manager = ComponentManager(storage, types)
         val module = CitadelModule(manager, removalPolicy).apply { enable() }
         val placements = mutableListOf<CitadelPosition>()
         val removals = mutableListOf<Pair<CitadelPosition, RemovalCause>>()
@@ -492,7 +537,7 @@ class CitadelModuleTest {
         fun register(
             key: Key = DEFAULT_KIND,
             behavior: HealthBehavior? = SimpleHealthBehavior(100.0),
-            policy: BreakPolicy = DamageBreakPolicy,
+            policy: DamagePolicy = DamagePolicy.ALLOW,
             initializers: List<CitadelInitializer> = emptyList()
         ) {
             module.registerDefinition(CitadelDefinition(key, initializers), policy, behavior)
@@ -506,8 +551,11 @@ class CitadelModuleTest {
             context: ActionContext = PLACER_CONTEXT
         ): ActionResult = module.actions.execute(PlaceAction(context, position, key))
 
-        fun breakCitadel(context: ActionContext, damage: Double, position: CitadelPosition = POSITION): ActionResult =
-            module.actions.execute(BreakAction(context, position, damage))
+        fun damage(context: ActionContext, damage: Double, position: CitadelPosition = POSITION): ActionResult =
+            module.actions.execute(DamageAction(context, position, damage))
+
+        fun remove(context: ActionContext, position: CitadelPosition = POSITION): ActionResult =
+            module.actions.execute(RemoveAction(context, position))
 
         fun find(position: CitadelPosition = POSITION) =
             manager.findCitadel(position.world, position.x, position.y, position.z)
@@ -533,6 +581,9 @@ class CitadelModuleTest {
     }
 
     private class ProbeAction(val number: Int) : ActionData(PROBE_KEY, WORLD, 0, 0, 0)
+
+    private class SpecializedDamage(context: ActionContext, position: CitadelPosition, damage: Double) :
+        DamageAction(context, position, damage)
 
     private class MemoryBackend : DBStorage {
         private val persisted = mutableMapOf<WXZCord, ChunkCordSnapshot>()

@@ -5,13 +5,13 @@ import org.bukkit.event.world.WorldUnloadEvent
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.component.TypeManager
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.breaking.DamageBreakPolicy
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
@@ -224,13 +224,13 @@ class PaperChunkServiceTest {
         val backend = PersistContainerChunkStorage(paper.plugin, DirectScheduler)
         private val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler,
             ChunkCordSnapshotMapper(types), Executor(Runnable::run))
-        val manager = SimpleComponentManager(storage, types)
+        val manager = ComponentManager(storage, types)
         private val module = CitadelModule(manager)
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
 
         init {
             module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, emptyList()),
-                DamageBreakPolicy, SimpleHealthBehavior(100.0))
+                DamagePolicy.ALLOW, SimpleHealthBehavior(100.0))
             module.enable()
         }
 

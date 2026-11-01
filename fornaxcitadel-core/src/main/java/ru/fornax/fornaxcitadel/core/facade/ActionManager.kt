@@ -12,7 +12,7 @@ import java.util.ArrayDeque
  * Not thread-safe; use on the owning game thread, like [componentManager].
  */
 class ActionManager(
-    val componentManager: SimpleComponentManager,
+    val componentManager: ComponentManager,
     val processorCoordinator: ProcessorCoordinator = ProcessorCoordinator(),
     val validatorCoordinator: ValidatorCoordinator = ValidatorCoordinator()
 ) {

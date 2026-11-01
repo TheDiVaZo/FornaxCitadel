@@ -4,10 +4,9 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.modules.breaking.BreakPolicy
-import ru.fornax.fornaxcitadel.modules.breaking.BreakService
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthService
@@ -29,7 +28,7 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
  * This module changes component data only; it has no Minecraft/Paper dependencies.
  */
 class CitadelModule @JvmOverloads constructor(
-    manager: SimpleComponentManager,
+    manager: ComponentManager,
     removalPolicy: RemovalPolicy = RemovalPolicy.DENY
 ) : LifecycleService {
     val definitions = CitadelDefinitionRegistry()
@@ -38,8 +37,7 @@ class CitadelModule @JvmOverloads constructor(
     val place = PlaceService(actions, definitions, lifecycle)
     val remove = RemoveService(actions, lifecycle, removalPolicy)
     val health = HealthService(actions, remove)
-    val breaking = BreakService(actions, health, remove, lifecycle)
-    private val services: List<LifecycleService> = listOf(remove, health, place, breaking)
+    private val services: List<LifecycleService> = listOf(remove, health, place)
 
     override fun enable() {
         try {
@@ -63,17 +61,17 @@ class CitadelModule @JvmOverloads constructor(
     @JvmOverloads
     fun registerDefinition(
         definition: CitadelDefinition,
-        breakPolicy: BreakPolicy,
+        damagePolicy: DamagePolicy,
         healthBehavior: HealthBehavior? = null
     ) {
         require(definitions.find(definition.key) == null) { "Citadel definition already registered: ${definition.key}" }
-        require(breaking.findPolicy(definition.key) == null) { "Break policy already registered: ${definition.key}" }
+        require(health.findPolicy(definition.key) == null) { "Damage policy already registered: ${definition.key}" }
         require(health.findBehavior(definition.key) == null) { "Health behavior already registered: ${definition.key}" }
         val prepared = if (healthBehavior == null) definition else CitadelDefinition(
             definition.key, definition.initializers + HealthInitializer(healthBehavior)
         )
         definitions.register(prepared)
-        breaking.registerPolicy(definition.key, breakPolicy)
+        health.registerPolicy(definition.key, damagePolicy)
         if (healthBehavior != null) health.registerBehavior(definition.key, healthBehavior)
     }
 }

@@ -45,6 +45,7 @@ explosions:
 # Item keys default to the minecraft namespace when omitted.
 # External providers register their own namespace (e.g. otherplugin:reinforcement).
 # Materials are resolved on use; providers may register after FornaxCitadel enables.
+# damage-policy defaults to allow; deny blocks damage from every source.
 citadel-types:
   reinforced_light:
     item: minecraft:copper_ingot
@@ -84,8 +85,8 @@ citadel-types:
       duration-seconds: 1800
   invulnerable:
     item: minecraft:nether_star
-    # Unbreakable types require administrator permission to install.
-    break-policy: unbreakable
+    # Invulnerable types require administrator permission to install.
+    damage-policy: deny
 
 placement:
   # Solid blocks only; pistons and piston parts are always rejected.

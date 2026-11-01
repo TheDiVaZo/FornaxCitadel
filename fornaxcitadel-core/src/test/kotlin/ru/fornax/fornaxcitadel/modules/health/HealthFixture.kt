@@ -7,7 +7,7 @@ import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
@@ -29,7 +29,7 @@ internal class HealthFixture(
 ) {
     val types = TypeManager()
     val storage = MemoryStorage(if (loaded) ChunkCord(WXZCord(WORLD, 0, 0)) else null)
-    val manager = SimpleComponentManager(storage, types)
+    val manager = ComponentManager(storage, types)
     val notifications = CitadelLifecycleNotifications()
     val actions = ActionManager(manager)
     val service = HealthService(actions, RemoveService(actions, notifications))

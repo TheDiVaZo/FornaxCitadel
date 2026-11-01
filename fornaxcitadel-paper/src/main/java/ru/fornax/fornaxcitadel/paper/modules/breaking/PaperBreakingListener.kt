@@ -11,12 +11,7 @@ class PaperBreakingListener(private val service: PaperBreakingService) : Listene
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onDamage(event: BlockDamageEvent) {
         try {
-            when (service.prepareBreak(event.player, event.block)) {
-                PaperBreakingService.MiningDecision.DEFAULT -> Unit
-                // This only skips the vanilla mining delay. onBreak still authorizes the action.
-                PaperBreakingService.MiningDecision.INSTANT -> event.instaBreak = true
-                PaperBreakingService.MiningDecision.DENY -> event.isCancelled = true
-            }
+            if (!service.canStartBreaking(event.player, event.block)) event.isCancelled = true
         } catch (exception: Exception) {
             event.isCancelled = true
             throw exception

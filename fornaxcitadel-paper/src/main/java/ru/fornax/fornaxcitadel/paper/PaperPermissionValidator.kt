@@ -6,7 +6,6 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.modules.breaking.BreakAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
@@ -29,7 +28,7 @@ class PaperPermissionValidator(
             // Environmental eligibility is typed; context.source is attribution, not permission.
             is ExplosionDamageAction -> null
             is PlaceAction -> "fornaxcitadel.place"
-            is BreakAction, is DamageAction -> "fornaxcitadel.damage"
+            is DamageAction -> "fornaxcitadel.damage"
             is RemoveAction -> "fornaxcitadel.admin"
             else -> return ActionValidator.Result.Neutral
         }

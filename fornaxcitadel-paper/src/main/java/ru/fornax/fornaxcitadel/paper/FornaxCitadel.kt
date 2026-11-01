@@ -4,7 +4,7 @@ import org.bukkit.command.PluginCommand
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
 import ru.fornax.fornaxcitadel.core.component.TypeManager
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -42,7 +42,7 @@ class FornaxCitadel : JavaPlugin() {
     lateinit var playerDamage: PlayerDamageModifierService
         private set
     private var schedulerAdapter: PaperScheduler? = null
-    private var componentManager: SimpleComponentManager? = null
+    private var componentManager: ComponentManager? = null
     private var chunkBackend: PersistContainerChunkStorage? = null
     private var actionQueue: PaperActionQueueService? = null
     private var commandBinding: Pair<PluginCommand, CitadelCommand>? = null
@@ -64,7 +64,7 @@ class FornaxCitadel : JavaPlugin() {
             // All PDC reads/writes and codec work finish on the main thread in this prototype.
             // Do not replace this executor with a worker pool without redesigning chunk unload.
             val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor { it.run() })
-            val manager = SimpleComponentManager(storage, types).also { componentManager = it }
+            val manager = ComponentManager(storage, types).also { componentManager = it }
             citadelTypes = PaperCitadelTypes(settings.citadelTypes)
             val permissions = PaperPermissionValidator(server, citadelTypes)
             val module = CitadelModule(manager, RemovalPolicy { context, _ -> permissions.canAdminister(context) })

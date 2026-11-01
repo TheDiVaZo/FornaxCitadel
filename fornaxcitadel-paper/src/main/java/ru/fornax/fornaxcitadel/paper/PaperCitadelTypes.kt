@@ -3,8 +3,7 @@ package ru.fornax.fornaxcitadel.paper
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.breaking.DamageBreakPolicy
-import ru.fornax.fornaxcitadel.modules.breaking.UnbreakablePolicy
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import java.util.Locale
 
 /** One immutable catalog shared by definitions, installation items, permissions and commands. */
@@ -20,15 +19,15 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
     /** Installation material identity is independent of the citadel definition's identity. */
     fun itemKey(key: Key): Key? = name(key)?.let { configured.getValue(it).item }
 
-    fun isUnbreakable(key: Key): Boolean = name(key)?.let { configured.getValue(it).breakPolicy } ==
-        CitadelBreakPolicy.UNBREAKABLE
-    fun requiresAdmin(key: Key): Boolean = isUnbreakable(key)
+    fun isInvulnerable(key: Key): Boolean = name(key)?.let { configured.getValue(it).damagePolicy } ==
+        CitadelDamagePolicy.DENY
+    fun requiresAdmin(key: Key): Boolean = isInvulnerable(key)
 
     fun register(module: CitadelModule) {
         for ((name, settings) in configured) {
-            val policy = when (settings.breakPolicy) {
-                CitadelBreakPolicy.DAMAGE -> DamageBreakPolicy
-                CitadelBreakPolicy.UNBREAKABLE -> UnbreakablePolicy
+            val policy = when (settings.damagePolicy) {
+                CitadelDamagePolicy.ALLOW -> DamagePolicy.ALLOW
+                CitadelDamagePolicy.DENY -> DamagePolicy.DENY
             }
             module.registerDefinition(
                 CitadelDefinition(byName.getValue(name), emptyList()),

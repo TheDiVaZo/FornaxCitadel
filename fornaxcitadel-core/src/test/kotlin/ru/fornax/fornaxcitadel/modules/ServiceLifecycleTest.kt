@@ -7,7 +7,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
@@ -17,12 +17,8 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.breaking.BreakAction
-import ru.fornax.fornaxcitadel.modules.breaking.BreakPolicy
-import ru.fornax.fornaxcitadel.modules.breaking.BreakService
-import ru.fornax.fornaxcitadel.modules.breaking.DamageBreakPolicy
-import ru.fornax.fornaxcitadel.modules.breaking.UnbreakablePolicy
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthService
@@ -65,7 +61,7 @@ class ServiceLifecycleTest {
         assertEquals(1_000L, citadel.getComponent(Maturing::class.java)?.startedAtMillis)
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 2.0)))
         assertEquals(8.0, fixture.currentHealth())
-        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(BreakAction(ActionContext.SYSTEM, POSITION, 3.0)))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 3.0)))
         assertEquals(5.0, fixture.currentHealth())
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(RemoveAction(ActionContext.SYSTEM, POSITION)))
         assertNull(fixture.find())
@@ -110,14 +106,14 @@ class ServiceLifecycleTest {
             fixture.types.getType(Health::class.java),
             fixture.types.getType(Maturing::class.java)
         ))
-        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(BreakAction(ActionContext.SYSTEM, POSITION, 8.0)))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 8.0)))
         assertNull(fixture.find())
     }
 
     @Test
-    fun `breaking toggles only its own damage validator and restores type protection`() {
+    fun `health toggles only its own damage validator and restores type protection`() {
         val fixture = Fixture()
-        fixture.prepare(UnbreakablePolicy)
+        fixture.prepare(DamagePolicy.DENY)
         fixture.enable()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         val damage = DamageAction(ActionContext.SYSTEM, POSITION, 20.0)
@@ -128,11 +124,11 @@ class ServiceLifecycleTest {
         fixture.actions.validatorCoordinator.registerValidator(external)
         assertEquals(ActionResult.DENIED, fixture.actions.execute(damage))
 
-        fixture.breaking.disable()
-        fixture.breaking.disable()
+        fixture.health.disable()
+        fixture.health.disable()
         assertSame(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(damage))
-        fixture.breaking.enable()
-        fixture.breaking.enable()
+        fixture.health.enable()
+        fixture.health.enable()
         assertEquals(ActionResult.DENIED, fixture.actions.execute(damage))
         assertEquals(10.0, fixture.currentHealth())
         fixture.disable()
@@ -146,15 +142,15 @@ class ServiceLifecycleTest {
         val fixture = Fixture()
         fixture.enable()
         val coordinator = fixture.actions.processorCoordinator
-        val own = assertNotNull(coordinator.getProcessor(BreakAction.KEY))
+        val own = assertNotNull(coordinator.getProcessor(DamageAction.KEY))
         assertTrue(coordinator.unregisterProcessor(own))
-        val replacement = breakProcessor()
+        val replacement = damageProcessor()
         coordinator.registerProcessor(replacement)
 
         fixture.disable()
-        assertSame(replacement, coordinator.getProcessor(BreakAction.KEY))
+        assertSame(replacement, coordinator.getProcessor(DamageAction.KEY))
         assertFalse(coordinator.unregisterProcessor(own))
-        assertSame(replacement, coordinator.getProcessor(BreakAction.KEY))
+        assertSame(replacement, coordinator.getProcessor(DamageAction.KEY))
     }
 
     @Test
@@ -162,7 +158,7 @@ class ServiceLifecycleTest {
         val fixture = RootFixture()
         val module = fixture.module
         val definition = CitadelDefinition(TYPE, emptyList())
-        module.registerDefinition(definition, DamageBreakPolicy, behavior())
+        module.registerDefinition(definition, DamagePolicy.ALLOW, behavior())
         fixture.load()
         assertEquals(ActionResult.DENIED, module.actions.execute(placeAction()))
         module.enable()
@@ -188,12 +184,12 @@ class ServiceLifecycleTest {
     fun `failed root enable rolls back owned registrations and can be retried`() {
         val fixture = RootFixture()
         val module = fixture.module
-        val external = breakProcessor()
+        val external = damageProcessor()
         module.actions.processorCoordinator.registerProcessor(external)
 
         assertFailsWith<IllegalArgumentException> { module.enable() }
-        assertSame(external, module.actions.processorCoordinator.getProcessor(BreakAction.KEY))
-        for (key in ACTION_KEYS - BreakAction.KEY) assertNull(module.actions.processorCoordinator.getProcessor(key))
+        assertSame(external, module.actions.processorCoordinator.getProcessor(DamageAction.KEY))
+        for (key in ACTION_KEYS - DamageAction.KEY) assertNull(module.actions.processorCoordinator.getProcessor(key))
         assertNotNull(fixture.types.getType(Health::class.java))
         assertTrue(module.actions.processorCoordinator.unregisterProcessor(external))
 
@@ -206,24 +202,23 @@ class ServiceLifecycleTest {
     private class Fixture {
         val types = TypeManager()
         val storage = MemoryStorage()
-        private val manager = SimpleComponentManager(storage, types)
+        private val manager = ComponentManager(storage, types)
         val actions = ActionManager(manager)
         private val definitions = CitadelDefinitionRegistry()
         private val lifecycle = CitadelLifecycleNotifications()
         private val place = PlaceService(actions, definitions, lifecycle)
         private val remove = RemoveService(actions, lifecycle, RemovalPolicy { _, _ -> true })
-        private val health = HealthService(actions, remove)
-        val breaking = BreakService(actions, health, remove, lifecycle)
-        private val services: List<LifecycleService> = listOf(remove, health, place, breaking)
+        val health = HealthService(actions, remove)
+        private val services: List<LifecycleService> = listOf(remove, health, place)
 
         fun enable() = services.forEach { it.enable() }
         fun disable() = services.asReversed().forEach { it.disable() }
 
-        fun prepare(policy: BreakPolicy = DamageBreakPolicy) {
+        fun prepare(policy: DamagePolicy = DamagePolicy.ALLOW) {
             val behavior = behavior()
             definitions.register(CitadelDefinition(TYPE, listOf(HealthInitializer(behavior))))
             health.registerBehavior(TYPE, behavior)
-            breaking.registerPolicy(TYPE, policy)
+            health.registerPolicy(TYPE, policy)
             storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0))
         }
 
@@ -235,7 +230,7 @@ class ServiceLifecycleTest {
     private class RootFixture {
         val types = TypeManager()
         private val storage = MemoryStorage()
-        val manager = SimpleComponentManager(storage, types)
+        val manager = ComponentManager(storage, types)
         val module = CitadelModule(manager)
 
         fun load() { storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0)) }
@@ -255,16 +250,16 @@ class ServiceLifecycleTest {
     private companion object {
         val POSITION = CitadelPosition(UUID(1L, 2L), 1, 64, 2)
         val TYPE = Key("test", "standalone")
-        val ACTION_KEYS = listOf(PlaceAction.KEY, DamageAction.KEY, BreakAction.KEY, RemoveAction.KEY)
+        val ACTION_KEYS = listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY)
 
         fun placeAction() = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
         fun behavior() = MaturingHealthBehavior(10.0, 20.0, 10_000L,
             Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))
 
-        fun breakProcessor() = object : ActionProcessor<BreakAction>() {
-            override val actionClass = BreakAction::class.java
-            override val actionKey = BreakAction.KEY
-            override fun execute(action: BreakAction) = ActionResult.SUCCESS
+        fun damageProcessor() = object : ActionProcessor<DamageAction>() {
+            override val actionClass = DamageAction::class.java
+            override val actionKey = DamageAction.KEY
+            override fun execute(action: DamageAction) = ActionResult.SUCCESS
         }
     }
 }

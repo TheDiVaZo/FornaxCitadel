@@ -10,7 +10,7 @@ import ru.fornax.fornaxcitadel.core.storage.CitadelEntity
  * Read/edit access must stay on the owning game thread; returned components are live instances.
  */
 class CitadelHandle internal constructor(
-    internal val manager: SimpleComponentManager,
+    internal val manager: ComponentManager,
     internal val chunk: ChunkCord,
     internal val entity: CitadelEntity,
     val position: CitadelPosition

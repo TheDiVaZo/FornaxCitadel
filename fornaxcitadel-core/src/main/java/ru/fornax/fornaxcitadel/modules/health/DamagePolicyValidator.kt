@@ -1,13 +1,12 @@
-package ru.fornax.fornaxcitadel.modules.breaking
+package ru.fornax.fornaxcitadel.modules.health
 
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.modules.health.DamageAction
 
-/** Direct damage must honor the same type restrictions as breaking attempts. */
+/** Enforces the configured type rule for DamageAction and every specialized damage action. */
 internal class DamagePolicyValidator(
-    private val manager: SimpleComponentManager,
-    private val breaking: BreakService
+    private val manager: ComponentManager,
+    private val health: HealthService
 ) : ActionValidator<DamageAction> {
     override val actionClass = DamageAction::class.java
 
@@ -15,7 +14,7 @@ internal class DamagePolicyValidator(
         // The processor handles missing or unloaded targets.
         val target = manager.findCitadel(action.citadelW, action.citadelX, action.citadelY, action.citadelZ)
             ?: return ActionValidator.Result.Neutral
-        return if (breaking.allowsDamage(action.context, target)) ActionValidator.Result.Success
+        return if (health.allowsDamage(action.context, target)) ActionValidator.Result.Success
         else ActionValidator.Result.Rejected
     }
 }

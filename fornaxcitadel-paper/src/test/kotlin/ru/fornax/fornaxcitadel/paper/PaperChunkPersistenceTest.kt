@@ -7,7 +7,7 @@ import org.bukkit.event.world.WorldUnloadEvent
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.component.TypeManager
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -15,7 +15,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.breaking.DamageBreakPolicy
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
@@ -237,7 +237,7 @@ class PaperChunkPersistenceTest {
         val backend = PersistContainerChunkStorage(paper.plugin, scheduler)
         private val types = TypeManager()
         private val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
-        val manager = SimpleComponentManager(storage, types)
+        val manager = ComponentManager(storage, types)
         val module = CitadelModule(manager)
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
         val listener = PaperChunkListener(service)
@@ -252,7 +252,7 @@ class PaperChunkPersistenceTest {
         init {
             module.registerDefinition(
                 CitadelDefinition(PaperCitadelTypes.REINFORCED, emptyList()),
-                DamageBreakPolicy,
+                DamagePolicy.ALLOW,
                 SimpleHealthBehavior(100.0)
             )
             module.enable()

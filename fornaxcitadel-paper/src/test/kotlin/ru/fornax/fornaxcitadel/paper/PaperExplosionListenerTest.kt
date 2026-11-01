@@ -9,12 +9,14 @@ import org.bukkit.block.BlockState
 import org.bukkit.block.data.BlockData
 import org.bukkit.block.data.type.Bed
 import org.bukkit.entity.Entity
+import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockExplodeEvent
 import org.bukkit.event.entity.EntityExplodeEvent
 import org.bukkit.event.entity.ExplosionPrimeEvent
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
+import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -29,6 +31,7 @@ import java.util.UUID
 import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -36,6 +39,45 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperExplosionListenerTest {
+    @Test
+    fun `one damage validator rejects player and explosion damage across health service reenable`() {
+        val fixture = PaperTestFixture(permissions = true)
+        fixture.place()
+        val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(fixture.worldId, 0, 0)))
+        chunk.resetDirty()
+        val observedActors = mutableListOf<UUID?>()
+        val validator = object : ActionValidator<DamageAction> {
+            override val actionClass = DamageAction::class.java
+            override fun validate(action: DamageAction): ActionValidator.Result {
+                observedActors.add(action.context.actorId)
+                return ActionValidator.Result.Rejected
+            }
+        }
+        fixture.module.actions.validatorCoordinator.registerValidator(validator)
+
+        repeat(2) {
+            val breaking = BlockBreakEvent(fixture.block(), fixture.stranger.player)
+            dispatch(fixture.breakingListener, breaking, fixture.plugin)
+            val explosion = fixture.entityExplosion(fixture.block())
+            dispatch(fixture.explosionListener, explosion, fixture.plugin)
+
+            assertTrue(breaking.isCancelled)
+            assertTrue(explosion.blockList().isEmpty())
+            assertEquals(100.0, fixture.health())
+            assertFalse(chunk.isDirty)
+            fixture.module.health.disable()
+            fixture.module.health.enable()
+        }
+        assertEquals(listOf(fixture.stranger.id, null, fixture.stranger.id, null), observedActors)
+
+        assertTrue(fixture.module.actions.validatorCoordinator.unregisterValidator(validator))
+        dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
+        assertEquals(99.0, fixture.health())
+        dispatch(fixture.explosionListener, fixture.entityExplosion(fixture.block()), fixture.plugin)
+        assertEquals(59.0, fixture.health())
+        assertEquals(0, fixture.vanillaBlockChanges)
+    }
+
     @Test
     fun `entity snapshot damage uses the block position without adding a block center offset`() {
         val fixture = PaperTestFixture()

@@ -28,7 +28,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class SimpleComponentManagerTest {
+class ComponentManagerTest {
     @Test
     fun `draft creation publishes all components and consumes the draft`() {
         val fixture = Fixture()
@@ -124,7 +124,7 @@ class SimpleComponentManagerTest {
         fixture.load()
         val original = fixture.put(1)
         val old = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
-        val foreignManager = SimpleComponentManager(fixture.storage, fixture.types)
+        val foreignManager = ComponentManager(fixture.storage, fixture.types)
         assertFalse(foreignManager.isCurrent(old))
         assertFalse(foreignManager.removeCitadel(old))
         assertTrue(old.isCurrent)
@@ -625,7 +625,7 @@ class SimpleComponentManagerTest {
         val mapper = ChunkCordSnapshotMapper(types)
         val backend = MemoryBackend()
         val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, mapper, Executor(Runnable::run))
-        val manager = SimpleComponentManager(storage, types)
+        val manager = ComponentManager(storage, types)
 
         init {
             manager.registerComponent("test", "value", ValueComponent::class.java)

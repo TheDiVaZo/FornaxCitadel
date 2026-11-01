@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture
  * Use [editComponent], or call [markDirty] after each direct mutation, including nested data.
  * The coordinate pool supports chunk x and z in -32768..32767.
  */
-class SimpleComponentManager(
+class ComponentManager(
     private val citadelStorage: CitadelStorage,
     private val typeManager: TypeManager
 ) {

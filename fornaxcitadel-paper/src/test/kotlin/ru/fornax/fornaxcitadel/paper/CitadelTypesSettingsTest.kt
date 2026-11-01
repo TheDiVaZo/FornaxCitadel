@@ -34,13 +34,13 @@ class CitadelTypesSettingsTest {
                 health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
             "maturing_strong" to CitadelTypeSettings(Key("minecraft", "netherite_ingot"),
                 health = HealthBehaviorSettings.Maturing(20.0, 80.0, 1800)),
-            "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelBreakPolicy.UNBREAKABLE)
+            "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
         ), types)
         types.values.forEach { assertNotNull(BukkitMaterialRegistry.getType(it.item)) }
     }
 
     @Test
-    fun `custom catalog selects health behavior and permits health on an unbreakable type`() {
+    fun `custom catalog selects health behavior and permits health on an invulnerable type`() {
         val config = yaml("""
             citadel-types:
               copper_wall:
@@ -48,15 +48,15 @@ class CitadelTypesSettingsTest {
                 health: {behavior: simple, max: 35.5}
               growing-wall:
                 item: minecraft:emerald
-                break-policy: damage
+                damage-policy: allow
                 health: {behavior: maturing, initial: 4, mature: 12, duration-seconds: 90}
               protected_wall:
                 item: custommaterials:wand/defender
-                break-policy: unbreakable
+                damage-policy: deny
                 health: {behavior: simple, max: 100}
               protected_marker:
                 item: custommaterials:protected_marker
-                break-policy: unbreakable
+                damage-policy: deny
         """)
         val types = CitadelTypesSettings.read(config).types
 
@@ -66,9 +66,9 @@ class CitadelTypesSettingsTest {
         assertEquals(CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(4.0, 12.0, 90)),
             types["growing-wall"])
         assertEquals(CitadelTypeSettings(Key("custommaterials", "wand/defender"),
-            CitadelBreakPolicy.UNBREAKABLE, HealthBehaviorSettings.Simple(100.0)),
+            CitadelDamagePolicy.DENY, HealthBehaviorSettings.Simple(100.0)),
             types["protected_wall"])
-        assertEquals(CitadelTypeSettings(Key("custommaterials", "protected_marker"), CitadelBreakPolicy.UNBREAKABLE),
+        assertEquals(CitadelTypeSettings(Key("custommaterials", "protected_marker"), CitadelDamagePolicy.DENY),
             types["protected_marker"])
         assertIs<SimpleHealthBehavior>(types.getValue("copper_wall").health!!.createBehavior())
         assertIs<MaturingHealthBehavior>(types.getValue("growing-wall").health!!.createBehavior())
@@ -83,18 +83,18 @@ class CitadelTypesSettingsTest {
                 health: {behavior: simple, max: 20}
               bundled_only:
                 item: nether_star
-                break-policy: unbreakable
+                damage-policy: deny
         """)
         val custom = yaml("""
             citadel-types:
               reinforced:
                 item: diamond
-                break-policy: unbreakable
+                damage-policy: deny
         """).apply {
             setDefaults(bundled)
             options().copyDefaults(true)
         }
-        assertEquals(mapOf("reinforced" to CitadelTypeSettings(Key("minecraft", "diamond"), CitadelBreakPolicy.UNBREAKABLE)),
+        assertEquals(mapOf("reinforced" to CitadelTypeSettings(Key("minecraft", "diamond"), CitadelDamagePolicy.DENY)),
             CitadelTypesSettings.read(custom).types)
 
         val empty = yaml("citadel-types: {}").apply {
@@ -105,7 +105,7 @@ class CitadelTypesSettingsTest {
         assertEquals(CitadelTypesSettings.DEFAULT_TYPES,
             CitadelTypesSettings.read(YamlConfiguration().apply { setDefaults(bundled) }).types)
 
-        custom.set("citadel-types.reinforced.break-policy", "damage")
+        custom.set("citadel-types.reinforced.damage-policy", "allow")
         val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(custom) }
         assertTrue(exception.message.orEmpty().contains("citadel-types.reinforced.health"))
     }
@@ -146,10 +146,10 @@ class CitadelTypesSettingsTest {
             citadel-types:
               first:
                 item: diamond
-                break-policy: unbreakable
+                damage-policy: deny
               second:
                 item: minecraft:diamond
-                break-policy: unbreakable
+                damage-policy: deny
         """)
         val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(config) }
         assertTrue(exception.message.orEmpty().contains("citadel-types.first.item"), exception.message)
@@ -159,7 +159,7 @@ class CitadelTypesSettingsTest {
         val item = Key("custommaterials", "reinforcement")
         assertFailsWith<IllegalArgumentException> {
             CitadelTypesSettings(mapOf(
-                "first" to CitadelTypeSettings(item, CitadelBreakPolicy.UNBREAKABLE),
+                "first" to CitadelTypeSettings(item, CitadelDamagePolicy.DENY),
                 "second" to CitadelTypeSettings(item, health = HealthBehaviorSettings.Simple(20.0))
             ))
         }
@@ -170,10 +170,10 @@ class CitadelTypesSettingsTest {
         val invalid = listOf(
             "citadel-types: []" to "citadel-types",
             "citadel-types: {bad: 123}" to "citadel-types.bad",
-            "citadel-types: {Uppercase: {item: diamond, break-policy: unbreakable}}" to "citadel-types",
-            "citadel-types: {'with.dot': {item: diamond, break-policy: unbreakable}}" to "citadel-types",
-            "citadel-types: {bad: {item: diamond, break-policy: []}}" to "citadel-types.bad.break-policy",
-            "citadel-types: {bad: {item: diamond, break-policy: unknown}}" to "citadel-types.bad.break-policy",
+            "citadel-types: {Uppercase: {item: diamond, damage-policy: deny}}" to "citadel-types",
+            "citadel-types: {'with.dot': {item: diamond, damage-policy: deny}}" to "citadel-types",
+            "citadel-types: {bad: {item: diamond, damage-policy: []}}" to "citadel-types.bad.damage-policy",
+            "citadel-types: {bad: {item: diamond, damage-policy: unknown}}" to "citadel-types.bad.damage-policy",
             "citadel-types: {bad: {item: diamond}}" to "citadel-types.bad.health",
             "citadel-types: {bad: {item: diamond, health: []}}" to "citadel-types.bad.health",
             "citadel-types: {bad: {item: diamond, health: {max: 10}}}" to "citadel-types.bad.health.behavior",
@@ -182,6 +182,21 @@ class CitadelTypesSettingsTest {
         for ((source, path) in invalid) {
             val exception = assertFailsWith<IllegalArgumentException>(source) { CitadelTypesSettings.read(yaml(source)) }
             assertTrue(exception.message.orEmpty().contains(path), exception.message)
+        }
+    }
+
+    @Test
+    fun `unknown type fields cannot silently enable damage`() {
+        for (field in listOf("break-policy", "damage-polciy")) {
+            val config = yaml("""
+                citadel-types:
+                  protected_wall:
+                    item: diamond
+                    $field: unbreakable
+                    health: {behavior: simple, max: 100}
+            """)
+            val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(config) }
+            assertTrue(exception.message.orEmpty().contains("citadel-types.protected_wall.$field"), exception.message)
         }
     }
 
@@ -227,14 +242,14 @@ class CitadelTypesSettingsTest {
     @Test
     fun `programmatic settings preserve the same invariants`() {
         assertFailsWith<IllegalArgumentException> { CitadelTypeSettings(Key("minecraft", "diamond")) }
-        assertFailsWith<IllegalArgumentException> { CitadelTypeSettings(Key("", "diamond"), CitadelBreakPolicy.UNBREAKABLE) }
-        assertFailsWith<IllegalArgumentException> { CitadelTypeSettings(Key("minecraft", ""), CitadelBreakPolicy.UNBREAKABLE) }
+        assertFailsWith<IllegalArgumentException> { CitadelTypeSettings(Key("", "diamond"), CitadelDamagePolicy.DENY) }
+        assertFailsWith<IllegalArgumentException> { CitadelTypeSettings(Key("minecraft", ""), CitadelDamagePolicy.DENY) }
         assertFailsWith<IllegalArgumentException> { HealthBehaviorSettings.Simple(Double.NaN) }
         assertFailsWith<IllegalArgumentException> { HealthBehaviorSettings.Simple(0.0) }
         assertFailsWith<IllegalArgumentException> { HealthBehaviorSettings.Maturing(2.0, 1.0, 10) }
         assertFailsWith<IllegalArgumentException> { HealthBehaviorSettings.Maturing(1.0, 2.0, Long.MAX_VALUE) }
         assertFailsWith<IllegalArgumentException> {
-            CitadelTypesSettings(mapOf("invalid.id" to CitadelTypeSettings(Key("minecraft", "diamond"), CitadelBreakPolicy.UNBREAKABLE)))
+            CitadelTypesSettings(mapOf("invalid.id" to CitadelTypeSettings(Key("minecraft", "diamond"), CitadelDamagePolicy.DENY)))
         }
     }
 

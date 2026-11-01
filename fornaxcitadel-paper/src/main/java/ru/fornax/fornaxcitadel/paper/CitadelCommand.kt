@@ -11,7 +11,7 @@ import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -25,7 +25,7 @@ import java.util.logging.Level
 
 class CitadelCommand(
     private val plugin: Plugin,
-    private val manager: SimpleComponentManager,
+    private val manager: ComponentManager,
     private val module: CitadelModule,
     private val materials: MaterialRegistry,
     private val citadelTypes: PaperCitadelTypes,
@@ -145,7 +145,7 @@ class CitadelCommand(
                 val health = module.health.getCurrentHealth(position.world, position.x, position.y, position.z)
                 val maximum = module.health.getCurrentMaxHealth(position.world, position.x, position.y, position.z)
                 if (health != null && maximum != null) sender.message(String.format(Locale.ROOT, "Здоровье: %.1f / %.1f", health, maximum))
-                if (kind != null && citadelTypes.isUnbreakable(kind)) sender.message("Неуязвимое укрепление.")
+                if (kind != null && citadelTypes.isInvulnerable(kind)) sender.message("Неуязвимое укрепление.")
             }
         }
     }

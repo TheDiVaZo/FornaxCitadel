@@ -6,10 +6,9 @@ import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockDamageEvent
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.modules.breaking.BreakAction
-import ru.fornax.fornaxcitadel.modules.breaking.BreakDecision
-import ru.fornax.fornaxcitadel.modules.breaking.BreakPolicy
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
+import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.CreativeModeDamageModifier
 import kotlin.test.Test
@@ -23,19 +22,28 @@ import kotlin.test.assertTrue
 
 class PaperBreakingListenerTest {
     @Test
-    fun `custom removal policy skips mining delay but reinforcement removal preserves physical block`() {
-        val fixture = PaperTestFixture(permissions = true, breakPolicy = BreakPolicy { _, _ -> BreakDecision.REMOVE })
+    fun `explicit removal of damage protected reinforcement preserves the physical block`() {
+        val fixture = PaperTestFixture(permissions = true, damagePolicy = DamagePolicy.DENY)
         fixture.place()
         val damage = BlockDamageEvent(fixture.installer.player, fixture.block(), BlockFace.UP, fixture.installer.held, false)
 
         dispatch(fixture.breakingListener, damage, fixture.plugin)
 
-        assertTrue(damage.instaBreak)
+        assertFalse(damage.instaBreak)
         assertEquals(100.0, fixture.health())
         val breaking = BlockBreakEvent(fixture.block(), fixture.installer.player)
         dispatch(fixture.breakingListener, breaking, fixture.plugin)
 
         assertTrue(breaking.isCancelled)
+        assertEquals(100.0, fixture.health())
+        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            override val actionClass = DamageAction::class.java
+            override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
+        })
+        val removal = RemoveAction(fixture.context(fixture.installer), fixture.position)
+        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(removal))
+        fixture.installer.permissions.add("fornaxcitadel.admin")
+        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(removal))
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(0, fixture.vanillaBlockChanges)
         val nextAttempt = BlockBreakEvent(fixture.block(), fixture.installer.player)
@@ -96,15 +104,15 @@ class PaperBreakingListenerTest {
     }
 
     @Test
-    fun `break action validators observe vanilla destruction already cancelled`() {
+    fun `damage action validators observe vanilla destruction already cancelled`() {
         val fixture = PaperTestFixture(permissions = true)
         fixture.place()
         val event = BlockBreakEvent(fixture.block(), fixture.stranger.player)
         var cancelledDuringValidation: Boolean? = null
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<BreakAction> {
-            override val actionClass = BreakAction::class.java
+        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            override val actionClass = DamageAction::class.java
 
-            override fun validate(action: BreakAction): ActionValidator.Result {
+            override fun validate(action: DamageAction): ActionValidator.Result {
                 cancelledDuringValidation = event.isCancelled
                 return ActionValidator.Result.Success
             }

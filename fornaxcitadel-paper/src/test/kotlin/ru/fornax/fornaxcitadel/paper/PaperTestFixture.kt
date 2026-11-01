@@ -30,7 +30,7 @@ import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -41,7 +41,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.breaking.BreakPolicy
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
@@ -72,7 +72,7 @@ internal class PaperTestFixture(
     load: Boolean = true,
     permissions: Boolean = false,
     registerTypes: Boolean = true,
-    breakPolicy: BreakPolicy? = null,
+    damagePolicy: DamagePolicy? = null,
     initializeSystems: Boolean = true,
     private val trackListenerLifecycle: Boolean = false,
     explosionPowers: ExplosionPowerSettings = ExplosionPowerSettings(),
@@ -80,7 +80,7 @@ internal class PaperTestFixture(
     citadelSettings: CitadelTypesSettings = CitadelTypesSettings(linkedMapOf(
         "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), health = HealthBehaviorSettings.Simple(100.0)),
         "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
-        "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), breakPolicy = CitadelBreakPolicy.UNBREAKABLE)
+        "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), damagePolicy = CitadelDamagePolicy.DENY)
     ))
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
@@ -184,7 +184,7 @@ internal class PaperTestFixture(
     val types = TypeManager()
     val backend = MemoryBackend()
     val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
-    val manager = SimpleComponentManager(storage, types)
+    val manager = ComponentManager(storage, types)
     val module = CitadelModule(manager, RemovalPolicy { context, _ ->
         context.actorId?.let(players::get)?.let { it.online && "fornaxcitadel.admin" in it.permissions } == true
     })
@@ -208,12 +208,12 @@ internal class PaperTestFixture(
 
     init {
         if (registerTypes) {
-            if (breakPolicy == null) {
+            if (damagePolicy == null) {
                 citadelTypes.register(module)
             } else {
                 val reinforced = citadelSettings.types.getValue("reinforced")
                 module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, emptyList()),
-                    breakPolicy, reinforced.health?.createBehavior())
+                    damagePolicy, reinforced.health?.createBehavior())
                 val remaining = citadelSettings.types.filterKeys { it != "reinforced" }
                 if (remaining.isNotEmpty()) PaperCitadelTypes(CitadelTypesSettings(remaining)).register(module)
             }

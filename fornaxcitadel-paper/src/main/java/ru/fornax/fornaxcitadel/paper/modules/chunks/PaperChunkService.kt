@@ -8,7 +8,7 @@ import org.bukkit.event.world.ChunkUnloadEvent
 import org.bukkit.event.world.WorldUnloadEvent
 import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.CompletableFuture
@@ -18,7 +18,7 @@ import java.util.logging.Level
 /** Binds reusable core storage to live Bukkit chunks on the main thread. */
 class PaperChunkService(
     private val plugin: Plugin,
-    private val manager: SimpleComponentManager,
+    private val manager: ComponentManager,
     private val backend: PersistContainerChunkStorage,
     private val saveIntervalTicks: Long
 ) : LifecycleService {

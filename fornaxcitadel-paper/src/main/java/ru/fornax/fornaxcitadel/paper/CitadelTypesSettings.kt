@@ -34,7 +34,7 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
                 health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
             "maturing_strong" to CitadelTypeSettings(Key("minecraft", "netherite_ingot"),
                 health = HealthBehaviorSettings.Maturing(20.0, 80.0, 1800)),
-            "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelBreakPolicy.UNBREAKABLE)
+            "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
         )
         private val ID_PATTERN = Regex("[a-z0-9_-]+")
 
@@ -56,17 +56,19 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 
         private fun readType(value: Any?, path: String): CitadelTypeSettings {
             val values = readMapping(value, path)
+            val unknown = values.keys.firstOrNull { it !in setOf("item", "damage-policy", "health") }
+            require(unknown == null) { "Unknown configuration field $path.$unknown" }
             val item = readItem(values["item"], "$path.item")
-            val rawPolicy = if (values.containsKey("break-policy")) values["break-policy"] else "damage"
-            require(rawPolicy is String) { "$path.break-policy must be damage or unbreakable" }
+            val rawPolicy = if (values.containsKey("damage-policy")) values["damage-policy"] else "allow"
+            require(rawPolicy is String) { "$path.damage-policy must be allow or deny" }
             val policy = when (rawPolicy.lowercase(Locale.ROOT)) {
-                "damage" -> CitadelBreakPolicy.DAMAGE
-                "unbreakable" -> CitadelBreakPolicy.UNBREAKABLE
-                else -> throw IllegalArgumentException("Unknown $path.break-policy: $rawPolicy; expected damage or unbreakable")
+                "allow" -> CitadelDamagePolicy.ALLOW
+                "deny" -> CitadelDamagePolicy.DENY
+                else -> throw IllegalArgumentException("Unknown $path.damage-policy: $rawPolicy; expected allow or deny")
             }
             val health = if (values.containsKey("health")) readHealth(values["health"], "$path.health") else null
-            require(policy != CitadelBreakPolicy.DAMAGE || health != null) {
-                "$path.health is required for break-policy damage"
+            require(policy != CitadelDamagePolicy.ALLOW || health != null) {
+                "$path.health is required for damage-policy allow"
             }
             return CitadelTypeSettings(item, policy, health)
         }
@@ -140,20 +142,20 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 
 data class CitadelTypeSettings(
     val item: Key,
-    val breakPolicy: CitadelBreakPolicy = CitadelBreakPolicy.DAMAGE,
+    val damagePolicy: CitadelDamagePolicy = CitadelDamagePolicy.ALLOW,
     val health: HealthBehaviorSettings? = null
 ) {
     init {
         require(item.namespace.isNotEmpty() && item.key.isNotEmpty()) {
             "Citadel type item must contain both namespace and value"
         }
-        require(breakPolicy != CitadelBreakPolicy.DAMAGE || health != null) {
-            "Health settings are required for break-policy damage"
+        require(damagePolicy != CitadelDamagePolicy.ALLOW || health != null) {
+            "Health settings are required for damage-policy allow"
         }
     }
 }
 
-enum class CitadelBreakPolicy { DAMAGE, UNBREAKABLE }
+enum class CitadelDamagePolicy { ALLOW, DENY }
 
 sealed interface HealthBehaviorSettings {
     fun createBehavior(): HealthBehavior

@@ -272,7 +272,7 @@ class ConfiguredCitadelTypesTest {
             "clay_guard" to CitadelTypeSettings(Key("minecraft", "clay_ball"), health = HealthBehaviorSettings.Simple(13.0)),
             "titanium" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), health = HealthBehaviorSettings.Simple(73.0)),
             "growing_wall" to CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(6.0, 48.0, 30)),
-            "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelBreakPolicy.UNBREAKABLE)
+            "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
         ))
     }
 }
