@@ -14,6 +14,8 @@ import org.bukkit.block.data.Directional
 import org.bukkit.entity.Player
 import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
+import org.bukkit.event.EventPriority
+import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
@@ -73,6 +75,7 @@ internal class PaperTestFixture(
     registerTypes: Boolean = true,
     breakPolicy: BreakPolicy? = null,
     initializeSystems: Boolean = true,
+    private val trackListenerLifecycle: Boolean = false,
     explosionPowers: ExplosionPowerSettings = ExplosionPowerSettings(),
     placementSettings: PlacementSettings = PlacementSettings(),
     citadelSettings: CitadelTypesSettings = CitadelTypesSettings(linkedMapOf(
@@ -80,7 +83,7 @@ internal class PaperTestFixture(
         "maturing" to CitadelTypeSettings(PaperCitadelTypes.MATURING, health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
         "invulnerable" to CitadelTypeSettings(PaperCitadelTypes.INVULNERABLE, breakPolicy = CitadelBreakPolicy.UNBREAKABLE)
     ))
-) {
+) : AutoCloseable {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
     var mainThread = true
@@ -93,7 +96,13 @@ internal class PaperTestFixture(
     var vanillaBlockChanges = 0
     var blockLookups = 0
     val scheduledTasks = mutableListOf<TestScheduledTask>()
-    val listenerRegistrations = mutableListOf<Pair<Listener, Plugin>>()
+    private val listenerHistory = mutableListOf<Pair<Listener, Plugin>>()
+    private val listenerHandlers by lazy { HandlerList() }
+    var listenerRegistrationFailure: RuntimeException? = null
+    val listenerRegistrations: List<Pair<Listener, Plugin>>
+        get() = if (!trackListenerLifecycle) listenerHistory else listenerHandlers.registeredListeners.map {
+            it.listener to it.plugin
+        }
     val players = mutableMapOf<UUID, TestPlayer>()
     private val blocks = mutableMapOf<Triple<Int, Int, Int>, Block>()
     private val blockMaterials = mutableMapOf<Triple<Int, Int, Int>, Material>()
@@ -140,7 +149,15 @@ internal class PaperTestFixture(
     private val pluginManager: PluginManager = paperProxy("plugin manager") { method, args ->
         when (method.name) {
             "registerEvents" -> {
-                listenerRegistrations.add((args[0] as Listener) to (args[1] as Plugin))
+                val listener = args[0] as Listener
+                val owner = args[1] as Plugin
+                listenerHistory.add(listener to owner)
+                if (trackListenerLifecycle) {
+                    // Real Bukkit subscription bookkeeping; event dispatch is tested separately below.
+                    listenerHandlers.register(RegisteredListener(listener, EventExecutor { _, _ -> },
+                        EventPriority.NORMAL, owner, false))
+                }
+                listenerRegistrationFailure?.let { throw it }
                 null
             }
             else -> unsupported(method)
@@ -166,15 +183,15 @@ internal class PaperTestFixture(
     val citadelTypes = PaperCitadelTypes(citadelSettings)
     val items = CitadelItems(plugin, citadelTypes)
     val materials = CombineMaterialRegistry("fornaxcitadel" to items)
-    val placementService = PaperPlacementService(materials, placementSettings).also { service ->
+    val placementService = PaperPlacementService(plugin, module, materials, placementSettings).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
         }
     }
     val playerDamage = PlayerDamageModifierService()
-    val breakingService = PaperBreakingService(playerDamage)
-    val explosionService = PaperExplosionService(explosionPowers)
-    val environmentService = PaperEnvironmentService()
+    val breakingService = PaperBreakingService(plugin, module, playerDamage)
+    val explosionService = PaperExplosionService(plugin, module, explosionPowers)
+    val environmentService = PaperEnvironmentService(plugin, module)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
     val breakingListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperBreakingListener>().single()
     val explosionListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperExplosionListener>().single()
@@ -195,11 +212,12 @@ internal class PaperTestFixture(
             }
         }
         if (permissions) module.actions.validatorCoordinator.registerValidator(PaperPermissionValidator(server, citadelTypes))
+        module.enable()
         if (initializeSystems) {
-            placementService.init(plugin, module)
-            breakingService.init(plugin, module)
-            explosionService.init(plugin, module)
-            environmentService.init(plugin, module)
+            placementService.enable()
+            breakingService.enable()
+            explosionService.enable()
+            environmentService.enable()
         }
         if (load) manager.loadChunk(worldId, 0, 0).join()
     }
@@ -266,6 +284,15 @@ internal class PaperTestFixture(
         val batch = scheduledTasks.toList()
         scheduledTasks.clear()
         batch.filterNot { it.cancelled }.forEach { it.action.run() }
+    }
+
+    override fun close() {
+        environmentService.disable()
+        explosionService.disable()
+        breakingService.disable()
+        placementService.disable()
+        module.disable()
+        HandlerList.unregisterAll(plugin)
     }
 }
 

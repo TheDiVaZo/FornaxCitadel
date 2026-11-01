@@ -3,19 +3,36 @@ package ru.fornax.fornaxcitadel.paper.modules.environment
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.block.data.Directional
+import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.paper.modules.isProtected
 
 /** Keeps environmental changes from moving or replacing reinforced blocks. */
-class PaperEnvironmentService {
-    private lateinit var manager: SimpleComponentManager
+class PaperEnvironmentService(
+    private val plugin: Plugin,
+    module: CitadelModule
+) : LifecycleService {
+    private val manager = module.actions.componentManager
+    private val listener = PaperEnvironmentListener(this)
+    private var enabled = false
 
-    fun init(plugin: Plugin, module: CitadelModule) {
-        check(!::manager.isInitialized) { "Environment service is already initialized" }
-        manager = module.actions.componentManager
-        plugin.server.pluginManager.registerEvents(PaperEnvironmentListener(this), plugin)
+    override fun enable() {
+        if (enabled) return
+        try {
+            plugin.server.pluginManager.registerEvents(listener, plugin)
+            enabled = true
+        } catch (failure: Throwable) {
+            HandlerList.unregisterAll(listener)
+            throw failure
+        }
+    }
+
+    override fun disable() {
+        if (!enabled) return
+        HandlerList.unregisterAll(listener)
+        enabled = false
     }
 
     fun isProtected(block: Block): Boolean = manager.isProtected(block)

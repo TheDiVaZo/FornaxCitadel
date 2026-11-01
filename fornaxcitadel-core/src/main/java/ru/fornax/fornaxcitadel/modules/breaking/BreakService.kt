@@ -3,8 +3,9 @@ package ru.fornax.fornaxcitadel.modules.breaking
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -12,12 +13,26 @@ import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 
 class BreakService(
-    private val manager: SimpleComponentManager,
+    private val actions: ActionManager,
     private val health: HealthService,
     private val remove: RemoveService,
     private val notifications: CitadelLifecycleNotifications
-) {
+) : LifecycleService {
+    private val manager = actions.componentManager
     private val policies = mutableMapOf<Key, BreakPolicy>()
+    private val processor = BreakProcessor(this)
+    private val damageValidator = DamagePolicyValidator(manager, this)
+
+    /** Registers breaking and enforces its policies for direct damage requests as well. */
+    override fun enable() {
+        actions.processorCoordinator.registerProcessor(processor)
+        actions.validatorCoordinator.registerValidator(damageValidator)
+    }
+
+    override fun disable() {
+        actions.validatorCoordinator.unregisterValidator(damageValidator)
+        actions.processorCoordinator.unregisterProcessor(processor)
+    }
 
     fun registerPolicy(key: Key, policy: BreakPolicy) {
         val existing = policies[key]

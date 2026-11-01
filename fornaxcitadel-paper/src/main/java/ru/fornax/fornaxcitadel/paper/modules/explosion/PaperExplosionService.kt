@@ -6,11 +6,13 @@ import org.bukkit.block.Block
 import org.bukkit.block.BlockState
 import org.bukkit.block.data.type.Bed
 import org.bukkit.entity.Entity
+import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
+import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionDamageAction.ExplosionSource
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
@@ -19,43 +21,69 @@ import java.util.logging.Level
 
 /** Converts vanilla destruction into validated damage while keeping reinforced blocks intact. */
 class PaperExplosionService @JvmOverloads constructor(
+    private val plugin: Plugin,
+    private val module: CitadelModule,
     powers: ExplosionPowerSettings = ExplosionPowerSettings()
-) {
+) : LifecycleService {
     private val powers = powers.copy(blockPowers = powers.blockPowers.toMap())
     private val entityPowers = mutableMapOf<UUID, PrimedPower>()
-    private lateinit var plugin: Plugin
-    private lateinit var module: CitadelModule
-    private lateinit var manager: SimpleComponentManager
+    private val manager = module.actions.componentManager
+    private val listener = PaperExplosionListener(this)
+    private var enabled = false
 
-    fun init(plugin: Plugin, module: CitadelModule) {
-        check(!::manager.isInitialized) { "Explosion service is already initialized" }
-        this.plugin = plugin
-        this.module = module
-        manager = module.actions.componentManager
-        plugin.server.pluginManager.registerEvents(PaperExplosionListener(this), plugin)
+    override fun enable() {
+        if (enabled) return
+        try {
+            plugin.server.pluginManager.registerEvents(listener, plugin)
+            enabled = true
+        } catch (failure: Throwable) {
+            HandlerList.unregisterAll(listener)
+            throw failure
+        }
+    }
+
+    override fun disable() {
+        if (!enabled) return
+        HandlerList.unregisterAll(listener)
+        enabled = false
+        val primed = entityPowers.values.toList()
+        entityPowers.clear()
+        primed.forEach { it.cleanupTask?.cancel() }
     }
 
     fun recordPower(entityId: UUID, power: Float) {
         require(power.isFinite() && power >= 0.0f) { "Explosion power must be finite and non-negative" }
+        if (!enabled) return
+        forgetPower(entityId)
         val primed = PrimedPower(power)
         entityPowers[entityId] = primed
         // Prime and explosion run synchronously, but explosions without block interaction emit no event.
-        plugin.server.scheduler.runTask(plugin, Runnable { entityPowers.remove(entityId, primed) })
+        try {
+            primed.cleanupTask = plugin.server.scheduler.runTask(plugin, Runnable {
+                entityPowers.remove(entityId, primed)
+                primed.cleanupTask = null
+            })
+        } catch (failure: Throwable) {
+            entityPowers.remove(entityId, primed)
+            throw failure
+        }
     }
 
     fun forgetPower(entityId: UUID) {
-        entityPowers.remove(entityId)
+        entityPowers.remove(entityId)?.cleanupTask?.cancel()
     }
 
     fun getEntityExplosionPower(entityId: UUID): Float = entityPowers[entityId]?.power ?: powers.defaultEntityPower
 
     fun damageFromEntity(entity: Entity, center: Location, blocks: MutableList<Block>) {
+        if (!enabled) return
         damageBlocks(blocks) {
             ExplosionSource.Entity(center.clone(), getEntityExplosionPower(entity.uniqueId), entity)
         }
     }
 
     fun damageFromBlock(source: BlockState, blocks: MutableList<Block>) {
+        if (!enabled) return
         damageBlocks(blocks) {
             ExplosionSource.Block(source.location.clone(), powers.getBlockPower(source.type), source)
         }
@@ -101,6 +129,7 @@ class PaperExplosionService @JvmOverloads constructor(
 
     /** Reconciles reinforcement data for sources that Paper removed before firing BlockExplodeEvent. */
     fun reconcileRemovedSource(source: BlockState) {
+        if (!enabled) return
         try {
             if (source.type == Material.RESPAWN_ANCHOR) {
                 removeAt(source.location)
@@ -126,7 +155,9 @@ class PaperExplosionService @JvmOverloads constructor(
         module.remove.remove(citadel, RemovalCause.WORLD_EDIT)
     }
 
-    private class PrimedPower(val power: Float)
+    private class PrimedPower(val power: Float) {
+        var cleanupTask: BukkitTask? = null
+    }
 
     companion object {
         /** Uses block coordinates without a half-block offset, matching the original damage model. */

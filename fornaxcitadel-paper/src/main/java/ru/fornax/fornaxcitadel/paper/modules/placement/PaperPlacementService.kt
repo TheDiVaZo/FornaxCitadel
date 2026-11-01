@@ -5,9 +5,11 @@ import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.GameMode
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
+import org.bukkit.event.HandlerList
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -19,22 +21,40 @@ import java.util.logging.Level
 
 /** Resolves consumable materials and installs their configured definition through core actions. */
 class PaperPlacementService @JvmOverloads constructor(
+    private val plugin: Plugin,
+    private val module: CitadelModule,
     private val materials: MaterialRegistry,
-    private val settings: PlacementSettings = PlacementSettings()
-) {
+    settings: PlacementSettings = PlacementSettings()
+) : LifecycleService {
     private val definitionsByMaterial = mutableMapOf<Key, Key>()
-    private lateinit var plugin: Plugin
-    private lateinit var module: CitadelModule
+    private val blockValidator = ReinforceableBlockValidator(plugin.server)
+    private val blockListValidator = PlacementBlockListValidator(plugin.server, materials, settings.listType, settings.blocks)
+    private val listener = PaperPlacementListener(this)
+    private var enabled = false
 
-    fun init(plugin: Plugin, module: CitadelModule) {
-        check(!::module.isInitialized) { "Placement service is already initialized" }
-        this.plugin = plugin
-        this.module = module
-        module.actions.validatorCoordinator.registerValidator(ReinforceableBlockValidator(plugin.server))
-        module.actions.validatorCoordinator.registerValidator(
-            PlacementBlockListValidator(plugin.server, materials, settings.listType, settings.blocks)
-        )
-        plugin.server.pluginManager.registerEvents(PaperPlacementListener(this), plugin)
+    override fun enable() {
+        if (enabled) return
+        try {
+            module.actions.validatorCoordinator.registerValidator(blockValidator)
+            module.actions.validatorCoordinator.registerValidator(blockListValidator)
+            plugin.server.pluginManager.registerEvents(listener, plugin)
+            enabled = true
+        } catch (failure: Throwable) {
+            unregister()
+            throw failure
+        }
+    }
+
+    override fun disable() {
+        if (!enabled) return
+        unregister()
+        enabled = false
+    }
+
+    private fun unregister() {
+        HandlerList.unregisterAll(listener)
+        module.actions.validatorCoordinator.unregisterValidator(blockListValidator)
+        module.actions.validatorCoordinator.unregisterValidator(blockValidator)
     }
 
     /** Material identity and citadel definition are independent, including for third-party items. */
@@ -52,6 +72,7 @@ class PaperPlacementService @JvmOverloads constructor(
     }
 
     fun place(player: Player, block: Block, materialKey: Key) {
+        if (!enabled) return
         val definitionKey = definitionsByMaterial[materialKey] ?: return
         val held = player.inventory.itemInMainHand
         if (resolveMaterialKey(held) != materialKey) return

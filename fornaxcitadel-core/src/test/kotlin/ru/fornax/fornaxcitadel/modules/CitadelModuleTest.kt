@@ -471,7 +471,7 @@ class CitadelModuleTest {
         val backend = MemoryBackend()
         val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, mapper, Executor(Runnable::run))
         val manager = SimpleComponentManager(storage, types)
-        val module = CitadelModule(manager, removalPolicy)
+        val module = CitadelModule(manager, removalPolicy).apply { enable() }
         val placements = mutableListOf<CitadelPosition>()
         val removals = mutableListOf<Pair<CitadelPosition, RemovalCause>>()
         val removalSawExistingEntity = mutableListOf<Boolean>()

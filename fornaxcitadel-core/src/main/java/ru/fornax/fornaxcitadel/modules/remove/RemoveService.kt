@@ -2,16 +2,28 @@ package ru.fornax.fornaxcitadel.modules.remove
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
 /** Removes core data only. Minecraft block changes belong to a platform integration. */
 class RemoveService @JvmOverloads constructor(
-    private val manager: SimpleComponentManager,
+    private val actions: ActionManager,
     private val notifications: CitadelLifecycleNotifications,
     private val requestPolicy: RemovalPolicy = RemovalPolicy.DENY
-) {
+) : LifecycleService {
+    private val manager = actions.componentManager
+    private val processor = RemoveProcessor(this)
+
+    override fun enable() {
+        actions.processorCoordinator.registerProcessor(processor)
+    }
+
+    override fun disable() {
+        actions.processorCoordinator.unregisterProcessor(processor)
+    }
+
     fun checkMutationAllowed() = notifications.checkMutationAllowed()
 
     fun request(action: RemoveAction): ActionResult {

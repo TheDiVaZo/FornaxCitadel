@@ -4,15 +4,31 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
 /** Trusted operation after authorization. Initializers must only modify their draft. */
 class PlaceService(
-    private val manager: SimpleComponentManager,
+    private val actions: ActionManager,
     private val definitions: CitadelDefinitionRegistry,
     private val notifications: CitadelLifecycleNotifications
-) {
+) : LifecycleService {
+    private val manager = actions.componentManager
+    private val processor = PlaceProcessor(this)
+
+    init {
+        manager.registerComponent(CitadelKind.KEY.namespace, CitadelKind.KEY.key, CitadelKind::class.java)
+    }
+
+    override fun enable() {
+        actions.processorCoordinator.registerProcessor(processor)
+    }
+
+    override fun disable() {
+        actions.processorCoordinator.unregisterProcessor(processor)
+    }
+
     fun place(action: PlaceAction): ActionResult {
         notifications.checkMutationAllowed()
         val definition = definitions.find(action.definitionKey) ?: return ActionResult.DENIED

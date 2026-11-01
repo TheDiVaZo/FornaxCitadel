@@ -5,6 +5,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.TypeManager
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
@@ -24,23 +25,19 @@ import kotlin.test.assertNotNull
 internal class HealthFixture(
     startedAtMillis: Long? = 1_000L,
     createInitial: Boolean = true,
-    registerMaturing: Boolean = true,
     loaded: Boolean = true
 ) {
     val types = TypeManager()
     val storage = MemoryStorage(if (loaded) ChunkCord(WXZCord(WORLD, 0, 0)) else null)
     val manager = SimpleComponentManager(storage, types)
     val notifications = CitadelLifecycleNotifications()
-    val service = HealthService(manager, RemoveService(manager, notifications))
+    val actions = ActionManager(manager)
+    val service = HealthService(actions, RemoveService(actions, notifications))
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)
     val citadel: CitadelHandle get() = reference()
 
     init {
-        manager.registerComponent(Health.KEY.namespace, Health.KEY.key, Health::class.java)
         manager.registerComponent(CitadelKind.KEY.namespace, CitadelKind.KEY.key, CitadelKind::class.java)
-        if (registerMaturing) {
-            manager.registerComponent(Maturing.KEY.namespace, Maturing.KEY.key, Maturing::class.java)
-        }
         if (createInitial) {
             create(startedAtMillis = startedAtMillis)
             chunk.resetDirty()

@@ -243,6 +243,7 @@ class PaperChunkPersistenceTest {
                 DamageBreakPolicy,
                 SimpleHealthBehavior(100.0)
             )
+            module.enable()
         }
     }
 }

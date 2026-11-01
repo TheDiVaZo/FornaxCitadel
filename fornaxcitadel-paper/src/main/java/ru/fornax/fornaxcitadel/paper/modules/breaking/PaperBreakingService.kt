@@ -4,9 +4,10 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
+import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -19,21 +20,33 @@ import java.util.logging.Level
 
 /** Resolves player mining attempts through core break policies and actions. */
 class PaperBreakingService @JvmOverloads constructor(
+    private val plugin: Plugin,
+    private val module: CitadelModule,
     private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService()
-) {
-    private lateinit var plugin: Plugin
-    private lateinit var module: CitadelModule
-    private lateinit var manager: SimpleComponentManager
+) : LifecycleService {
+    private val manager = module.actions.componentManager
+    private val listener = PaperBreakingListener(this)
+    private var enabled = false
 
-    fun init(plugin: Plugin, module: CitadelModule) {
-        check(!::module.isInitialized) { "Breaking service is already initialized" }
-        this.plugin = plugin
-        this.module = module
-        this.manager = module.actions.componentManager
-        plugin.server.pluginManager.registerEvents(PaperBreakingListener(this), plugin)
+    override fun enable() {
+        if (enabled) return
+        try {
+            plugin.server.pluginManager.registerEvents(listener, plugin)
+            enabled = true
+        } catch (failure: Throwable) {
+            HandlerList.unregisterAll(listener)
+            throw failure
+        }
+    }
+
+    override fun disable() {
+        if (!enabled) return
+        HandlerList.unregisterAll(listener)
+        enabled = false
     }
 
     fun prepareBreak(player: Player, block: Block): MiningDecision {
+        if (!enabled) return MiningDecision.DEFAULT
         if (!block.supportsCitadelData()) return MiningDecision.DEFAULT
         return try {
             if (!manager.isChunkLoaded(block.world.uid, block.x shr 4, block.z shr 4)) {
@@ -55,6 +68,7 @@ class PaperBreakingService @JvmOverloads constructor(
 
     /** Returns true when vanilla destruction must be cancelled, including after removing reinforcement. */
     fun breakBlock(player: Player, block: Block): Boolean {
+        if (!enabled) return false
         if (!block.supportsCitadelData()) return false
         try {
             if (!manager.isChunkLoaded(block.world.uid, block.x shr 4, block.z shr 4)) {

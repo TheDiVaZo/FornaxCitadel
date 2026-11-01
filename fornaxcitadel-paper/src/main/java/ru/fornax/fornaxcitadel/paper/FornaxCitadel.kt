@@ -4,6 +4,7 @@ import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.modules.CitadelModule
@@ -36,6 +37,9 @@ class FornaxCitadel : JavaPlugin() {
         private set
     private var schedulerAdapter: PaperScheduler? = null
     private var chunkListener: PaperChunkListener? = null
+    private var coreModule: CitadelModule? = null
+    private var permissionValidator: PaperPermissionValidator? = null
+    private val services = mutableListOf<LifecycleService>()
 
     override fun onEnable() {
         try {
@@ -52,25 +56,19 @@ class FornaxCitadel : JavaPlugin() {
             val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor { it.run() })
             val manager = SimpleComponentManager(storage, types)
             citadelTypes = PaperCitadelTypes(settings.citadelTypes)
-            val permissions = PaperPermissionValidator(server, citadelTypes)
+            val permissions = PaperPermissionValidator(server, citadelTypes).also { permissionValidator = it }
             val module = CitadelModule(manager, RemovalPolicy { context, _ -> permissions.canAdminister(context) })
+                .also { coreModule = it; services.add(it) }
             citadelTypes.register(module)
             module.actions.validatorCoordinator.registerValidator(permissions)
 
             val chunks = PaperChunkListener(this, manager, backend).also { chunkListener = it }
             val items = CitadelItems(this, citadelTypes)
             materials = CombineMaterialRegistry("fornaxcitadel" to items)
-            placement = PaperPlacementService(materials, settings.placement)
+            placement = PaperPlacementService(this, module, materials, settings.placement).also(services::add)
             citadelTypes.keys.forEach { type ->
                 placement.registerMaterial(requireNotNull(citadelTypes.itemKey(type)), type)
             }
-            val commands = CitadelCommand(this, manager, module, materials, citadelTypes, chunks::saveAll)
-            requireNotNull(getCommand("citadel")) { "The citadel command is missing from plugin.yml" }.apply {
-                setExecutor(commands)
-                tabCompleter = commands
-            }
-            server.pluginManager.registerEvents(chunks, this)
-            placement.init(this, module)
             playerDamage = PlayerDamageModifierService().apply {
                 if (settings.playerDamage.newcomersEnabled) {
                     register(NerfingNewcomersModifier(
@@ -80,9 +78,17 @@ class FornaxCitadel : JavaPlugin() {
                 }
                 if (settings.playerDamage.creativeModeEnabled) register(CreativeModeDamageModifier())
             }
-            PaperBreakingService(playerDamage).init(this, module)
-            PaperExplosionService(settings.explosionPowers).init(this, module)
-            PaperEnvironmentService().init(this, module)
+            services.add(PaperBreakingService(this, module, playerDamage))
+            services.add(PaperExplosionService(this, module, settings.explosionPowers))
+            services.add(PaperEnvironmentService(this, module))
+
+            val commands = CitadelCommand(this, manager, module, materials, citadelTypes, chunks::saveAll)
+            requireNotNull(getCommand("citadel")) { "The citadel command is missing from plugin.yml" }.apply {
+                setExecutor(commands)
+                tabCompleter = commands
+            }
+            services.forEach { it.enable() }
+            server.pluginManager.registerEvents(chunks, this)
             chunks.loadAlreadyLoadedChunks()
 
             server.scheduler.runTaskTimer(this, Runnable {
@@ -106,8 +112,19 @@ class FornaxCitadel : JavaPlugin() {
     }
 
     override fun onDisable() {
-        HandlerList.unregisterAll(this)
         server.scheduler.cancelTasks(this)
+        for (service in services.asReversed()) {
+            try {
+                service.disable()
+            } catch (exception: Exception) {
+                logger.log(Level.SEVERE, "Could not disable ${service.javaClass.simpleName}", exception)
+            }
+        }
+        services.clear()
+        permissionValidator?.let { coreModule?.actions?.validatorCoordinator?.unregisterValidator(it) }
+        permissionValidator = null
+        coreModule = null
+        HandlerList.unregisterAll(this)
         try {
             schedulerAdapter?.close()
         } finally {

@@ -5,10 +5,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind;
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause;
+import ru.fornax.fornaxcitadel.core.facade.ActionManager;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
 import ru.fornax.fornaxcitadel.core.facade.SimpleComponentManager;
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
-import ru.fornax.fornaxcitadel.core.systems.action.ProcessorCoordinator;
 import ru.fornax.fornaxcitadel.core.util.Key;
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService;
 
@@ -18,14 +19,29 @@ import java.util.Objects;
 import java.util.UUID;
 
 /** Health operations on the owning game thread. Register behaviors before handling actions. */
-public final class HealthService {
+public final class HealthService implements LifecycleService {
+    private final ActionManager actions;
     private final SimpleComponentManager componentManager;
     private final RemoveService removeService;
     private final Map<Key, HealthBehavior> behaviors = new HashMap<>();
+    private final DamageProcessor processor = new DamageProcessor(this);
 
-    public HealthService(@NotNull SimpleComponentManager componentManager, @NotNull RemoveService removeService) {
-        this.componentManager = Objects.requireNonNull(componentManager, "componentManager");
+    public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService) {
+        this.actions = Objects.requireNonNull(actions, "actions");
+        this.componentManager = actions.getComponentManager();
         this.removeService = Objects.requireNonNull(removeService, "removeService");
+        componentManager.registerComponent(Health.KEY.getNamespace(), Health.KEY.getKey(), Health.class);
+        componentManager.registerComponent(Maturing.KEY.getNamespace(), Maturing.KEY.getKey(), Maturing.class);
+    }
+
+    @Override
+    public void enable() {
+        actions.getProcessorCoordinator().registerProcessor(processor);
+    }
+
+    @Override
+    public void disable() {
+        actions.getProcessorCoordinator().unregisterProcessor(processor);
     }
 
     public void registerBehavior(@NotNull Key definitionKey, @NotNull HealthBehavior behavior) {
@@ -95,10 +111,6 @@ public final class HealthService {
         CitadelHandle citadel = componentManager.findCitadel(
                 action.getCitadelW(), action.getCitadelX(), action.getCitadelY(), action.getCitadelZ());
         return citadel == null ? ActionResult.DENIED : damage(citadel, action.getDamage());
-    }
-
-    public void init(@NotNull ProcessorCoordinator processorCoordinator) {
-        processorCoordinator.registerProcessor(new DamageProcessor(this));
     }
 
     @Nullable
