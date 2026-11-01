@@ -1,0 +1,56 @@
+# Архитектурные задачи
+
+По результатам ревью от 2026-11-01. Пункты ниже описывают необходимые изменения; потенциальные проблемы производительности требуют измерений.
+
+## P1 — Сохранность данных при ошибках сериализации
+
+- [ ] Не сохранять неполный снимок чанка при ошибке записи компонента.
+  - Сейчас `ChunkCordSnapshotMapper.snapshot()` перехватывает `Exception` и пропускает компонент. После записи такого снимка координатор отмечает ревизию сохранённой, поэтому при перезагрузке компонент может исчезнуть.
+  - Отклонять снимок целиком, регистрировать ошибку с координатами и ключом компонента, сохранять состояние для повторной попытки.
+  - Проверить: сбой сериализации не заменяет ранее сохранённые данные, не очищает признак изменений и не мешает повторному сохранению после устранения ошибки.
+- [ ] Сохранять исходные данные компонентов при ошибках декодирования.
+  - Сейчас `RuntimeException` декодера трактуется как повреждение данных, компонент удаляется, а следующий save закрепляет удаление. Причиной может быть ошибка реализации или несовместимая версия формата.
+  - Предусмотреть хранение исходных байтов в карантине или opaque-представлении, диагностику и явную политику версий/миграций. Сохранить различие между неизвестным типом, повреждёнными данными и инфраструктурным сбоем.
+  - Проверить: неудачное чтение с последующим сохранением не уничтожает исходный payload; после исправления декодера данные можно восстановить.
+
+Код: [ChunkCordSnapshotMapper.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/serialization/ChunkCordSnapshotMapper.kt), [ComponentSerializer.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/serialization/ComponentSerializer.kt), [ChunkBackendLifecycleCoordinator.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/storage/ChunkBackendLifecycleCoordinator.kt).
+
+Текущее пропускание компонентов закреплено в [ChunkBackendLifecycleCoordinatorTest.kt](fornaxcitadel-core/src/test/kotlin/ru/fornax/fornaxcitadel/core/storage/ChunkBackendLifecycleCoordinatorTest.kt), тест `clean checkpoints skip serialization and failed components are omitted from dirty saves`. При изменении контракта обновить этот тест.
+
+## P2 — Контролируемое изменение компонентов
+
+- [ ] Устранить зависимость внешнего API от ручного вызова `markDirty`.
+  - Сейчас `getComponent()` возвращает живой изменяемый объект. Прямая мутация без `markDirty` может потеряться после выгрузки чанка.
+  - Предоставить внешним потребителям неизменяемое представление данных и явные операции изменения. Использовать существующий `editComponent` как основу контролируемого пути мутаций.
+  - Сохранить проверки актуальности `CitadelHandle` и экземпляра компонента: устаревшая ссылка не должна менять заменённую сущность.
+  - Проверить: все поддерживаемые внешние операции изменения автоматически учитываются при сохранении, включая частичные изменения при исключении; ссылки после удаления, замены или перезагрузки чанка безопасно отклоняются.
+
+Код: [ComponentManager.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/facade/ComponentManager.kt), [CitadelHandle.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/facade/CitadelHandle.kt).
+
+## P2 — Ограниченный жизненный цикл пула координат
+
+- [ ] Убрать накопление координат всех когда-либо затронутых чанков.
+  - `WXZCordPool` удерживает сильные ссылки до уничтожения менеджера. Выгрузка чанка не освобождает записи; даже запрос отсутствующего чанка добавляет координаты в пул.
+  - Измерить пользу интернирования и выбрать ограниченный кэш, очистку с учётом незавершённых операций или отказ от пула.
+  - Проверить: после многократной загрузки и выгрузки разных чанков число удерживаемых записей ограничено выбранной политикой; повторные сохранения и проверки актуальности сущностей работают корректно.
+
+Код: [WXZCordPool.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/pool/WXZCordPool.kt), [ComponentManager.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/facade/ComponentManager.kt).
+
+## P2 — Бюджет автосохранения на тик
+
+- [ ] Распределить периодическое сохранение изменённых чанков по тикам.
+  - Сейчас `saveAll()` обрабатывает весь набор изменённых чанков за один вызов; сериализация и обращения к PDC выполняются на главном потоке. Возможны пики длительности тика при росте объёма данных; фактические задержки пока не измерены.
+  - Измерить время сохранения и ввести бюджет автосохранения по числу чанков и/или затраченному времени. Отдельно определить поведение принудительного сохранения и остановки.
+  - Сохранить гарантии выгрузки и shutdown. Простая замена прямого executor на пул потоков нарушает текущий контракт синхронного завершения; асинхронный вариант требует отдельного протокола получения снимка, кодирования и записи.
+  - Проверить: автосохранение соблюдает выбранный бюджет и в итоге сохраняет все изменения; более старая ревизия не очищает новые изменения; выгрузка и остановка не теряют ожидающие записи.
+
+Код: [FornaxCitadel.kt](fornaxcitadel-paper/src/main/java/ru/fornax/fornaxcitadel/paper/FornaxCitadel.kt), [PaperChunkService.kt](fornaxcitadel-paper/src/main/java/ru/fornax/fornaxcitadel/paper/modules/chunks/PaperChunkService.kt), [ChunkBackendLifecycleCoordinator.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/storage/ChunkBackendLifecycleCoordinator.kt).
+
+## P2 — Граница API для сторонних плагинов
+
+- [ ] Отделить внешний API запросов от доверенных низкоуровневых операций до публикации SDK.
+  - `CitadelModule` открывает сервисы `place`, `remove`, `health`, а `ActionManager` — `ComponentManager`. Требование выполнять внешние запросы через конвейер действий сейчас выражено преимущественно в документации.
+  - Предоставить узкий интерфейс запросов и чтения состояния, а операции непосредственного изменения и управления жизненным циклом оставить внутренним API. Отдельно определить разрешённые точки регистрации расширений.
+  - Проверить: внешние запросы проходят необходимые валидаторы и политики; внутренние операции согласования с состоянием мира сохраняют требуемые возможности.
+
+Код: [CitadelModule.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/modules/CitadelModule.kt), [ActionManager.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/facade/ActionManager.kt), [FornaxCitadel.kt](fornaxcitadel-paper/src/main/java/ru/fornax/fornaxcitadel/paper/FornaxCitadel.kt).
