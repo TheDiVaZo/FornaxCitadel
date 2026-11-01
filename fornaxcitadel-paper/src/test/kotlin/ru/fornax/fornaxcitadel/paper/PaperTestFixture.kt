@@ -56,6 +56,12 @@ import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
+import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
+import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
+import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.HealthBehaviorSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
@@ -79,11 +85,22 @@ internal class PaperTestFixture(
     private val trackListenerLifecycle: Boolean = false,
     explosionPowers: ExplosionPowerSettings = ExplosionPowerSettings(),
     placementSettings: PlacementSettings = PlacementSettings(),
-    citadelSettings: CitadelTypesSettings = CitadelTypesSettings(linkedMapOf(
-        "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), health = HealthBehaviorSettings.Simple(100.0)),
-        "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
-        "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), damagePolicy = CitadelDamagePolicy.DENY)
-    )),
+    citadelSettings: CitadelTypesSettings = CitadelTypesSettings(
+        linkedMapOf(
+            "reinforced" to CitadelTypeSettings(
+                Key("minecraft", "iron_ingot"),
+                health = HealthBehaviorSettings.Simple(100.0)
+            ),
+            "maturing" to CitadelTypeSettings(
+                Key("minecraft", "emerald"),
+                health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)
+            ),
+            "invulnerable" to CitadelTypeSettings(
+                Key("minecraft", "nether_star"),
+                damagePolicy = CitadelDamagePolicy.DENY
+            )
+        )
+    ),
     moduleSchedulerFactory: (Plugin) -> Scheduler = { ManualScheduler() },
     initializeModule: Boolean = true,
     maxActionsPerTick: Int = 1024
@@ -224,7 +241,12 @@ internal class PaperTestFixture(
                 if (remaining.isNotEmpty()) PaperCitadelTypes(CitadelTypesSettings(remaining)).register(module)
             }
         }
-        if (permissions) module.actions.validatorCoordinator.registerValidator(PaperPermissionValidator(server, citadelTypes))
+        if (permissions) module.actions.validatorCoordinator.registerValidator(
+            PaperPermissionValidator(
+                server,
+                citadelTypes
+            )
+        )
         if (initializeModule) module.enable()
         if (initializeSystems) {
             placementService.enable()

@@ -1,10 +1,11 @@
-package ru.fornax.fornaxcitadel.paper
+package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import java.util.Locale
+import kotlin.collections.iterator
 
 /** One immutable catalog shared by definitions, installation items, permissions and commands. */
 class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings()) {

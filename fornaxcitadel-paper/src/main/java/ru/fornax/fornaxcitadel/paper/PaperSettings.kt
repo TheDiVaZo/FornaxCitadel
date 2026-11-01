@@ -3,6 +3,7 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.configuration.ConfigurationSection
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
 
 data class PaperSettings(

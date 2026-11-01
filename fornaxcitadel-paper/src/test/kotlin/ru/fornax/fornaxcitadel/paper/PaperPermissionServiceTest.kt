@@ -3,6 +3,8 @@ package ru.fornax.fornaxcitadel.paper
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
+import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame

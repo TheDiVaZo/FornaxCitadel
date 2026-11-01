@@ -16,6 +16,7 @@ import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import java.util.UUID
 import kotlin.test.Test

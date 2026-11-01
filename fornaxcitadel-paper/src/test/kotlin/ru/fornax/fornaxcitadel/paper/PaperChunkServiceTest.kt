@@ -18,6 +18,7 @@ import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkListener
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.Executor
 import kotlin.test.Test
@@ -173,7 +174,8 @@ class PaperChunkServiceTest {
             fixture.service.enable()
             assertContentEquals(original, fixture.paper.chunkData.values.values.single() as ByteArray)
             assertEquals(65.0, fixture.health())
-            assertEquals(PaperCitadelTypes.REINFORCED,
+            assertEquals(
+                PaperCitadelTypes.REINFORCED,
                 fixture.find()?.getComponent(CitadelKind::class.java)?.definitionKey)
         }
     }

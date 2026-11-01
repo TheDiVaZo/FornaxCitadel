@@ -2,7 +2,6 @@ package ru.fornax.fornaxcitadel.paper.modules.permission
 
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.paper.PaperPermissionValidator
 
 /** Owns the action subscription; the same validator can also supply the core removal policy. */
 class PaperPermissionService(

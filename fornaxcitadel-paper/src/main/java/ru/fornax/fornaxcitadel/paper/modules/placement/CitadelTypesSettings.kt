@@ -1,4 +1,4 @@
-package ru.fornax.fornaxcitadel.paper
+package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import org.bukkit.configuration.ConfigurationSection
 import ru.fornax.fornaxcitadel.core.util.Key

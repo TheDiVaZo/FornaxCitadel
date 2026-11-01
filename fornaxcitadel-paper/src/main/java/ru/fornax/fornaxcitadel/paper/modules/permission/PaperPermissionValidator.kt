@@ -1,4 +1,4 @@
-package ru.fornax.fornaxcitadel.paper
+package ru.fornax.fornaxcitadel.paper.modules.permission
 
 import org.bukkit.GameMode
 import org.bukkit.Server
@@ -9,6 +9,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 
 /** Platform permissions are checked for every request, including commands and posted actions. */

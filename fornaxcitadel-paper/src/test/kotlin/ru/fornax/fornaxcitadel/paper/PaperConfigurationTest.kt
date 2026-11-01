@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.HealthBehaviorSettings
 import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -20,6 +20,10 @@ import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
+import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.HealthBehaviorSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -193,8 +197,12 @@ class ConfiguredCitadelTypesTest {
     @Test
     fun `give resolves the configured item key and uses its factory while completion still shows type identifiers`() {
         val itemKey = Key("thirdparty", "steel_plate")
-        val settings = CitadelTypesSettings(mapOf("steel_guard" to
-            CitadelTypeSettings(itemKey, health = HealthBehaviorSettings.Simple(29.0))))
+        val settings = CitadelTypesSettings(
+            mapOf(
+                "steel_guard" to
+                        CitadelTypeSettings(itemKey, health = HealthBehaviorSettings.Simple(29.0))
+            )
+        )
         val fixture = PaperTestFixture(permissions = true, citadelSettings = settings)
         fixture.installer.permissions.add("fornaxcitadel.admin")
         val requestedKeys = mutableListOf<Key>()
@@ -268,11 +276,22 @@ class ConfiguredCitadelTypesTest {
     }
 
     private companion object {
-        val CUSTOM_TYPES = CitadelTypesSettings(linkedMapOf(
-            "clay_guard" to CitadelTypeSettings(Key("minecraft", "clay_ball"), health = HealthBehaviorSettings.Simple(13.0)),
-            "titanium" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), health = HealthBehaviorSettings.Simple(73.0)),
-            "growing_wall" to CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(6.0, 48.0, 30)),
-            "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
-        ))
+        val CUSTOM_TYPES = CitadelTypesSettings(
+            linkedMapOf(
+                "clay_guard" to CitadelTypeSettings(
+                    Key("minecraft", "clay_ball"),
+                    health = HealthBehaviorSettings.Simple(13.0)
+                ),
+                "titanium" to CitadelTypeSettings(
+                    Key("minecraft", "iron_ingot"),
+                    health = HealthBehaviorSettings.Simple(73.0)
+                ),
+                "growing_wall" to CitadelTypeSettings(
+                    Key("minecraft", "emerald"),
+                    health = HealthBehaviorSettings.Maturing(6.0, 48.0, 30)
+                ),
+                "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
+            )
+        )
     }
 }

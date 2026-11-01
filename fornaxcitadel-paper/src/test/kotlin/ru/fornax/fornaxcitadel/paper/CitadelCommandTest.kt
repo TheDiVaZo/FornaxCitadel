@@ -3,6 +3,7 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

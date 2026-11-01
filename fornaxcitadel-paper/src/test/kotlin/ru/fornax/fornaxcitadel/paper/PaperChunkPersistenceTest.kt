@@ -22,6 +22,7 @@ import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkListener
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture

@@ -31,6 +31,8 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
+import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import java.util.UUID
 import kotlin.math.sqrt
 import kotlin.test.Test
