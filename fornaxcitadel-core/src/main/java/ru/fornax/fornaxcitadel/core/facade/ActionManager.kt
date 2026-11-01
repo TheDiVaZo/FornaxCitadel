@@ -41,6 +41,9 @@ class ActionManager(
     /** Queues intent only, without claiming success. Call on the owning game thread. */
     fun post(action: ActionData) { posted.addLast(action) }
 
+    /** Discards pending intents when the owning module stops, without executing them. */
+    fun clearPosted() { posted.clear() }
+
     /**
      * Runs at most [limit] queued actions on the owning thread, normally later in the same tick.
      * Returns the number attempted. Failures propagate; remaining actions stay queued.

@@ -6,7 +6,9 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class ValidatorCoordinatorTest {
     private val action = ActionData(Key("test", "action"), UUID(0L, 0L), 1, 2, 3)
@@ -119,6 +121,45 @@ class ValidatorCoordinatorTest {
         assertSame(failure, assertFailsWith<IllegalStateException> { coordinator.validate(action) })
     }
 
+    @Test
+    fun `unregistration uses identity even when different validators compare equal`() {
+        val coordinator = ValidatorCoordinator()
+        val registered = EqualValidator()
+        val other = EqualValidator()
+        coordinator.registerValidator(registered)
+
+        assertEquals(registered, other)
+        assertFalse(coordinator.unregisterValidator(other))
+        assertSame(Result.Rejected, coordinator.validate(action))
+        assertTrue(coordinator.unregisterValidator(registered))
+        assertFalse(coordinator.unregisterValidator(registered))
+        assertSame(Result.Neutral, coordinator.validate(action))
+    }
+
+    @Test
+    fun `registration changes in a callback affect the next action`() {
+        val coordinator = ValidatorCoordinator()
+        val calls = mutableListOf<String>()
+        val later = validator(ActionData::class.java) { calls.add("later"); Result.Success }
+        val added = validator(ActionData::class.java) { calls.add("added"); Result.Rejected }
+        lateinit var first: ActionValidator<ActionData>
+        first = validator(ActionData::class.java) {
+            calls.add("first")
+            coordinator.unregisterValidator(first)
+            coordinator.unregisterValidator(later)
+            coordinator.registerValidator(added)
+            Result.Neutral
+        }
+        coordinator.registerValidator(first)
+        coordinator.registerValidator(later)
+
+        assertSame(Result.Success, coordinator.validate(action))
+        assertEquals(listOf("first", "later"), calls)
+        calls.clear()
+        assertSame(Result.Rejected, coordinator.validate(action))
+        assertEquals(listOf("added"), calls)
+    }
+
     private fun <T : ActionData> validator(
         actionClass: Class<T>,
         validate: (T) -> Result
@@ -128,4 +169,11 @@ class ValidatorCoordinatorTest {
     }
 
     private class SpecialAction : ActionData(Key("test", "special"), UUID(0L, 0L), 1, 2, 3)
+
+    private class EqualValidator : ActionValidator<ActionData> {
+        override val actionClass = ActionData::class.java
+        override fun validate(action: ActionData) = Result.Rejected
+        override fun equals(other: Any?) = other is EqualValidator
+        override fun hashCode() = 0
+    }
 }

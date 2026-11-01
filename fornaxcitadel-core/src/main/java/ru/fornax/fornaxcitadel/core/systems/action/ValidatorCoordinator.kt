@@ -16,15 +16,24 @@ class ValidatorCoordinator {
         }
     }
 
+    /** Removes only the supplied instance, leaving other validators for the same action intact. */
+    fun unregisterValidator(validator: ActionValidator<*>): Boolean {
+        val index = validators.indexOfFirst { it === validator }
+        if (index < 0) return false
+        validators.removeAt(index)
+        return true
+    }
+
     /**
      * Runs validators whose action class accepts [action], including validators for base classes.
      * A rejection stops validation immediately. Otherwise, any success yields [Result.Success];
      * if all validators abstain or none apply, returns [Result.Neutral].
-     * Exceptions from validators propagate to the caller.
+     * Exceptions from validators propagate to the caller. Registration changes during a callback
+     * apply to the next validation; the current action uses a stable snapshot.
      */
     fun validate(action: ActionData): Result {
         var result: Result = Result.Neutral
-        for (validator in validators) {
+        for (validator in validators.toList()) {
             when (validateAction(validator, action)) {
                 Result.Success -> result = Result.Success
                 Result.Neutral -> Unit

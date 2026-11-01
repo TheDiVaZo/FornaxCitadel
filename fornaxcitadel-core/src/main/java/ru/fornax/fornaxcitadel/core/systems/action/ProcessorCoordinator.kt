@@ -20,6 +20,13 @@ class ProcessorCoordinator {
 
     fun getProcessor(actionKey: Key): ActionProcessor<*>? = processors[actionKey]
 
+    /** Removes only this instance; a replacement registered under the same key is preserved. */
+    fun unregisterProcessor(processor: ActionProcessor<*>): Boolean {
+        if (processors[processor.actionKey] !== processor) return false
+        processors.remove(processor.actionKey)
+        return true
+    }
+
     /**
      * Returns the processor's result, or [ActionResult.DENIED] if none is registered.
      * Throws [IllegalArgumentException] if the action's class does not match the processor's type.
