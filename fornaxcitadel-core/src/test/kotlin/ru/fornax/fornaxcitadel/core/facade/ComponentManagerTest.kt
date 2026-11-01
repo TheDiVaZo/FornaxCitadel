@@ -682,7 +682,10 @@ class ComponentManagerTest {
     }
 
     private object DirectScheduler : Scheduler {
-        override fun <T> schedule(location: WXZCord, task: Callable<T>): CompletableFuture<T> {
+        override fun runTaskTimer(task: Runnable, delayTicks: Long, periodTicks: Long): Nothing =
+            error("Unexpected timer")
+
+        override fun <T> runTask(location: WXZCord, task: Callable<T>): CompletableFuture<T> {
             return try {
                 CompletableFuture.completedFuture(task.call())
             } catch (exception: Exception) {

@@ -4,7 +4,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.paper.modules.queue.PaperActionQueueService
+import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,20 +13,19 @@ import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class PaperActionQueueServiceTest {
+class PaperActionQueueIntegrationTest {
     @Test
-    fun `queue service respects tick limits and survives pauses without losing pending actions`() {
-        PaperTestFixture(initializeSystems = false).use { fixture ->
+    fun `module starts a bounded queue timer and queue suspension preserves pending actions`() {
+        queueFixture(maxActionsPerTick = 1).use { fixture ->
             val processed = mutableListOf<Int>()
             registerProcessor(fixture) { action -> processed.add(action.number); ActionResult.SUCCESS }
-            val service = PaperActionQueueService(fixture.plugin, fixture.module.actions, 1)
+            assertTrue(fixture.scheduledTasks.isEmpty())
             var unrelatedTicks = 0
             val unrelated = fixture.server.scheduler.runTaskTimer(fixture.plugin, Runnable { unrelatedTicks++ }, 1L, 1L)
             for (number in 1..3) fixture.module.actions.post(ProbeAction(number))
 
-            service.disable()
-            service.enable()
-            service.enable()
+            fixture.module.enable()
+            fixture.module.enable()
             val previousTimer = fixture.scheduledTasks.single { it.task !== unrelated }
             assertEquals(1L, previousTimer.delayTicks)
             assertEquals(1L, previousTimer.periodTicks)
@@ -34,70 +33,99 @@ class PaperActionQueueServiceTest {
             fixture.runScheduledTasks()
             assertEquals(listOf(1), processed)
 
-            service.disable()
-            service.disable()
+            fixture.module.actionQueue.disable()
+            fixture.module.actionQueue.disable()
             assertTrue(previousTimer.cancelled)
             assertFalse(unrelated.isCancelled)
             fixture.runScheduledTasks()
             assertEquals(listOf(1), processed)
             assertEquals(2, unrelatedTicks)
 
-            service.enable()
+            fixture.module.actionQueue.enable()
             previousTimer.action.run()
             assertEquals(listOf(1), processed)
             fixture.runScheduledTasks()
             assertEquals(listOf(1, 2), processed)
             fixture.runScheduledTasks()
             assertEquals(listOf(1, 2, 3), processed)
-            service.disable()
+            fixture.module.disable()
+            assertTrue(fixture.scheduledTasks.filter { it.task !== unrelated }.all { it.cancelled })
+            assertFalse(unrelated.isCancelled)
         }
     }
 
     @Test
-    fun `failed queue startup can be retried without registering a duplicate task`() {
-        PaperTestFixture(initializeSystems = false).use { fixture ->
+    fun `module shutdown cancels the queue timer and clears actions before the next enable`() {
+        queueFixture().use { fixture ->
             val processed = mutableListOf<Int>()
             registerProcessor(fixture) { action -> processed.add(action.number); ActionResult.SUCCESS }
-            val service = PaperActionQueueService(fixture.plugin, fixture.module.actions, 4)
+            fixture.module.enable()
+            val previousTimer = fixture.scheduledTasks.single()
+            fixture.module.actions.post(ProbeAction(1))
+
+            fixture.module.disable()
+            fixture.module.disable()
+            assertTrue(previousTimer.cancelled)
+            fixture.runScheduledTasks()
+            assertTrue(processed.isEmpty())
+
+            fixture.module.enable()
+            fixture.module.actions.post(ProbeAction(2))
+            previousTimer.action.run()
+            assertTrue(processed.isEmpty())
+            fixture.runScheduledTasks()
+            assertEquals(listOf(2), processed)
+        }
+    }
+
+    @Test
+    fun `failed module startup can be retried without registering a duplicate timer`() {
+        queueFixture().use { fixture ->
+            val processed = mutableListOf<Int>()
+            registerProcessor(fixture) { action -> processed.add(action.number); ActionResult.SUCCESS }
             val failure = IllegalStateException("Scheduler unavailable")
             fixture.schedulerFailure = failure
             fixture.module.actions.post(ProbeAction(1))
 
-            assertSame(failure, assertFailsWith<IllegalStateException> { service.enable() })
+            assertSame(failure, assertFailsWith<IllegalStateException> { fixture.module.enable() })
             assertTrue(fixture.scheduledTasks.isEmpty())
-            service.disable()
             fixture.schedulerFailure = null
-            service.enable()
-            service.enable()
+            fixture.module.enable()
+            fixture.module.enable()
             assertEquals(1, fixture.scheduledTasks.size)
+            fixture.module.actions.post(ProbeAction(2))
             fixture.runScheduledTasks()
-            assertEquals(listOf(1), processed)
-            service.disable()
+            assertEquals(listOf(2), processed)
         }
     }
 
     @Test
     fun `failed action leaves following actions queued for the next timer invocation`() {
-        PaperTestFixture(initializeSystems = false).use { fixture ->
+        queueFixture().use { fixture ->
             val attempted = mutableListOf<Int>()
             registerProcessor(fixture) { action ->
                 attempted.add(action.number)
                 check(action.number != 1) { "Action failed" }
                 ActionResult.SUCCESS
             }
-            val service = PaperActionQueueService(fixture.plugin, fixture.module.actions, 10)
             fixture.module.actions.post(ProbeAction(1))
             fixture.module.actions.post(ProbeAction(2))
-            service.enable()
+            fixture.module.enable()
 
             fixture.runScheduledTasks()
             assertEquals(listOf(1), attempted)
             assertEquals(1, fixture.scheduledTasks.size)
             fixture.runScheduledTasks()
             assertEquals(listOf(1, 2), attempted)
-            service.disable()
         }
     }
+
+    private fun queueFixture(maxActionsPerTick: Int = 10) = PaperTestFixture(
+        initializeSystems = false,
+        initializeModule = false,
+        moduleSchedulerFactory = ::PaperScheduler,
+        maxActionsPerTick = maxActionsPerTick
+    )
 
     private fun registerProcessor(fixture: PaperTestFixture, process: (ProbeAction) -> ActionResult) {
         fixture.module.actions.processorCoordinator.registerProcessor(object : ActionProcessor<ProbeAction>() {

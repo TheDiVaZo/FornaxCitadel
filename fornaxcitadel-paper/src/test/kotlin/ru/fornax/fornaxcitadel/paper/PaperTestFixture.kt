@@ -31,6 +31,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.scheduler.ScheduledTask
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -82,7 +83,10 @@ internal class PaperTestFixture(
         "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), health = HealthBehaviorSettings.Simple(100.0)),
         "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
         "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), damagePolicy = CitadelDamagePolicy.DENY)
-    ))
+    )),
+    moduleSchedulerFactory: (Plugin) -> Scheduler = { ManualScheduler() },
+    initializeModule: Boolean = true,
+    maxActionsPerTick: Int = 1024
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
@@ -186,9 +190,10 @@ internal class PaperTestFixture(
     val backend = MemoryBackend()
     val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
     val manager = ComponentManager(storage, types)
-    val module = CitadelModule(manager, RemovalPolicy { context, _ ->
+    private val moduleScheduler = moduleSchedulerFactory(plugin)
+    val module = CitadelModule(manager, moduleScheduler, RemovalPolicy { context, _ ->
         context.actorId?.let(players::get)?.let { it.online && "fornaxcitadel.admin" in it.permissions } == true
-    })
+    }, maxActionsPerTick)
     val citadelTypes = PaperCitadelTypes(citadelSettings)
     val materials = CombineMaterialRegistry()
     val placementService = PaperPlacementService(plugin, module, materials, placementSettings).also { service ->
@@ -220,7 +225,7 @@ internal class PaperTestFixture(
             }
         }
         if (permissions) module.actions.validatorCoordinator.registerValidator(PaperPermissionValidator(server, citadelTypes))
-        module.enable()
+        if (initializeModule) module.enable()
         if (initializeSystems) {
             placementService.enable()
             breakingService.enable()
@@ -317,6 +322,7 @@ internal class PaperTestFixture(
         breakingService.disable()
         placementService.disable()
         module.disable()
+        (moduleScheduler as? AutoCloseable)?.close()
         HandlerList.unregisterAll(plugin)
     }
 }
@@ -437,10 +443,32 @@ internal class MemoryBackend : DBStorage {
 }
 
 internal object DirectScheduler : Scheduler {
-    override fun <T> schedule(location: WXZCord, task: Callable<T>): CompletableFuture<T> = try {
+    override fun <T> runTask(location: WXZCord, task: Callable<T>): CompletableFuture<T> = try {
         CompletableFuture.completedFuture(task.call())
     } catch (failure: Exception) {
         CompletableFuture.failedFuture(failure)
+    }
+
+    override fun runTaskTimer(task: Runnable, delayTicks: Long, periodTicks: Long): ScheduledTask =
+        error("Use ManualScheduler for tests that register periodic tasks")
+}
+
+/** Core timers stay under test control and do not affect the simulated Bukkit scheduler. */
+internal class ManualScheduler : Scheduler by DirectScheduler {
+    val tasks = mutableListOf<ManualTask>()
+
+    override fun runTaskTimer(task: Runnable, delayTicks: Long, periodTicks: Long): ScheduledTask =
+        ManualTask(task).also(tasks::add)
+
+    class ManualTask(private val action: Runnable) : ScheduledTask {
+        override var isCancelled = false
+            private set
+
+        override fun cancel() { isCancelled = true }
+
+        fun run() {
+            if (!isCancelled) action.run()
+        }
     }
 }
 

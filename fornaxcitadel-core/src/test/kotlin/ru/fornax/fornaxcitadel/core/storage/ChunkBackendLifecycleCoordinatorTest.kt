@@ -724,11 +724,14 @@ class ChunkBackendLifecycleCoordinatorTest {
         var rejectScan = false
         val failure = IllegalStateException("Owner scheduler unavailable")
         val scheduler = object : Scheduler {
-            override fun <T> schedule(location: WXZCord, task: Callable<T>): CompletableFuture<T> {
+            override fun runTaskTimer(task: Runnable, delayTicks: Long, periodTicks: Long): Nothing =
+                error("Unexpected timer")
+
+            override fun <T> runTask(location: WXZCord, task: Callable<T>): CompletableFuture<T> {
                 return if (rejectScan && location == failedLocation) {
                     CompletableFuture.failedFuture(failure)
                 } else {
-                    DirectScheduler.schedule(location, task)
+                    DirectScheduler.runTask(location, task)
                 }
             }
         }
@@ -1427,7 +1430,10 @@ class ChunkBackendLifecycleCoordinatorTest {
     }
 
     private object DirectScheduler : Scheduler {
-        override fun <T> schedule(
+        override fun runTaskTimer(task: Runnable, delayTicks: Long, periodTicks: Long): Nothing =
+            error("Unexpected timer")
+
+        override fun <T> runTask(
             location: WXZCord,
             task: Callable<T>
         ): CompletableFuture<T> {
@@ -1440,6 +1446,9 @@ class ChunkBackendLifecycleCoordinatorTest {
     }
 
     private class ControlledScheduler : Scheduler {
+        override fun runTaskTimer(task: Runnable, delayTicks: Long, periodTicks: Long): Nothing =
+            error("Unexpected timer")
+
         private val scheduled = ArrayDeque<ScheduledCall>()
 
         val pendingCount: Int
@@ -1448,7 +1457,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         val nextLocation: WXZCord?
             get() = scheduled.peekFirst()?.location
 
-        override fun <T> schedule(
+        override fun <T> runTask(
             location: WXZCord,
             task: Callable<T>
         ): CompletableFuture<T> {

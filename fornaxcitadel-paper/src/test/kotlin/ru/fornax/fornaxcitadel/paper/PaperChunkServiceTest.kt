@@ -225,7 +225,7 @@ class PaperChunkServiceTest {
         private val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler,
             ChunkCordSnapshotMapper(types), Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
-        private val module = CitadelModule(manager)
+        private val module = CitadelModule(manager, ManualScheduler())
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
 
         init {

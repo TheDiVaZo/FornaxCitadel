@@ -20,7 +20,6 @@ import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
-import ru.fornax.fornaxcitadel.paper.modules.queue.PaperActionQueueService
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.CompletionException
@@ -44,7 +43,6 @@ class FornaxCitadel : JavaPlugin() {
     private var schedulerAdapter: PaperScheduler? = null
     private var componentManager: ComponentManager? = null
     private var chunkBackend: PersistContainerChunkStorage? = null
-    private var actionQueue: PaperActionQueueService? = null
     private var commandBinding: Pair<PluginCommand, CitadelCommand>? = null
     private val services = mutableListOf<LifecycleService>()
 
@@ -67,10 +65,16 @@ class FornaxCitadel : JavaPlugin() {
             val manager = ComponentManager(storage, types).also { componentManager = it }
             citadelTypes = PaperCitadelTypes(settings.citadelTypes)
             val permissions = PaperPermissionValidator(server, citadelTypes)
-            val module = CitadelModule(manager, RemovalPolicy { context, _ -> permissions.canAdminister(context) })
+            val module = CitadelModule(
+                manager, scheduler,
+                removalPolicy = RemovalPolicy { context, _ -> permissions.canAdminister(context) },
+                maxActionsPerTick = settings.postedActionLimit,
+                actionFailureHandler = { failure ->
+                    logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
+                }
+            )
             citadelTypes.register(module)
             services.add(PaperPermissionService(module.actions, permissions))
-            services.add(module)
 
             val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)
             materials = CombineMaterialRegistry()
@@ -93,15 +97,13 @@ class FornaxCitadel : JavaPlugin() {
 
             val commands = CitadelCommand(this, manager, module, materials, citadelTypes, chunks::saveAll)
             val command = requireNotNull(getCommand("citadel")) { "The citadel command is missing from plugin.yml" }
+            // Components and definitions already exist; start actions and their queue after Paper services.
+            // Reverse shutdown stops the queue before listeners and chunk storage are detached.
+            services.add(module)
             services.forEach { it.enable() }
             commandBinding = command to commands
             command.setExecutor(commands)
             command.tabCompleter = commands
-            PaperActionQueueService(this, module.actions, settings.postedActionLimit).also {
-                actionQueue = it
-                services.add(it)
-                it.enable()
-            }
         } catch (exception: Exception) {
             logger.log(Level.SEVERE, "Could not enable FornaxCitadel", exception)
             shutdown()
@@ -112,8 +114,6 @@ class FornaxCitadel : JavaPlugin() {
     override fun onDisable() = shutdown()
 
     private fun shutdown() {
-        actionQueue?.let(::disableService)
-        actionQueue = null
         commandBinding?.let { (command, executor) ->
             if (command.executor === executor) command.setExecutor(null)
             if (command.tabCompleter === executor) command.tabCompleter = null

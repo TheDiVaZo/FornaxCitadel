@@ -6,11 +6,13 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceService
+import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 
@@ -24,12 +26,15 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
  *
  * Services and the component manager expose trusted low-level operations; external requests
  * must enter through [actions]. All access is on the owning game thread. Observers may post
- * actions, and the host calls actions.drainPosted() after the current operation in the same tick.
+ * actions; [actionQueue] drains them on subsequent ticks while this module is enabled.
  * This module changes component data only; it has no Minecraft/Paper dependencies.
  */
 class CitadelModule @JvmOverloads constructor(
     manager: ComponentManager,
-    removalPolicy: RemovalPolicy = RemovalPolicy.DENY
+    scheduler: Scheduler,
+    removalPolicy: RemovalPolicy = RemovalPolicy.DENY,
+    maxActionsPerTick: Int = 1024,
+    actionFailureHandler: (Exception) -> Unit = ActionQueueService.DEFAULT_FAILURE_HANDLER
 ) : LifecycleService {
     val definitions = CitadelDefinitionRegistry()
     val lifecycle = CitadelLifecycleNotifications()
@@ -37,20 +42,35 @@ class CitadelModule @JvmOverloads constructor(
     val place = PlaceService(actions, definitions, lifecycle)
     val remove = RemoveService(actions, lifecycle, removalPolicy)
     val health = HealthService(actions, remove)
-    private val services: List<LifecycleService> = listOf(remove, health, place)
+    val actionQueue = ActionQueueService(actions, scheduler, maxActionsPerTick, actionFailureHandler)
+    private val services: List<LifecycleService> = listOf(remove, health, place, actionQueue)
 
     override fun enable() {
         try {
             services.forEach { it.enable() }
-        } catch (failure: Exception) {
-            disable()
+        } catch (failure: Throwable) {
+            try {
+                disable()
+            } catch (cleanupFailure: Throwable) {
+                if (cleanupFailure !== failure) failure.addSuppressed(cleanupFailure)
+            }
             throw failure
         }
     }
 
     override fun disable() {
-        services.asReversed().forEach { it.disable() }
+        var failure: Throwable? = null
+        services.asReversed().forEach { service ->
+            try {
+                service.disable()
+            } catch (cleanupFailure: Throwable) {
+                val previous = failure
+                if (previous == null) failure = cleanupFailure
+                else if (previous !== cleanupFailure) previous.addSuppressed(cleanupFailure)
+            }
+        }
         actions.clearPosted()
+        failure?.let { throw it }
     }
 
     /**

@@ -8,7 +8,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
-import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
+import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
@@ -38,7 +38,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
-import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import kotlin.test.Test
@@ -559,9 +558,10 @@ class CitadelModuleTest {
         val types = TypeManager()
         val mapper = ChunkCordSnapshotMapper(types)
         val backend = MemoryBackend()
-        val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, mapper, Executor(Runnable::run))
+        val scheduler = ManualScheduler()
+        val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
-        val module = CitadelModule(manager, removalPolicy).apply { enable() }
+        val module = CitadelModule(manager, scheduler, removalPolicy).apply { enable() }
         val placements = mutableListOf<CitadelPosition>()
         val removals = mutableListOf<Pair<CitadelPosition, RemovalCause>>()
         val removalSawExistingEntity = mutableListOf<Boolean>()
@@ -643,14 +643,6 @@ class CitadelModuleTest {
         override fun saveChunk(snapshot: ChunkCordSnapshot): CompletableFuture<Void> {
             persisted[snapshot.location] = ChunkCordSnapshot.fromByteArray(snapshot.toByteArray())
             return CompletableFuture.completedFuture(null)
-        }
-    }
-
-    private object DirectScheduler : Scheduler {
-        override fun <T> schedule(location: WXZCord, task: Callable<T>): CompletableFuture<T> = try {
-            CompletableFuture.completedFuture(task.call())
-        } catch (exception: Exception) {
-            CompletableFuture.failedFuture(exception)
         }
     }
 

@@ -45,7 +45,8 @@ class ActionManager(
     fun clearPosted() { posted.clear() }
 
     /**
-     * Runs at most [limit] queued actions on the owning thread, normally later in the same tick.
+     * Runs at most [limit] queued actions on the owning thread. The module's queue service
+     * calls this on subsequent ticks while the module is enabled.
      * Returns the number attempted. Failures propagate; remaining actions stay queued.
      * Callers needing each result should use execute directly outside observer callbacks.
      */

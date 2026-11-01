@@ -177,7 +177,7 @@ class ChunkBackendLifecycleCoordinator(
                 codecExecutor
             )
             .thenCompose { restored ->
-                scheduler.schedule(slot.location) {
+                scheduler.runTask(slot.location) {
                     synchronized(stateLock) {
                         slot.chunk ?: restored.also {
                             slot.chunk = it
@@ -191,7 +191,7 @@ class ChunkBackendLifecycleCoordinator(
         val chunk = synchronized(stateLock) { slot.chunk }
             ?: return retryPendingUnload(slot)
 
-        return scheduler.schedule(slot.location) {
+        return scheduler.runTask(slot.location) {
             val save = captureDirtySnapshot(slot.location, chunk)
             synchronized(stateLock) {
                 check(slot.chunk === chunk) {
@@ -214,7 +214,7 @@ class ChunkBackendLifecycleCoordinator(
         val chunk = synchronized(stateLock) { slot.chunk }
             ?: return retryPendingUnload(slot)
 
-        return scheduler.schedule(slot.location) {
+        return scheduler.runTask(slot.location) {
             captureDirtySnapshot(slot.location, chunk)
         }.thenCompose { save ->
             if (save == null) CompletableFuture.completedFuture(Unit)
@@ -235,7 +235,7 @@ class ChunkBackendLifecycleCoordinator(
         chunk: ChunkCord,
         key: Key?
     ): CompletableFuture<OpaqueUpdateResult> {
-        return scheduler.schedule(slot.location) {
+        return scheduler.runTask(slot.location) {
             requireLoadedInstance(slot, chunk)
             mapper.captureOpaqueComponents(chunk, key)
         }.thenCompose { candidates ->
@@ -246,7 +246,7 @@ class ChunkBackendLifecycleCoordinator(
                     { mapper.decodeOpaqueComponents(candidates) },
                     codecExecutor
                 ).thenCompose { resolutions ->
-                    scheduler.schedule(slot.location) {
+                    scheduler.runTask(slot.location) {
                         requireLoadedInstance(slot, chunk)
                         mapper.applyOpaqueComponents(chunk, resolutions)
                     }

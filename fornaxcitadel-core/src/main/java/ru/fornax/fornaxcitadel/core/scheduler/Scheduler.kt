@@ -13,5 +13,12 @@ interface Scheduler {
      * The task may run inline when the caller already owns that thread.
      * The returned future is completed with either the task result or failure.
      */
-    fun <T> schedule(location: WXZCord, task: Callable<T>): CompletableFuture<T>
+    fun <T> runTask(location: WXZCord, task: Callable<T>): CompletableFuture<T>
+
+    /**
+     * Runs [task] periodically on the owning game thread without a chunk binding.
+     * Callbacks are sequential. The first callback is deferred even when [delayTicks] is zero.
+     * [delayTicks] must be nonnegative and [periodTicks] must be positive.
+     */
+    fun runTaskTimer(task: Runnable, delayTicks: Long, periodTicks: Long): ScheduledTask
 }

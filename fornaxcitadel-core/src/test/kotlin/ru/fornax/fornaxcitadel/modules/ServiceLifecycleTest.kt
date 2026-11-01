@@ -9,6 +9,7 @@ import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
@@ -161,8 +162,10 @@ class ServiceLifecycleTest {
         module.registerDefinition(definition, DamagePolicy.ALLOW, behavior())
         fixture.load()
         assertEquals(ActionResult.DENIED, module.actions.execute(placeAction()))
+        assertTrue(fixture.scheduler.tasks.isEmpty())
         module.enable()
         module.enable()
+        val firstTimer = fixture.scheduler.tasks.single()
         assertEquals(ActionResult.SUCCESS, module.actions.execute(placeAction()))
         val original = assertNotNull(fixture.manager.findCitadel(POSITION.world, POSITION.x, POSITION.y, POSITION.z))
         val health = original.getComponent(Health::class.java)
@@ -170,11 +173,14 @@ class ServiceLifecycleTest {
 
         module.disable()
         module.disable()
+        assertTrue(firstTimer.isCancelled)
         ACTION_KEYS.forEach { assertNull(module.actions.processorCoordinator.getProcessor(it)) }
         assertTrue(original.isCurrent)
         assertSame(health, original.getComponent(Health::class.java))
         assertNotNull(module.definitions.find(TYPE))
         module.enable()
+        assertEquals(2, fixture.scheduler.tasks.size)
+        fixture.scheduler.tick()
         assertEquals(0, module.actions.drainPosted())
         assertEquals(ActionResult.SUCCESS, module.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 2.0)))
         assertEquals(8.0, original.getComponent(Health::class.java)?.health)
@@ -188,15 +194,85 @@ class ServiceLifecycleTest {
         module.actions.processorCoordinator.registerProcessor(external)
 
         assertFailsWith<IllegalArgumentException> { module.enable() }
+        assertTrue(fixture.scheduler.tasks.isEmpty())
         assertSame(external, module.actions.processorCoordinator.getProcessor(DamageAction.KEY))
         for (key in ACTION_KEYS - DamageAction.KEY) assertNull(module.actions.processorCoordinator.getProcessor(key))
         assertNotNull(fixture.types.getType(Health::class.java))
         assertTrue(module.actions.processorCoordinator.unregisterProcessor(external))
 
         module.enable()
+        assertEquals(1, fixture.scheduler.tasks.size)
         ACTION_KEYS.forEach { assertNotNull(module.actions.processorCoordinator.getProcessor(it)) }
         module.disable()
         ACTION_KEYS.forEach { assertNull(module.actions.processorCoordinator.getProcessor(it)) }
+    }
+
+    @Test
+    fun `root queue dispatches actions through existing validators using configured limit`() {
+        val fixture = RootFixture(maxActionsPerTick = 1)
+        val module = fixture.module
+        module.registerDefinition(CitadelDefinition(TYPE, emptyList()), DamagePolicy.ALLOW, behavior())
+        fixture.load()
+        module.enable()
+        assertEquals(ActionResult.SUCCESS, module.actions.execute(placeAction()))
+        val citadel = assertNotNull(fixture.manager.findCitadel(POSITION.world, POSITION.x, POSITION.y, POSITION.z))
+        module.actions.post(RemoveAction(ActionContext.SYSTEM, POSITION))
+        module.actions.post(DamageAction(ActionContext.SYSTEM, POSITION, 2.0))
+
+        fixture.scheduler.tick()
+        assertTrue(citadel.isCurrent) // The default removal policy still denies the queued request.
+        assertEquals(10.0, citadel.getComponent(Health::class.java)?.health)
+        fixture.scheduler.tick()
+        assertEquals(8.0, citadel.getComponent(Health::class.java)?.health)
+    }
+
+    @Test
+    fun `root forwards queue failures to the configured handler`() {
+        val fixture = RootFixture()
+        val failure = IllegalStateException("External validation failed")
+        fixture.module.enable()
+        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<PlaceAction> {
+            override val actionClass = PlaceAction::class.java
+            override fun validate(action: PlaceAction): ActionValidator.Result = throw failure
+        })
+        fixture.module.actions.post(placeAction())
+
+        fixture.scheduler.tick()
+        assertSame(failure, fixture.failures.single())
+    }
+
+    @Test
+    fun `timer scheduling failure rolls back root handlers and can be retried`() {
+        val fixture = RootFixture()
+        val failure = IllegalStateException("Scheduler unavailable")
+        fixture.scheduler.timerFailure = failure
+        fixture.module.actions.post(placeAction())
+
+        assertSame(failure, assertFailsWith<IllegalStateException> { fixture.module.enable() })
+        ACTION_KEYS.forEach { assertNull(fixture.module.actions.processorCoordinator.getProcessor(it)) }
+        assertEquals(0, fixture.module.actions.drainPosted())
+        assertNotNull(fixture.types.getType(Health::class.java))
+
+        fixture.scheduler.timerFailure = null
+        fixture.module.enable()
+        ACTION_KEYS.forEach { assertNotNull(fixture.module.actions.processorCoordinator.getProcessor(it)) }
+        assertEquals(1, fixture.scheduler.tasks.size)
+    }
+
+    @Test
+    fun `failed timer cancellation still detaches root handlers and clears pending actions`() {
+        val fixture = RootFixture()
+        fixture.module.enable()
+        val failure = IllegalStateException("Cancellation failed")
+        fixture.scheduler.tasks.single().cancellationFailure = failure
+        fixture.module.actions.post(placeAction())
+
+        assertSame(failure, assertFailsWith<IllegalStateException> { fixture.module.disable() })
+        ACTION_KEYS.forEach { assertNull(fixture.module.actions.processorCoordinator.getProcessor(it)) }
+        assertEquals(0, fixture.module.actions.drainPosted())
+        fixture.module.disable()
+        fixture.module.enable()
+        assertEquals(2, fixture.scheduler.tasks.size)
     }
 
     private class Fixture {
@@ -227,11 +303,14 @@ class ServiceLifecycleTest {
         fun currentHealth() = assertNotNull(find()).getComponent(Health::class.java)?.health
     }
 
-    private class RootFixture {
+    private class RootFixture(maxActionsPerTick: Int = 1024) {
         val types = TypeManager()
         private val storage = MemoryStorage()
         val manager = ComponentManager(storage, types)
-        val module = CitadelModule(manager)
+        val scheduler = ManualScheduler()
+        val failures = mutableListOf<Exception>()
+        val module = CitadelModule(manager, scheduler, maxActionsPerTick = maxActionsPerTick,
+            actionFailureHandler = failures::add)
 
         fun load() { storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0)) }
     }

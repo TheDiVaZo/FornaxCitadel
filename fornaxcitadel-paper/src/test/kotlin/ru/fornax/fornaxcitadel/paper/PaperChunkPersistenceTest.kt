@@ -173,8 +173,8 @@ class PaperChunkPersistenceTest {
 
     @Test
     fun `lifecycle rejects incomplete save future instead of blocking the server thread`() {
-        val pendingScheduler = object : Scheduler {
-            override fun <T> schedule(location: WXZCord, task: Callable<T>) = CompletableFuture<T>()
+        val pendingScheduler = object : Scheduler by DirectScheduler {
+            override fun <T> runTask(location: WXZCord, task: Callable<T>) = CompletableFuture<T>()
         }
         val fixture = Fixture(pendingScheduler)
         fixture.service.enable()
@@ -238,7 +238,7 @@ class PaperChunkPersistenceTest {
         private val types = TypeManager()
         private val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
-        val module = CitadelModule(manager)
+        val module = CitadelModule(manager, ManualScheduler())
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
         val listener = PaperChunkListener(service)
 

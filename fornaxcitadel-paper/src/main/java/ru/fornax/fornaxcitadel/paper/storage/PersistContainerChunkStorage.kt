@@ -98,7 +98,7 @@ class PersistContainerChunkStorage(
         location: WXZCord
     ): CompletableFuture<ChunkCordSnapshot?> {
         return try {
-            scheduler.schedule<ByteArray?>(location) {
+            scheduler.runTask<ByteArray?>(location) {
                 val registered = registeredChunk(location)
                 val pending = registered.pendingData
                 if (pending != null) {
@@ -121,7 +121,7 @@ class PersistContainerChunkStorage(
     ): CompletableFuture<Void> {
         return try {
             val data = snapshot.toByteArray()
-            scheduler.schedule(snapshot.location) {
+            scheduler.runTask(snapshot.location) {
                 val registered = registeredChunk(snapshot.location)
                 registered.chunk.persistentDataContainer
                     .set(dataKey, PersistentDataType.BYTE_ARRAY, data.copyOf())
