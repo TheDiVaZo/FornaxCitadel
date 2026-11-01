@@ -11,6 +11,7 @@ import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
@@ -115,6 +116,6 @@ class PaperPlacementService @JvmOverloads constructor(
     }
 
     private companion object {
-        val ITEM_SOURCE = Key("paper", "reinforcement_item")
+        val ITEM_SOURCE = NamedActionSource(Key("paper", "reinforcement_item"))
     }
 }

@@ -38,6 +38,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
@@ -277,7 +278,7 @@ internal class PaperTestFixture(
         assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(context(installer), position, type)))
     }
 
-    fun context(player: TestPlayer) = ActionContext(player.id, Key("test", "player"))
+    fun context(player: TestPlayer) = ActionContext(player.id, NamedActionSource(Key("test", "player")))
     fun health(): Double = assertNotNull(manager.findCitadel(worldId, position.x, position.y, position.z))
         .getComponent(Health::class.java)!!.health
 

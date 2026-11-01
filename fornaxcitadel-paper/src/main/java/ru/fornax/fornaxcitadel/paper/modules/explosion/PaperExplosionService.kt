@@ -13,11 +13,13 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionDamageAction.ExplosionSource
+import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.UUID
 import java.util.logging.Level
+import kotlin.math.sqrt
 
 /** Converts vanilla destruction into validated damage while keeping reinforced blocks intact. */
 class PaperExplosionService @JvmOverloads constructor(
@@ -29,15 +31,18 @@ class PaperExplosionService @JvmOverloads constructor(
     private val entityPowers = mutableMapOf<UUID, PrimedPower>()
     private val manager = module.actions.componentManager
     private val listener = PaperExplosionListener(this)
+    private val sourceValidator = ExplosionSourceValidator()
     private var enabled = false
 
     override fun enable() {
         if (enabled) return
         try {
+            module.actions.validatorCoordinator.registerValidator(sourceValidator)
             plugin.server.pluginManager.registerEvents(listener, plugin)
             enabled = true
         } catch (failure: Throwable) {
             HandlerList.unregisterAll(listener)
+            module.actions.validatorCoordinator.unregisterValidator(sourceValidator)
             throw failure
         }
     }
@@ -45,6 +50,7 @@ class PaperExplosionService @JvmOverloads constructor(
     override fun disable() {
         if (!enabled) return
         HandlerList.unregisterAll(listener)
+        module.actions.validatorCoordinator.unregisterValidator(sourceValidator)
         enabled = false
         val primed = entityPowers.values.toList()
         entityPowers.clear()
@@ -78,14 +84,14 @@ class PaperExplosionService @JvmOverloads constructor(
     fun damageFromEntity(entity: Entity, center: Location, blocks: MutableList<Block>) {
         if (!enabled) return
         damageBlocks(blocks) {
-            ExplosionSource.Entity(center.clone(), getEntityExplosionPower(entity.uniqueId), entity)
+            ExplosionSource.fromEntity(entity, center, getEntityExplosionPower(entity.uniqueId))
         }
     }
 
     fun damageFromBlock(source: BlockState, blocks: MutableList<Block>) {
         if (!enabled) return
         damageBlocks(blocks) {
-            ExplosionSource.Block(source.location.clone(), powers.getBlockPower(source.type), source)
+            ExplosionSource.fromBlock(source, powers.getBlockPower(source.type))
         }
     }
 
@@ -113,14 +119,15 @@ class PaperExplosionService @JvmOverloads constructor(
             plugin.logger.log(Level.SEVERE, "Could not resolve a citadel explosion source", exception)
             return
         }
+        val context = ActionContext(null, source)
         for (citadel in targets) {
             try {
                 if (!citadel.isCurrent) continue
                 val position = citadel.position
-                val target = Location(source.centerLocation.world,
+                val target = ExplosionPosition(position.world,
                     position.x.toDouble(), position.y.toDouble(), position.z.toDouble())
-                val damage = calculateDamage(source.power, source.centerLocation, target)
-                module.actions.execute(ExplosionDamageAction(position, source, damage))
+                val damage = calculateDamage(source.power, source.position, target)
+                module.actions.execute(DamageAction(context, position, damage))
             } catch (exception: Exception) {
                 plugin.logger.log(Level.SEVERE, "Could not apply explosion damage at ${citadel.position}", exception)
             }
@@ -162,9 +169,13 @@ class PaperExplosionService @JvmOverloads constructor(
     companion object {
         /** Uses block coordinates without a half-block offset, matching the original damage model. */
         @JvmStatic
-        fun calculateDamage(power: Float, explosion: Location, target: Location): Double {
+        fun calculateDamage(power: Float, explosion: ExplosionPosition, target: ExplosionPosition): Double {
             require(power.isFinite() && power >= 0.0f) { "Explosion power must be finite and non-negative" }
-            val distance = explosion.distance(target)
+            require(explosion.worldId == target.worldId) { "Explosion source and target must be in the same world" }
+            val dx = explosion.x - target.x
+            val dy = explosion.y - target.y
+            val dz = explosion.z - target.z
+            val distance = sqrt(dx * dx + dy * dy + dz * dz)
             require(distance.isFinite()) { "Explosion distance must be finite" }
             val radius = power * 2.0
             if (distance >= radius) return 0.0

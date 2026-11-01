@@ -3,10 +3,10 @@ package ru.fornax.fornaxcitadel.core.systems.action
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.UUID
 
-/** Attribution only: a source or a missing player never grants permission by itself. */
-data class ActionContext(val actorId: UUID?, val source: Key) {
+/** The responsible actor and immutable source description; neither grants permission by itself. */
+data class ActionContext(val actorId: UUID?, val source: ActionSource) {
     companion object {
         @JvmField
-        val SYSTEM = ActionContext(null, Key("fornaxcitadel", "system"))
+        val SYSTEM = ActionContext(null, NamedActionSource(Key("fornaxcitadel", "system")))
     }
 }

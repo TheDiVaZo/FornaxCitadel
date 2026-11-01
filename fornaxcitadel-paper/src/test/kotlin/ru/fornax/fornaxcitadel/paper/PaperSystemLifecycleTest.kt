@@ -4,14 +4,18 @@ import org.bukkit.Material
 import org.bukkit.event.Listener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingListener
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentListener
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import java.util.UUID
 import kotlin.test.Test
@@ -114,6 +118,53 @@ class PaperSystemLifecycleTest {
             fixture.placementService.enable()
 
             assertEquals(1, fixture.listenerRegistrations.size)
+            assertEquals(ActionValidator.Result.Rejected, fixture.module.actions.validatorCoordinator.validate(action))
+        }
+    }
+
+    @Test
+    fun `explosion source validation is detached and restored without removing external validators`() {
+        PaperTestFixture(initializeSystems = false, trackListenerLifecycle = true).use { fixture ->
+            fixture.place()
+            val source = ExplosionSource.Block(ExplosionPosition(UUID(9L, 10L), 1.0, 64.0, 2.0), 4.0f, Material.TNT)
+            val action = DamageAction(ActionContext(null, source), fixture.position, 10.0)
+            val validators = fixture.module.actions.validatorCoordinator
+            val external = object : ActionValidator<DamageAction> {
+                override val actionClass = DamageAction::class.java
+                override fun validate(action: DamageAction) = ActionValidator.Result.Success
+            }
+            validators.registerValidator(external)
+            assertEquals(ActionValidator.Result.Success, validators.validate(action))
+
+            repeat(2) {
+                fixture.explosionService.enable()
+                fixture.explosionService.enable()
+                assertEquals(ActionValidator.Result.Rejected, validators.validate(action))
+                fixture.explosionService.disable()
+                fixture.explosionService.disable()
+                assertEquals(ActionValidator.Result.Success, validators.validate(action))
+            }
+
+            assertTrue(validators.unregisterValidator(external))
+            assertEquals(100.0, fixture.health())
+        }
+    }
+
+    @Test
+    fun `failed explosion enable removes its source validator and can be retried`() {
+        PaperTestFixture(initializeSystems = false, trackListenerLifecycle = true).use { fixture ->
+            fixture.place()
+            val source = ExplosionSource.Block(ExplosionPosition(UUID(9L, 10L), 1.0, 64.0, 2.0), 4.0f, Material.TNT)
+            val action = DamageAction(ActionContext(null, source), fixture.position, 10.0)
+            val failure = IllegalStateException("Listener registration failed after subscribing")
+            fixture.listenerRegistrationFailure = failure
+
+            assertSame(failure, assertFailsWith<IllegalStateException> { fixture.explosionService.enable() })
+            assertTrue(fixture.listenerRegistrations.isEmpty())
+            assertEquals(ActionValidator.Result.Success, fixture.module.actions.validatorCoordinator.validate(action))
+
+            fixture.listenerRegistrationFailure = null
+            fixture.explosionService.enable()
             assertEquals(ActionValidator.Result.Rejected, fixture.module.actions.validatorCoordinator.validate(action))
         }
     }

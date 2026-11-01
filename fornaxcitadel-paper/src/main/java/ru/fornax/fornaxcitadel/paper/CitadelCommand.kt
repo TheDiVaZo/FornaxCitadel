@@ -13,6 +13,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
@@ -173,7 +174,7 @@ class CitadelCommand(
 
     private companion object {
         const val ADMIN = "fornaxcitadel.admin"
-        val COMMAND_SOURCE = Key("fornaxcitadel", "paper_command")
+        val COMMAND_SOURCE = NamedActionSource(Key("fornaxcitadel", "paper_command"))
         val OPERATIONS = listOf("give", "place", "remove", "info", "save", "help")
     }
 }

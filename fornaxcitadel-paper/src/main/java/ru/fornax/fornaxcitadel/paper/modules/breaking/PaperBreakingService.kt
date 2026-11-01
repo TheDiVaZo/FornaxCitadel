@@ -8,6 +8,7 @@ import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
@@ -95,6 +96,6 @@ class PaperBreakingService @JvmOverloads constructor(
     }
 
     private companion object {
-        val BREAK_SOURCE = Key("paper", "player_break")
+        val BREAK_SOURCE = NamedActionSource(Key("paper", "player_break"))
     }
 }

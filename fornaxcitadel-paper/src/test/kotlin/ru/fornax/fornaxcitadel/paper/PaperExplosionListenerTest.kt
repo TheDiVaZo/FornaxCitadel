@@ -9,6 +9,7 @@ import org.bukkit.block.BlockState
 import org.bukkit.block.data.BlockData
 import org.bukkit.block.data.type.Bed
 import org.bukkit.entity.Entity
+import org.bukkit.entity.EntityType
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockExplodeEvent
 import org.bukkit.event.entity.EntityExplodeEvent
@@ -20,12 +21,15 @@ import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
-import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionDamageAction
-import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionDamageAction.ExplosionSource
+import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
 import java.util.UUID
 import kotlin.math.sqrt
@@ -35,7 +39,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperExplosionListenerTest {
@@ -89,7 +92,7 @@ class PaperExplosionListenerTest {
     }
 
     @Test
-    fun `entity event and block snapshot locations produce typed damage while shielding reinforced blocks`() {
+    fun `entity and block explosions use ordinary damage actions with typed source snapshots`() {
         val fixture = PaperTestFixture(permissions = true)
         fixture.place()
         val ordinary = fixture.block(3, 64, 2)
@@ -98,11 +101,12 @@ class PaperExplosionListenerTest {
         val source = fixture.snapshot(center = center)
         val entityEvent = fixture.entityExplosion(fixture.block(), ordinary, sourceEntity = entity, center = center)
         val blockEvent = fixture.blockExplosion(fixture.block(), ordinary, source = source)
-        val actions = mutableListOf<ExplosionDamageAction>()
+        val actions = mutableListOf<DamageAction>()
         fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
-                actions.add(assertIs<ExplosionDamageAction>(action))
+                assertEquals(DamageAction::class.java, action.javaClass)
+                actions.add(action)
                 return ActionValidator.Result.Neutral
             }
         })
@@ -114,9 +118,15 @@ class PaperExplosionListenerTest {
         assertEquals(listOf(ordinary), blockEvent.blockList())
         assertEquals(55.0, fixture.health())
         assertEquals(listOf(22.5, 22.5), actions.map { it.damage })
-        assertSame(entity, assertIs<ExplosionSource.Entity>(actions[0].source).entity)
-        assertSame(source, assertIs<ExplosionSource.Block>(actions[1].source).blockState)
-        assertTrue(actions.all { it.context.actorId == null && it.source.power == 4.0f })
+        val entitySource = assertIs<ExplosionSource.Entity>(actions[0].context.source)
+        val blockSource = assertIs<ExplosionSource.Block>(actions[1].context.source)
+        assertEquals(entity.uniqueId, entitySource.entityId)
+        assertEquals(EntityType.CREEPER, entitySource.entityType)
+        assertEquals(Material.STONE, blockSource.material)
+        assertEquals(ExplosionPosition(fixture.worldId, 1.0, 64.0, 0.0), entitySource.position)
+        assertEquals(entitySource.position, blockSource.position)
+        assertTrue(actions.all { it.position == fixture.position })
+        assertTrue(actions.all { it.context.actorId == null && (it.context.source as ExplosionSource).power == 4.0f })
         assertEquals(0, fixture.vanillaBlockChanges)
     }
 
@@ -217,9 +227,9 @@ class PaperExplosionListenerTest {
     fun `only typed environmental damage bypasses player permission and world checks still apply`() {
         val fixture = PaperTestFixture(permissions = true)
         fixture.place()
-        val source = ExplosionSource.Entity(fixture.block().location, 4.0f, explodingEntity())
-        val typed = ExplosionDamageAction(fixture.position, source, 10.0)
-        val spoofed = DamageAction(ActionContext(null, Key("paper", "explosion")), fixture.position, 10.0)
+        val source = ExplosionSource.fromEntity(explodingEntity(), fixture.block().location, 4.0f)
+        val typed = DamageAction(ActionContext(null, source), fixture.position, 10.0)
+        val spoofed = DamageAction(ActionContext(null, NamedActionSource(Key("paper", "explosion"))), fixture.position, 10.0)
 
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(spoofed))
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(typed))
@@ -230,6 +240,67 @@ class PaperExplosionListenerTest {
         fixture.worldAvailable = false
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
         assertEquals(90.0, fixture.health())
+    }
+
+    @Test
+    fun `explosion context does not exempt placement or removal from player permissions`() {
+        val fixture = PaperTestFixture(permissions = true)
+        fixture.place()
+        fixture.installer.permissions.clear()
+        val source = ExplosionSource.fromEntity(explodingEntity(), fixture.block().location, 4.0f)
+        val context = ActionContext(fixture.installer.id, source)
+        val target = fixture.position.copy(x = 3)
+        val removal = RemoveAction(context, fixture.position)
+        val placement = PlaceAction(context, target, PaperCitadelTypes.REINFORCED)
+        val validator = PaperPermissionValidator(fixture.server, fixture.citadelTypes)
+
+        assertEquals(ActionValidator.Result.Rejected, validator.validate(removal))
+        assertEquals(ActionValidator.Result.Rejected, validator.validate(placement))
+        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(removal))
+        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(placement))
+        assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
+        assertNull(fixture.manager.findCitadel(fixture.worldId, 3, 64, 2))
+    }
+
+    @Test
+    fun `explosion source world must match its damage target even without paper permission checks`() {
+        for (permissions in listOf(false, true)) {
+            val fixture = PaperTestFixture(permissions = permissions)
+            fixture.place()
+            val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(fixture.worldId, 0, 0)))
+            chunk.resetDirty()
+            val wrongWorld = ExplosionPosition(UUID(9L, 10L), 1.0, 64.0, 2.0)
+            for (source in listOf(
+                ExplosionSource.Entity(wrongWorld, 4.0f, UUID(10L, 20L), EntityType.CREEPER),
+                ExplosionSource.Block(wrongWorld, 5.0f, Material.TNT)
+            )) {
+                val action = DamageAction(ActionContext(null, source), fixture.position, 20.0)
+                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            }
+            assertEquals(100.0, fixture.health())
+            assertFalse(chunk.isDirty)
+        }
+    }
+
+    @Test
+    fun `damage policy can select explosion origins directly from the context`() {
+        val observed = mutableListOf<ExplosionSource.Entity>()
+        val fixture = PaperTestFixture(permissions = true, damagePolicy = DamagePolicy { context, _ ->
+            val source = context.source as? ExplosionSource.Entity
+            if (source != null) observed.add(source)
+            source?.entityType == EntityType.CREEPER
+        })
+        fixture.place()
+
+        dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
+        assertEquals(100.0, fixture.health())
+        dispatch(fixture.explosionListener, fixture.blockExplosion(fixture.block()), fixture.plugin)
+        assertEquals(100.0, fixture.health())
+        dispatch(fixture.explosionListener, fixture.entityExplosion(fixture.block()), fixture.plugin)
+
+        assertEquals(60.0, fixture.health())
+        assertEquals(UUID(10L, 20L), observed.single().entityId)
+        assertEquals(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0), observed.single().position)
     }
 
     @Test
@@ -296,17 +367,18 @@ class PaperExplosionListenerTest {
     }
 
     @Test
-    fun `mutating one action source cannot move the explosion center for a later target`() {
+    fun `mutating the input location during validation cannot move a later target source snapshot`() {
         val fixture = PaperTestFixture(permissions = true)
         fixture.place()
         val second = fixture.block(3, 64, 2)
         fixture.placeAt(second)
         val center = Location(fixture.world, 2.0, 64.0, 2.0)
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<ExplosionDamageAction> {
-            override val actionClass = ExplosionDamageAction::class.java
-            override fun validate(action: ExplosionDamageAction): ActionValidator.Result {
-                assertEquals(center, action.source.centerLocation)
-                if (action.citadelX == 1) action.source.centerLocation.x = 1000.0
+        val expectedCenter = ExplosionPosition(fixture.worldId, 2.0, 64.0, 2.0)
+        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            override val actionClass = DamageAction::class.java
+            override fun validate(action: DamageAction): ActionValidator.Result {
+                assertEquals(expectedCenter, assertIs<ExplosionSource>(action.context.source).position)
+                if (action.citadelX == 1) center.x = 1000.0
                 return ActionValidator.Result.Neutral
             }
         })
@@ -316,7 +388,7 @@ class PaperExplosionListenerTest {
         assertEquals(69.375, fixture.health())
         val secondHandle = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 3, 64, 2))
         assertEquals(69.375, secondHandle.getComponent(Health::class.java)?.health)
-        assertEquals(2.0, center.x)
+        assertEquals(1000.0, center.x)
     }
 
     @Test
@@ -356,7 +428,11 @@ class PaperExplosionListenerTest {
 
     private fun explodingEntity(id: UUID = UUID(10L, 20L)): Entity = paperProxy("exploded entity") { method, _ ->
         // EntityExplodeEvent retains a snapshot location; the removed entity cannot supply one.
-        if (method.name == "getUniqueId") id else unsupported(method)
+        when (method.name) {
+            "getUniqueId" -> id
+            "getType" -> EntityType.CREEPER
+            else -> unsupported(method)
+        }
     }
 
     private fun PaperTestFixture.entityExplosion(

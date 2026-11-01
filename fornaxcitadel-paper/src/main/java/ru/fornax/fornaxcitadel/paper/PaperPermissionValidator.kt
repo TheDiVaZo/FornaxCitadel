@@ -9,7 +9,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
-import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionDamageAction
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 
 /** Platform permissions are checked for every request, including commands and posted actions. */
 class PaperPermissionValidator(
@@ -25,10 +25,9 @@ class PaperPermissionValidator(
 
     override fun validate(action: ActionData): ActionValidator.Result {
         val permission = when (action) {
-            // Environmental eligibility is typed; context.source is attribution, not permission.
-            is ExplosionDamageAction -> null
             is PlaceAction -> "fornaxcitadel.place"
-            is DamageAction -> "fornaxcitadel.damage"
+            // Only damage from a typed explosion uses environmental permission rules.
+            is DamageAction -> if (action.context.source is ExplosionSource) null else "fornaxcitadel.damage"
             is RemoveAction -> "fornaxcitadel.admin"
             else -> return ActionValidator.Result.Neutral
         }

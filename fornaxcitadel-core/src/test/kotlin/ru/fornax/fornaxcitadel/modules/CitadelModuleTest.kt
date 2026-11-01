@@ -18,7 +18,9 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
@@ -45,6 +47,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CitadelModuleTest {
@@ -239,6 +242,48 @@ class CitadelModuleTest {
     }
 
     @Test
+    fun `posted damage retains its actor and typed source for policies and validators`() {
+        val fixture = Fixture()
+        val source = ProjectileSource(UUID(9L, 10L), 4.0)
+        val context = ActionContext(PLACER, source)
+        val policyContexts = mutableListOf<ActionContext>()
+        fixture.register(policy = DamagePolicy { candidate, citadel ->
+            policyContexts.add(candidate)
+            val projectile = candidate.source as? ProjectileSource
+            candidate.actorId == PLACER && projectile != null && projectile.projectileId == source.projectileId &&
+                projectile.power == 4.0 && citadel.position == POSITION
+        })
+        fixture.load()
+        assertEquals(ActionResult.SUCCESS, fixture.place())
+        val validatedContexts = mutableListOf<ActionContext>()
+        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            override val actionClass = DamageAction::class.java
+            override fun validate(action: DamageAction): ActionValidator.Result {
+                validatedContexts.add(action.context)
+                return ActionValidator.Result.Neutral
+            }
+        })
+        fixture.module.actions.post(DamageAction(context, POSITION, 10.0))
+        fixture.module.actions.post(DamageAction(ActionContext(PLACER, NamedActionSource(source.key)), POSITION, 10.0))
+
+        assertEquals(100.0, fixture.health().health)
+        assertTrue(policyContexts.isEmpty())
+        assertEquals(1, fixture.module.actions.drainPosted(1))
+        assertEquals(90.0, fixture.health().health)
+        assertSame(context, policyContexts.single())
+        assertSame(source, validatedContexts.single().source)
+        assertEquals(PLACER, validatedContexts.single().actorId)
+        fixture.chunk().resetDirty()
+
+        // Reusing a key cannot supply the typed information required by the policy.
+        assertEquals(1, fixture.module.actions.drainPosted())
+        assertEquals(90.0, fixture.health().health)
+        assertFalse(fixture.chunk().isDirty)
+        assertEquals(2, policyContexts.size)
+        assertEquals(1, validatedContexts.size)
+    }
+
+    @Test
     fun `a type with health but no registered damage policy rejects damage`() {
         val fixture = Fixture()
         val behavior = SimpleHealthBehavior(100.0)
@@ -298,7 +343,7 @@ class CitadelModuleTest {
         fixture.register()
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
-        val forgedSource = ActionContext(STRANGER, Key("test", "admin"))
+        val forgedSource = ActionContext(STRANGER, NamedActionSource(Key("test", "admin")))
 
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RemoveAction(forgedSource, POSITION)))
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RemoveAction(PLACER_CONTEXT, POSITION)))
@@ -585,6 +630,10 @@ class CitadelModuleTest {
     private class SpecializedDamage(context: ActionContext, position: CitadelPosition, damage: Double) :
         DamageAction(context, position, damage)
 
+    private data class ProjectileSource(val projectileId: UUID, val power: Double) : ActionSource {
+        override val key = Key("test", "projectile")
+    }
+
     private class MemoryBackend : DBStorage {
         private val persisted = mutableMapOf<WXZCord, ChunkCordSnapshot>()
 
@@ -621,7 +670,7 @@ class CitadelModuleTest {
         val SECOND_POSITION = CitadelPosition(WORLD, 3, 64, 4)
         val DEFAULT_KIND = Key("test", "basic")
         val MATURING_KIND = Key("test", "maturing")
-        val PLAYER_SOURCE = Key("test", "player")
+        val PLAYER_SOURCE = NamedActionSource(Key("test", "player"))
         val PROBE_KEY = Key("test", "probe")
         val PLACER_CONTEXT = ActionContext(PLACER, PLAYER_SOURCE)
         val STRANGER_CONTEXT = ActionContext(STRANGER, PLAYER_SOURCE)
