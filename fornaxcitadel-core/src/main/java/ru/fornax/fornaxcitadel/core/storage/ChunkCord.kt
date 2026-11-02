@@ -152,6 +152,24 @@ class ChunkCord(val location: WXZCord) {
         citadels.forEachCitadel(action)
     }
 
+    /**
+     * Visits existing entities in ascending Y within the inclusive [minY]..[maxY] range.
+     * The range is clipped to storage bounds; entirely outside ranges produce no callbacks.
+     * Empty height groups, planes and rows are skipped. Coordinates are local X/Z and global Y.
+     * Do not add, remove or replace citadels/components, or unload the chunk, during iteration.
+     */
+    fun forEachCitadelInYRange(
+        minY: Int,
+        maxY: Int,
+        action: (x: Int, y: Int, z: Int, entity: CitadelEntity) -> Unit
+    ) {
+        require(minY <= maxY) { "Minimum height $minY exceeds maximum height $maxY" }
+        val firstY = maxOf(minY, MIN_Y)
+        val lastY = minOf(maxY, MIN_Y + WORLD_HEIGHT - 1)
+        if (firstY > lastY) return
+        citadels.forEachCitadelInYRange(firstY, lastY, action)
+    }
+
     fun <T : Component> getComponent(
         entity: CitadelEntity,
         type: ComponentType<T>
@@ -439,12 +457,22 @@ class ChunkCord(val location: WXZCord) {
                 entity: CitadelEntity
             ) -> Unit
         ) {
-            for (groupIndex in data.indices) {
-                val group = data[groupIndex] ?: continue
+            forEachCitadelInYRange(MIN_Y, MIN_Y + WORLD_HEIGHT - 1, action)
+        }
 
-                for (offset in group.indices) {
+        fun forEachCitadelInYRange(
+            minY: Int,
+            maxY: Int,
+            action: (x: Int, y: Int, z: Int, entity: CitadelEntity) -> Unit
+        ) {
+            for (groupIndex in yGroup(minY)..yGroup(maxY)) {
+                val group = data[groupIndex] ?: continue
+                val groupBaseY = MIN_Y + groupIndex * GROUP_HEIGHT
+                val firstOffset = maxOf(0, minY - groupBaseY)
+                val lastOffset = minOf(group.lastIndex, maxY - groupBaseY)
+                for (offset in firstOffset..lastOffset) {
                     val plane = group[offset] ?: continue
-                    val y = MIN_Y + groupIndex * GROUP_HEIGHT + offset
+                    val y = groupBaseY + offset
 
                     for (x in plane.indices) {
                         val row = plane[x] ?: continue

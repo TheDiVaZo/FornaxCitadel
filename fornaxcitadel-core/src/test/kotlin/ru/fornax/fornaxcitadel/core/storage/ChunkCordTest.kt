@@ -19,6 +19,42 @@ import kotlin.test.assertTrue
 class ChunkCordTest {
 
     @Test
+    fun `bounded citadel iteration preserves entity identity and skips outside layers`() {
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
+        chunk.putCitadel(0, -42, 0)
+        val first = chunk.putCitadel(1, -41, 2)
+        val second = chunk.putCitadel(15, -40, 15)
+        chunk.putCitadel(0, -39, 0)
+        chunk.resetDirty()
+        val visited = mutableListOf<Pair<Triple<Int, Int, Int>, CitadelEntity>>()
+
+        chunk.forEachCitadelInYRange(-41, -40) { x, y, z, entity ->
+            visited.add(Triple(x, y, z) to entity)
+        }
+
+        assertEquals(listOf(Triple(1, -41, 2), Triple(15, -40, 15)), visited.map { it.first })
+        assertSame(first, visited[0].second)
+        assertSame(second, visited[1].second)
+        assertFalse(chunk.isDirty)
+    }
+
+    @Test
+    fun `bounded citadel iteration clips extremes and rejects reversed ranges`() {
+        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
+        val bottom = chunk.putCitadel(0, -64, 0)
+        val top = chunk.putCitadel(15, 319, 15)
+        val visited = mutableListOf<CitadelEntity>()
+
+        chunk.forEachCitadelInYRange(Int.MIN_VALUE, Int.MAX_VALUE) { _, _, _, entity -> visited.add(entity) }
+        assertEquals(listOf(bottom, top), visited)
+        chunk.forEachCitadelInYRange(Int.MIN_VALUE, -65) { _, _, _, _ -> error("Outside lower bound") }
+        chunk.forEachCitadelInYRange(320, Int.MAX_VALUE) { _, _, _, _ -> error("Outside upper bound") }
+        assertFailsWith<IllegalArgumentException> {
+            chunk.forEachCitadelInYRange(1, 0) { _, _, _, _ -> error("Reversed range") }
+        }
+    }
+
+    @Test
     fun `content mutations mark dirty and explicit reset acknowledges them`() {
         val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)

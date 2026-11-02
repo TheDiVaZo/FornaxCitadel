@@ -8,6 +8,7 @@ import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.pool.WXZCordPool
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
+import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.UUID
@@ -65,6 +66,37 @@ class ComponentManager(
         val chunk = findChunk(world, x, y, z) ?: return null
         val entity = chunk.getCitadel(x and 15, y, z and 15) ?: return null
         return CitadelHandle(this, chunk, entity, CitadelPosition(world, x, y, z))
+    }
+
+    /**
+     * Visits citadels in one loaded chunk within the inclusive [minY]..[maxY] range.
+     * Heights are clipped to the supported storage bounds; an entirely outside range or an
+     * unloaded chunk produces no callbacks. This query never loads a chunk or interns its key.
+     * [chunkX] and [chunkZ] are chunk coordinates in -32768..32767; handles use global block
+     * coordinates and retain the identity of the particular loaded entity.
+     *
+     * [minY] must not exceed [maxY], including for unloaded chunks. Do not structurally modify
+     * citadels or their components, or unload the chunk, during a callback. Reading does not
+     * mark the chunk dirty; live component mutations still require [editComponent] or [markDirty].
+     */
+    fun forEachCitadel(
+        world: UUID,
+        chunkX: Int,
+        chunkZ: Int,
+        minY: Int,
+        maxY: Int,
+        action: (CitadelHandle) -> Unit
+    ) {
+        require(minY <= maxY) { "Minimum height $minY exceeds maximum height $maxY" }
+        require(chunkX in Short.MIN_VALUE..Short.MAX_VALUE) { "Invalid chunk x: $chunkX" }
+        require(chunkZ in Short.MIN_VALUE..Short.MAX_VALUE) { "Invalid chunk z: $chunkZ" }
+        if (maxY < ChunkCord.MIN_Y || minY >= ChunkCord.MIN_Y + ChunkCord.WORLD_HEIGHT) return
+        val chunk = citadelStorage.getIfChunkLoaded(WXZCord(world, chunkX, chunkZ)) ?: return
+        val baseX = chunkX shl 4
+        val baseZ = chunkZ shl 4
+        chunk.forEachCitadelInYRange(minY, maxY) { x, y, z, entity ->
+            action(CitadelHandle(this, chunk, entity, CitadelPosition(world, baseX + x, y, baseZ + z)))
+        }
     }
 
     /** False for a handle owned by a different manager, removed entity, or unloaded chunk. */
