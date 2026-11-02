@@ -7,6 +7,14 @@ actions:
 storage:
   save-interval-ticks: 1200
 
+# Systems process all observed citadels at this interval. Discovery updates after cell/data changes.
+observation:
+  interval-ticks: 1
+  full-3d:
+    # Inclusive radii around the player's 16x16x16 cell: 3 includes seven cells per axis.
+    horizontal-radius-chunks: 3
+    vertical-radius-sections: 3
+
 # Every player hit starts at 1 damage before applying player-specific modifiers.
 player-damage:
   # Creative hits remove damageable reinforcement, while permissions still apply.

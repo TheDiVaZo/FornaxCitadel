@@ -27,9 +27,20 @@ class PaperChunkService(
     private var generation: Any? = null
     private var autosave: BukkitTask? = null
     private var cleanupPending = false
+    private var dataListeners = emptyArray<ChunkDataListener>()
 
     init {
         require(saveIntervalTicks > 0) { "Save interval must be positive" }
+    }
+
+    fun addDataListener(listener: ChunkDataListener) {
+        checkMainThread()
+        if (dataListeners.none { it === listener }) dataListeners += listener
+    }
+
+    fun removeDataListener(listener: ChunkDataListener) {
+        checkMainThread()
+        dataListeners = dataListeners.filterNot { it === listener }.toTypedArray()
     }
 
     override fun enable() {
@@ -98,8 +109,12 @@ class PaperChunkService(
             // Keep the backend binding and core's pending snapshot for a later retry.
             report("save and unload", chunk, failure)
         } finally {
-            if (backend.hasPendingChunkSave(chunk)) event.isSaveChunk = true
-            if (saved) backend.unregisterChunk(chunk)
+            try {
+                if (backend.hasPendingChunkSave(chunk)) event.isSaveChunk = true
+                if (saved) backend.unregisterChunk(chunk)
+            } finally {
+                notifyDataChanged(chunk)
+            }
         }
     }
 
@@ -133,7 +148,11 @@ class PaperChunkService(
             }
 
             for (chunk in chunks) {
-                requireCompleted(manager.unloadChunk(world.uid, chunk.x, chunk.z))
+                try {
+                    requireCompleted(manager.unloadChunk(world.uid, chunk.x, chunk.z))
+                } finally {
+                    notifyDataChanged(chunk)
+                }
             }
             if (chunks.any(backend::hasPendingChunkSave)) world.save()
             chunks.forEach(backend::unregisterChunk)
@@ -151,6 +170,8 @@ class PaperChunkService(
                 requireCompleted(manager.unloadChunk(chunk.world.uid, chunk.x, chunk.z))
             } catch (problem: Exception) {
                 if (failure == null) failure = problem else if (failure !== problem) failure.addSuppressed(problem)
+            } finally {
+                notifyDataChanged(chunk)
             }
         }
         try {
@@ -172,11 +193,23 @@ class PaperChunkService(
         } catch (failure: Exception) {
             // Unreadable chunks stay unavailable; their original PDC bytes are not replaced.
             report("load", chunk, failure)
+        } finally {
+            notifyDataChanged(chunk)
         }
     }
 
     private fun restoreWorld(world: World) {
         for (chunk in world.loadedChunks) load(chunk)
+    }
+
+    private fun notifyDataChanged(chunk: Chunk) {
+        for (listener in dataListeners) {
+            try {
+                listener.onChunkDataChanged(chunk.world.uid, chunk.x, chunk.z)
+            } catch (failure: Exception) {
+                report("notify chunk data observer for", chunk, failure)
+            }
+        }
     }
 
     private fun supported(chunk: Chunk): Boolean =

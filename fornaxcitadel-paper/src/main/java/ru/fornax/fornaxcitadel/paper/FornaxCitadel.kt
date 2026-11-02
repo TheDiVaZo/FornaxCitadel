@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.command.PluginCommand
+import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
 import ru.fornax.fornaxcitadel.core.component.TypeManager
@@ -8,6 +9,7 @@ import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
+import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
@@ -19,6 +21,8 @@ import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
+import ru.fornax.fornaxcitadel.paper.modules.observation.Full3DObservation
+import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -41,6 +45,9 @@ class FornaxCitadel : JavaPlugin() {
         private set
     /** Additional player damage modifiers can be registered on the main thread after enable. */
     lateinit var playerDamage: PlayerDamageModifierService
+        private set
+    /** Register presentation systems on the main thread after enable. Players are observed automatically. */
+    lateinit var observation: ObservationService<Player>
         private set
     private var schedulerAdapter: PaperScheduler? = null
     private var componentManager: ComponentManager? = null
@@ -100,8 +107,13 @@ class FornaxCitadel : JavaPlugin() {
             val commands = CitadelCommand(this, manager, module, materials, citadelTypes, chunks::saveAll)
             val command = requireNotNull(getCommand("citadel")) { "The citadel command is missing from plugin.yml" }
             // Components and definitions already exist; start actions and their queue after Paper services.
-            // Reverse shutdown stops the queue before listeners and chunk storage are detached.
+            // Observation stops before core actions; the queue stops before gameplay listeners and storage.
             services.add(module)
+            observation = ObservationService(manager, scheduler, settings.observation.intervalTicks) { failure ->
+                logger.log(Level.SEVERE, "Citadel observation failed", failure)
+            }
+            val observationSource = Full3DObservation(this, manager, module.lifecycle, chunks, settings.observation.full3D)
+            services.add(PaperObservationService(this, observation, observationSource))
             services.forEach { it.enable() }
             commandBinding = command to commands
             command.setExecutor(commands)

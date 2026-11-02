@@ -156,6 +156,7 @@ internal class PaperTestFixture(
             "getWorlds" -> if (worldAvailable) listOf(world) else emptyList<World>()
             "getPlayer", "getPlayerExact" -> if (args[0] is UUID) players[args[0]]?.player
                 else players.values.firstOrNull { it.name == args[0] }?.player
+            "getOnlinePlayers" -> players.values.filter { it.online }.map { it.player }
             "isPrimaryThread" -> mainThread
             "getLogger" -> Logger.getLogger("PaperTest")
             "getName", "getVersion", "getBukkitVersion" -> "PaperTest"
@@ -351,6 +352,7 @@ internal class PaperTestFixture(
 
 internal class TestPlayer(val id: UUID, val name: String, private val world: World) {
     var online = true
+    var location = Location(world, 0.0, 64.0, 0.0)
     var gameMode = GameMode.SURVIVAL
     var firstPlayed = 0L
     var playTimeTicks = 0
@@ -376,7 +378,8 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
         when (method.name) {
             "getUniqueId" -> id
             "getName" -> name
-            "getWorld" -> world
+            "getWorld" -> location.world
+            "getLocation" -> location.clone()
             "getGameMode" -> gameMode
             "getFirstPlayed" -> firstPlayed
             "getStatistic" -> if (args.contentEquals(arrayOf(Statistic.PLAY_ONE_MINUTE))) playTimeTicks else unsupported(method)
