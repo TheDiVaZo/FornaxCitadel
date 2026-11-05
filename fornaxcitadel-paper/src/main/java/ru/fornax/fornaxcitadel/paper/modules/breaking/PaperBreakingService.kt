@@ -1,7 +1,5 @@
 package ru.fornax.fornaxcitadel.paper.modules.breaking
 
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
@@ -13,6 +11,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.paper.PaperMessages
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
@@ -21,7 +20,8 @@ import java.util.logging.Level
 class PaperBreakingService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
-    private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService()
+    private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService(),
+    private val messages: PaperMessages = PaperMessages.defaults()
 ) : LifecycleService {
     private val manager = module.actions.componentManager
     private val listener = PaperBreakingListener(this)
@@ -48,7 +48,7 @@ class PaperBreakingService @JvmOverloads constructor(
         if (!enabled || !block.supportsCitadelData()) return true
         return try {
             if (!manager.isChunkLoaded(block.world.uid, block.x shr 4, block.z shr 4)) {
-                deny(player, "Данные чанка пока недоступны.")
+                messages.sendGameplay(player, "breaking.chunk-unavailable")
                 return false
             }
             true
@@ -64,7 +64,7 @@ class PaperBreakingService @JvmOverloads constructor(
         if (!block.supportsCitadelData()) return false
         try {
             if (!manager.isChunkLoaded(block.world.uid, block.x shr 4, block.z shr 4)) {
-                deny(player, "Данные чанка пока недоступны.")
+                messages.sendGameplay(player, "breaking.chunk-unavailable")
                 return true
             }
             val citadel = manager.findCitadel(block.world.uid, block.x, block.y, block.z) ?: return false
@@ -73,12 +73,9 @@ class PaperBreakingService @JvmOverloads constructor(
                 ActionContext(player.uniqueId, BREAK_SOURCE), citadel.position, damage
             ))
             if (result != ActionResult.SUCCESS) {
-                deny(player, "Действие запрещено.")
+                messages.sendGameplay(player, "breaking.denied")
             } else {
-                player.sendActionBar(Component.text(
-                    if (!citadel.isCurrent) "Укрепление снято." else "Укреплению нанесён урон.",
-                    NamedTextColor.GREEN
-                ))
+                messages.sendGameplay(player, if (!citadel.isCurrent) "breaking.removed" else "breaking.damaged")
             }
         } catch (exception: Exception) {
             report(player, "Could not process a citadel breaking attempt", exception)
@@ -86,13 +83,9 @@ class PaperBreakingService @JvmOverloads constructor(
         return true
     }
 
-    private fun deny(player: Player, message: String) {
-        player.sendActionBar(Component.text(message, NamedTextColor.RED))
-    }
-
     private fun report(player: Player, message: String, exception: Exception) {
         plugin.logger.log(Level.SEVERE, message, exception)
-        deny(player, "Не удалось выполнить действие. Сообщите администратору.")
+        messages.sendGameplay(player, "breaking.error")
     }
 
     private companion object {

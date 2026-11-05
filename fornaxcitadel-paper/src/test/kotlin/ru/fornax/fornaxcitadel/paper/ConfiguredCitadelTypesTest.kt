@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.paper
 
-import net.kyori.adventure.text.TextComponent
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.Material
 import org.bukkit.block.BlockFace
 import org.bukkit.command.Command
@@ -96,7 +97,8 @@ class ConfiguredCitadelTypesTest {
         assertEquals(73.0, fixture.health())
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("info"))
 
-        val messages = fixture.installer.messages.filterIsInstance<TextComponent>().map { it.content() }
+        val messages = fixture.installer.messages.filterIsInstance<Component>()
+            .map(PlainTextComponentSerializer.plainText()::serialize)
         assertTrue("Тип: titanium" in messages)
         assertTrue("Здоровье: 73.0 / 73.0" in messages)
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("remove"))
@@ -254,8 +256,9 @@ class ConfiguredCitadelTypesTest {
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", args)
 
         assertTrue(fixture.stranger.addedItems.isEmpty())
-        assertTrue(fixture.installer.messages.filterIsInstance<TextComponent>()
-            .any { it.content().contains("thirdparty:steel_plate") && it.content().contains("не зарегистрирован") })
+        assertTrue(fixture.installer.messages.filterIsInstance<Component>()
+            .map(PlainTextComponentSerializer.plainText()::serialize)
+            .any { it.contains("thirdparty:steel_plate") && it.contains("не зарегистрирован") })
         val adapter = TestMaterialAdapter(Key("thirdparty", "steel_plate"))
         assertTrue(fixture.materials.register("thirdparty", TestMaterialRegistry(adapter)))
 

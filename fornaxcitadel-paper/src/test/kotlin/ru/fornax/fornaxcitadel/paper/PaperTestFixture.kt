@@ -103,7 +103,8 @@ internal class PaperTestFixture(
     ),
     moduleSchedulerFactory: (Plugin) -> Scheduler = { ManualScheduler() },
     initializeModule: Boolean = true,
-    maxActionsPerTick: Int = 1024
+    maxActionsPerTick: Int = 1024,
+    messages: PaperMessages = PaperMessages.defaults()
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
@@ -215,13 +216,13 @@ internal class PaperTestFixture(
     }, maxActionsPerTick)
     val citadelTypes = PaperCitadelTypes(citadelSettings)
     val materials = CombineMaterialRegistry()
-    val placementService = PaperPlacementService(plugin, module, materials, placementSettings).also { service ->
+    val placementService = PaperPlacementService(plugin, module, materials, placementSettings, messages).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
         }
     }
     val playerDamage = PlayerDamageModifierService()
-    val breakingService = PaperBreakingService(plugin, module, playerDamage)
+    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages)
     val explosionService = PaperExplosionService(plugin, module, explosionPowers)
     val environmentService = PaperEnvironmentService(plugin, module)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
@@ -367,6 +368,8 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
     var targetLookups = 0
     val permissions = mutableSetOf("fornaxcitadel.place", "fornaxcitadel.damage")
     val messages = mutableListOf<Any?>()
+    val chatMessages = mutableListOf<Any?>()
+    val actionBarMessages = mutableListOf<Any?>()
     val addedItems = mutableListOf<ItemStack>()
     val inventory: PlayerInventory = paperProxy("inventory $name") { method, args ->
         when (method.name) {
@@ -394,9 +397,14 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
             "isChunkSent" -> (args.single() as Long) in sentChunks
             "isDead" -> false
             "hasPermission" -> args[0] in permissions
-            "sendMessage" -> { messages.add(args.lastOrNull()); null }
+            "sendMessage" -> {
+                chatMessages.add(args.lastOrNull())
+                messages.add(args.lastOrNull())
+                null
+            }
             "sendActionBar" -> {
                 actionBarFailure?.let { throw it }
+                actionBarMessages.add(args.lastOrNull())
                 messages.add(args.lastOrNull())
                 null
             }

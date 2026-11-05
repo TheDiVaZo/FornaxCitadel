@@ -1,7 +1,5 @@
 package ru.fornax.fornaxcitadel.paper.modules.placement
 
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.GameMode
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
@@ -16,6 +14,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
@@ -25,7 +24,8 @@ class PaperPlacementService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
     private val materials: MaterialRegistry,
-    settings: PlacementSettings = PlacementSettings()
+    settings: PlacementSettings = PlacementSettings(),
+    private val messages: PaperMessages = PaperMessages.defaults()
 ) : LifecycleService {
     private val definitionsByMaterial = mutableMapOf<Key, Key>()
     private val blockValidator = ReinforceableBlockValidator(plugin.server)
@@ -81,7 +81,7 @@ class PaperPlacementService @JvmOverloads constructor(
         val held = player.inventory.itemInMainHand
         if (resolveMaterialKey(held) != materialKey) return
         if (!block.supportsCitadelData()) {
-            deny(player, "В этой точке нельзя установить укрепление.")
+            messages.sendGameplay(player, "placement.invalid-block")
             return
         }
 
@@ -92,27 +92,23 @@ class PaperPlacementService @JvmOverloads constructor(
                 definitionKey
             ))
             if (result != ActionResult.SUCCESS) {
-                deny(player, "Не удалось установить укрепление.")
+                messages.sendGameplay(player, "placement.denied")
                 return
             }
             if (player.gameMode != GameMode.CREATIVE) {
                 held.amount--
                 player.inventory.setItemInMainHand(if (held.amount == 0) null else held)
             }
-            player.sendActionBar(Component.text("Укрепление установлено.", NamedTextColor.GREEN))
+            messages.sendGameplay(player, "placement.success")
         } catch (exception: Exception) {
             plugin.logger.log(Level.SEVERE, "Could not place a citadel", exception)
-            deny(player, "Не удалось выполнить действие. Сообщите администратору.")
+            messages.sendGameplay(player, "placement.error")
         }
     }
 
     private fun resolveMaterialKey(item: ItemStack?): Key? {
         if (item == null || item.amount <= 0) return null
         return materials.getTypeOrNull(item)?.getKey()
-    }
-
-    private fun deny(player: Player, message: String) {
-        player.sendActionBar(Component.text(message, NamedTextColor.RED))
     }
 
     private companion object {

@@ -63,6 +63,7 @@ class FornaxCitadel : JavaPlugin() {
             }
             saveDefaultConfig()
             val settings = PaperSettings.read(config)
+            val messages = PaperMessages.load(this)
             val types = TypeManager()
             val scheduler = PaperScheduler(this).also { schedulerAdapter = it }
             val backend = PersistContainerChunkStorage(this, scheduler).also { chunkBackend = it }
@@ -88,7 +89,7 @@ class FornaxCitadel : JavaPlugin() {
 
             val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)
             materials = CombineMaterialRegistry()
-            placement = PaperPlacementService(this, module, materials, settings.placement).also(services::add)
+            placement = PaperPlacementService(this, module, materials, settings.placement, messages).also(services::add)
             citadelTypes.keys.forEach { type ->
                 placement.registerMaterial(requireNotNull(citadelTypes.itemKey(type)), type)
             }
@@ -101,12 +102,14 @@ class FornaxCitadel : JavaPlugin() {
                 }
                 if (settings.playerDamage.creativeModeEnabled) register(CreativeModeDamageModifier())
             }
-            services.add(PaperBreakingService(this, module, playerDamage))
+            services.add(PaperBreakingService(this, module, playerDamage, messages))
             services.add(PaperExplosionService(this, module, settings.explosionPowers))
             services.add(PaperEnvironmentService(this, module))
 
-            val commands = CitadelCommand(this, manager, module, materials, citadelTypes, chunks::saveAll)
+            val commands = CitadelCommand(this, manager, module, materials, citadelTypes, messages, chunks::saveAll)
             val command = requireNotNull(getCommand("citadel")) { "The citadel command is missing from plugin.yml" }
+            command.description = messages.plainText("commands.description")
+            command.usage = messages.plainText("commands.usage.help")
             // Components and definitions already exist; start actions and their queue after Paper services.
             // Observation stops before core actions; the queue stops before gameplay listeners and storage.
             services.add(module)

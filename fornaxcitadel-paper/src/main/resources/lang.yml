@@ -1,0 +1,84 @@
+# Text format: MINIMESSAGE (<green>Text</green>) or LEGACY (&aText).
+# Switching this setting does not convert existing text: use matching markup.
+# Missing messages/fields use bundled defaults, with their original formatting.
+format: MINIMESSAGE
+
+# Each gameplay message independently uses ACTION_BAR, CHAT or NONE.
+# NONE sends nothing to either channel and does not change the action itself.
+# Command responses always use chat. Restart the plugin/server after editing.
+placement:
+  invalid-block:
+    text: '<red>В этой точке нельзя установить укрепление.</red>'
+    channel: ACTION_BAR
+  denied:
+    text: '<red>Не удалось установить укрепление.</red>'
+    channel: ACTION_BAR
+  success:
+    text: '<green>Укрепление установлено.</green>'
+    channel: ACTION_BAR
+  error:
+    text: '<red>Не удалось выполнить действие. Сообщите администратору.</red>'
+    channel: ACTION_BAR
+
+breaking:
+  chunk-unavailable:
+    text: '<red>Данные чанка пока недоступны.</red>'
+    channel: ACTION_BAR
+  denied:
+    text: '<red>Действие запрещено.</red>'
+    channel: ACTION_BAR
+  removed:
+    text: '<green>Укрепление снято.</green>'
+    channel: ACTION_BAR
+  damaged:
+    text: '<green>Укреплению нанесён урон.</green>'
+    channel: ACTION_BAR
+  error:
+    text: '<red>Не удалось выполнить действие. Сообщите администратору.</red>'
+    channel: ACTION_BAR
+
+# {name} placeholders work in both formats and are inserted as plain text.
+# Keep placeholders relevant to each message: types, type, item, player,
+# given, amount, health, maximum. MiniMessage uses \< for a literal '<'.
+commands:
+  description: 'Управление укреплениями блоков'
+  usage:
+    help: '/citadel help'
+    save: '<red>/citadel save</red>'
+    place: '<red>/citadel place \<тип></red>'
+    remove: '<red>/citadel remove</red>'
+    info: '<red>/citadel info</red>'
+    give: '<red>/citadel give \<{types}> [игрок] [1–64]</red>'
+  help:
+    info: '<green>/citadel info — укрепление блока под прицелом</green>'
+    give: '<green>/citadel give \<тип> [игрок] [1–64]</green>'
+    admin: '<green>/citadel place \<тип>, /citadel remove, /citadel save</green>'
+    types: '<green>Типы: {types}</green>'
+  unknown-command: '<red>Неизвестная команда. /citadel help</red>'
+  no-permission: '<red>Недостаточно прав.</red>'
+  error: '<red>Не удалось выполнить команду. Подробности в журнале сервера.</red>'
+  saved: '<green>Данные укреплений записаны в загруженные чанки.</green>'
+  give:
+    player-required: '<red>Укажи имя игрока, находящегося на сервере.</red>'
+    invalid-amount: '<red>Количество должно быть от 1 до 64.</red>'
+    missing-item: '<red>Для типа {type} не задан предмет.</red>'
+    unregistered-item: '<red>Предмет {item} не зарегистрирован.</red>'
+    success: '<green>Выдано {player}: {given} из {amount}.</green>'
+    none: '<red>Выдано {player}: {given} из {amount}.</red>'
+    inventory-full: '<red>Для остальных предметов нет места в инвентаре.</red>'
+  player-only: '<red>Эта команда выполняется игроком, смотрящим на блок.</red>'
+  invalid-target: '<red>Посмотри на поддерживаемый блок в пределах 6 блоков.</red>'
+  chunk-unavailable: '<red>Данные этого чанка недоступны.</red>'
+  unknown-type: '<red>Неизвестный тип: {type}</red>'
+  place:
+    success: '<green>Укрепление создано.</green>'
+    denied: '<red>Установка отклонена.</red>'
+  remove:
+    success: '<green>Укрепление снято. Блок сохранён.</green>'
+    denied: '<red>Удаление отклонено.</red>'
+  info:
+    not-reinforced: '<green>Этот блок не укреплён.</green>'
+    type: '<green>Тип: {type}</green>'
+    unknown-type: 'неизвестен'
+    health: '<green>Здоровье: {health} / {maximum}</green>'
+    invulnerable: '<green>Неуязвимое укрепление.</green>'

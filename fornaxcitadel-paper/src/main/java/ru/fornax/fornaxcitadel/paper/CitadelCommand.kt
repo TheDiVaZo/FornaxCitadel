@@ -1,7 +1,5 @@
 package ru.fornax.fornaxcitadel.paper
 
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.FluidCollisionMode
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
@@ -31,41 +29,51 @@ class CitadelCommand(
     private val module: CitadelModule,
     private val materials: MaterialRegistry,
     private val citadelTypes: PaperCitadelTypes,
+    private val messages: PaperMessages,
     private val save: () -> Unit
 ) : CommandExecutor, TabCompleter {
+    constructor(
+        plugin: Plugin,
+        manager: ComponentManager,
+        module: CitadelModule,
+        materials: MaterialRegistry,
+        citadelTypes: PaperCitadelTypes,
+        save: () -> Unit
+    ) : this(plugin, manager, module, materials, citadelTypes, PaperMessages.defaults(), save)
+
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         try {
             val operation = args.firstOrNull()?.lowercase(Locale.ROOT)
             if (operation == null || operation == "help") {
-                sender.message("/citadel info — укрепление блока под прицелом")
+                sender.message("commands.help.info")
                 if (sender.hasPermission(ADMIN)) {
-                    sender.message("/citadel give <тип> [игрок] [1–64]")
-                    sender.message("/citadel place <тип>, /citadel remove, /citadel save")
-                    sender.message("Типы: ${citadelTypes.names.joinToString()}")
+                    sender.message("commands.help.give")
+                    sender.message("commands.help.admin")
+                    sender.message("commands.help.types", "types" to citadelTypes.names.joinToString())
                 }
                 return true
             }
             if (operation !in OPERATIONS) {
-                sender.message("Неизвестная команда. /citadel help", error = true)
+                sender.message("commands.unknown-command")
                 return true
             }
             val permission = if (operation == "info") "fornaxcitadel.info" else ADMIN
             if (!sender.hasPermission(permission)) {
-                sender.message("Недостаточно прав.", error = true)
+                sender.message("commands.no-permission")
                 return true
             }
             when (operation) {
                 "give" -> give(sender, args)
                 "save" -> {
-                    if (args.size != 1) return usage(sender, "/citadel save")
+                    if (args.size != 1) return usage(sender, "save")
                     save()
-                    sender.message("Данные укреплений записаны в загруженные чанки.")
+                    sender.message("commands.saved")
                 }
                 "place", "remove", "info" -> target(sender, operation, args)
             }
         } catch (exception: Exception) {
             plugin.logger.log(Level.SEVERE, "Citadel command failed", exception)
-            sender.message("Не удалось выполнить команду. Подробности в журнале сервера.", error = true)
+            sender.message("commands.error")
         }
         return true
     }
@@ -73,52 +81,55 @@ class CitadelCommand(
     private fun give(sender: CommandSender, args: Array<out String>) {
         val type = args.getOrNull(1)?.let(citadelTypes::find)
         if (type == null || args.size !in 2..4) {
-            usage(sender, "/citadel give <${citadelTypes.names.joinToString("|")}> [игрок] [1–64]")
+            usage(sender, "give", "types" to citadelTypes.names.joinToString("|"))
             return
         }
         val recipient = args.getOrNull(2)?.let(plugin.server::getPlayerExact) ?: if (args.size == 2) sender as? Player else null
         if (recipient == null) {
-            sender.message("Укажи имя игрока, находящегося на сервере.", error = true)
+            sender.message("commands.give.player-required")
             return
         }
         val amount = if (args.size == 4) args[3].toIntOrNull() else 1
         if (amount == null || amount !in 1..64) {
-            sender.message("Количество должно быть от 1 до 64.", error = true)
+            sender.message("commands.give.invalid-amount")
             return
         }
         val itemKey = citadelTypes.itemKey(type)
         if (itemKey == null) {
-            sender.message("Для типа ${citadelTypes.name(type) ?: type.asString()} не задан предмет.", error = true)
+            sender.message("commands.give.missing-item", "type" to (citadelTypes.name(type) ?: type.asString()))
             return
         }
         val material = materials.getType(itemKey)
         if (material == null) {
-            sender.message("Предмет ${itemKey.asString()} не зарегистрирован.", error = true)
+            sender.message("commands.give.unregistered-item", "item" to itemKey.asString())
             return
         }
         val remaining = recipient.inventory.addItem(material.createItemStack(amount)).values.sumOf { it.amount }
         val given = amount - remaining
-        sender.message("Выдано ${recipient.name}: $given из $amount.", error = given == 0)
-        if (remaining > 0) sender.message("Для остальных предметов нет места в инвентаре.", error = true)
+        sender.message(
+            if (given == 0) "commands.give.none" else "commands.give.success",
+            "player" to recipient.name, "given" to given.toString(), "amount" to amount.toString()
+        )
+        if (remaining > 0) sender.message("commands.give.inventory-full")
     }
 
     private fun target(sender: CommandSender, operation: String, args: Array<out String>) {
         val player = sender as? Player ?: run {
-            sender.message("Эта команда выполняется игроком, смотрящим на блок.", error = true)
+            sender.message("commands.player-only")
             return
         }
         if (args.size != if (operation == "place") 2 else 1) {
-            usage(sender, if (operation == "place") "/citadel place <тип>" else "/citadel $operation")
+            usage(sender, operation)
             return
         }
         val block = player.getTargetBlockExact(6, FluidCollisionMode.NEVER)
         if (block == null || !block.supportsCitadelData()) {
-            sender.message("Посмотри на поддерживаемый блок в пределах 6 блоков.", error = true)
+            sender.message("commands.invalid-target")
             return
         }
         val position = CitadelPosition(block.world.uid, block.x, block.y, block.z)
         if (!manager.isChunkLoaded(position.world, position.x shr 4, position.z shr 4)) {
-            sender.message("Данные этого чанка недоступны.", error = true)
+            sender.message("commands.chunk-unavailable")
             return
         }
         val context = ActionContext(player.uniqueId, COMMAND_SOURCE)
@@ -126,28 +137,34 @@ class CitadelCommand(
             "place" -> {
                 val type = citadelTypes.find(args[1])
                 if (type == null) {
-                    sender.message("Неизвестный тип: ${args[1]}", error = true)
+                    sender.message("commands.unknown-type", "type" to args[1])
                     return
                 }
                 val result = module.actions.execute(PlaceAction(context, position, type))
-                sender.message(if (result == ActionResult.SUCCESS) "Укрепление создано." else "Установка отклонена.", result != ActionResult.SUCCESS)
+                sender.message(if (result == ActionResult.SUCCESS) "commands.place.success" else "commands.place.denied")
             }
             "remove" -> {
                 val result = module.actions.execute(RemoveAction(context, position))
-                sender.message(if (result == ActionResult.SUCCESS) "Укрепление снято. Блок сохранён." else "Удаление отклонено.", result != ActionResult.SUCCESS)
+                sender.message(if (result == ActionResult.SUCCESS) "commands.remove.success" else "commands.remove.denied")
             }
             "info" -> {
                 val citadel = manager.findCitadel(position.world, position.x, position.y, position.z)
                 if (citadel == null) {
-                    sender.message("Этот блок не укреплён.")
+                    sender.message("commands.info.not-reinforced")
                     return
                 }
                 val kind = citadel.getComponent(CitadelKind::class.java)?.definitionKey
-                sender.message("Тип: ${kind?.let(citadelTypes::name) ?: kind?.asString() ?: "неизвестен"}")
+                val type = kind?.let(citadelTypes::name) ?: kind?.asString()
+                    ?: messages.plainText("commands.info.unknown-type")
+                sender.message("commands.info.type", "type" to type)
                 val health = module.health.getCurrentHealth(position.world, position.x, position.y, position.z)
                 val maximum = module.health.getCurrentMaxHealth(position.world, position.x, position.y, position.z)
-                if (health != null && maximum != null) sender.message(String.format(Locale.ROOT, "Здоровье: %.1f / %.1f", health, maximum))
-                if (kind != null && citadelTypes.isInvulnerable(kind)) sender.message("Неуязвимое укрепление.")
+                if (health != null && maximum != null) {
+                    sender.message("commands.info.health",
+                        "health" to String.format(Locale.ROOT, "%.1f", health),
+                        "maximum" to String.format(Locale.ROOT, "%.1f", maximum))
+                }
+                if (kind != null && citadelTypes.isInvulnerable(kind)) sender.message("commands.info.invulnerable")
             }
         }
     }
@@ -164,13 +181,13 @@ class CitadelCommand(
         return candidates.filter { it.startsWith(args.lastOrNull().orEmpty(), ignoreCase = true) }
     }
 
-    private fun usage(sender: CommandSender, text: String): Boolean {
-        sender.message(text, error = true)
+    private fun usage(sender: CommandSender, operation: String, vararg parameters: Pair<String, String>): Boolean {
+        sender.message("commands.usage.$operation", *parameters)
         return true
     }
 
-    private fun CommandSender.message(text: String, error: Boolean = false) {
-        sendMessage(Component.text(text, if (error) NamedTextColor.RED else NamedTextColor.GREEN))
+    private fun CommandSender.message(key: String, vararg parameters: Pair<String, String>) {
+        messages.sendCommand(this, key, *parameters)
     }
 
     private companion object {
