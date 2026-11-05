@@ -3,7 +3,7 @@ package ru.fornax.fornaxcitadel.modules.health
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 
-/** Enforces the configured type rule for DamageAction and every specialized damage action. */
+/** Enforces type damage rules or the separate explicit destruction policy. */
 internal class DamagePolicyValidator(
     private val manager: ComponentManager,
     private val health: HealthService
@@ -14,7 +14,11 @@ internal class DamagePolicyValidator(
         // The processor handles missing or unloaded targets.
         val target = manager.findCitadel(action.citadelW, action.citadelX, action.citadelY, action.citadelZ)
             ?: return ActionValidator.Result.Neutral
-        return if (health.allowsDamage(action.context, target)) ActionValidator.Result.Success
+        val allowed = when (action.mode) {
+            DamageAction.Mode.DAMAGE -> health.allowsDamage(action.context, target)
+            DamageAction.Mode.DESTROY -> health.allowsDestruction(action.context, target)
+        }
+        return if (allowed) ActionValidator.Result.Success
         else ActionValidator.Result.Rejected
     }
 }

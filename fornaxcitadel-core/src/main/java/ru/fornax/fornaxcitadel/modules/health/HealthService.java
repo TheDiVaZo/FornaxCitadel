@@ -24,15 +24,22 @@ public final class HealthService implements LifecycleService {
     private final ActionManager actions;
     private final ComponentManager componentManager;
     private final RemoveService removeService;
+    private final DamagePolicy destructionPolicy;
     private final Map<Key, HealthBehavior> behaviors = new HashMap<>();
     private final Map<Key, DamagePolicy> policies = new HashMap<>();
     private final DamageProcessor processor = new DamageProcessor(this);
     private final DamagePolicyValidator damageValidator;
 
     public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService) {
+        this(actions, removeService, DamagePolicy.DENY);
+    }
+
+    public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
+                         @NotNull DamagePolicy destructionPolicy) {
         this.actions = Objects.requireNonNull(actions, "actions");
         this.componentManager = actions.getComponentManager();
         this.removeService = Objects.requireNonNull(removeService, "removeService");
+        this.destructionPolicy = Objects.requireNonNull(destructionPolicy, "destructionPolicy");
         this.damageValidator = new DamagePolicyValidator(componentManager, this);
         componentManager.registerComponent(Health.KEY.getNamespace(), Health.KEY.getKey(), Health.class);
         componentManager.registerComponent(Maturing.KEY.getNamespace(), Maturing.KEY.getKey(), Maturing.class);
@@ -70,6 +77,13 @@ public final class HealthService implements LifecycleService {
         CitadelKind kind = citadel.getComponent(CitadelKind.class);
         DamagePolicy policy = kind == null ? null : policies.get(kind.getDefinitionKey());
         return policy != null && policy.allowsDamage(context, citadel);
+    }
+
+    /** Checks explicit destruction authorization independently of type damage rules and health. */
+    public boolean allowsDestruction(@NotNull ActionContext context, @NotNull CitadelHandle citadel) {
+        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(citadel, "citadel");
+        return componentManager.isCurrent(citadel) && destructionPolicy.allowsDamage(context, citadel);
     }
 
     public void registerBehavior(@NotNull Key definitionKey, @NotNull HealthBehavior behavior) {
@@ -140,7 +154,13 @@ public final class HealthService implements LifecycleService {
         }
         CitadelHandle citadel = componentManager.findCitadel(
                 action.getCitadelW(), action.getCitadelX(), action.getCitadelY(), action.getCitadelZ());
-        return citadel == null ? ActionResult.DENIED : damage(citadel, action.getDamage());
+        if (citadel == null) return ActionResult.DENIED;
+        if (action.getMode() == DamageAction.Mode.DESTROY) {
+            // Other validators may have changed live authorization since policy validation.
+            if (!allowsDestruction(action.getContext(), citadel)) return ActionResult.DENIED;
+            return removeService.remove(citadel, RemovalCause.DESTROYED);
+        }
+        return damage(citadel, action.getDamage());
     }
 
     /**

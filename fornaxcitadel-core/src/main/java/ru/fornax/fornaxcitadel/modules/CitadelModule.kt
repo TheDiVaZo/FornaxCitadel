@@ -22,7 +22,7 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
  *
  * Register external protection checks on [actions.validatorCoordinator]. A rejection always
  * wins. Explicit administrative removal is denied unless [removalPolicy]
- * authorizes it. Source keys are attribution.
+ * authorizes it. Explicit destruction requires [destructionPolicy]. Source keys are attribution.
  *
  * Services and the component manager expose trusted low-level operations; external requests
  * must enter through [actions]. All access is on the owning game thread. Observers may post
@@ -34,14 +34,23 @@ class CitadelModule @JvmOverloads constructor(
     scheduler: Scheduler,
     removalPolicy: RemovalPolicy = RemovalPolicy.DENY,
     maxActionsPerTick: Int = 1024,
+    destructionPolicy: DamagePolicy = DamagePolicy.DENY,
     actionFailureHandler: (Exception) -> Unit = ActionQueueService.DEFAULT_FAILURE_HANDLER
 ) : LifecycleService {
+    constructor(
+        manager: ComponentManager,
+        scheduler: Scheduler,
+        removalPolicy: RemovalPolicy,
+        maxActionsPerTick: Int,
+        actionFailureHandler: (Exception) -> Unit
+    ) : this(manager, scheduler, removalPolicy, maxActionsPerTick, DamagePolicy.DENY, actionFailureHandler)
+
     val definitions = CitadelDefinitionRegistry()
     val lifecycle = CitadelLifecycleNotifications()
     val actions = ActionManager(manager)
     val place = PlaceService(actions, definitions, lifecycle)
     val remove = RemoveService(actions, lifecycle, removalPolicy)
-    val health = HealthService(actions, remove)
+    val health = HealthService(actions, remove, destructionPolicy)
     val actionQueue = ActionQueueService(actions, scheduler, maxActionsPerTick, actionFailureHandler)
     private val services: List<LifecycleService> = listOf(remove, health, place, actionQueue)
 

@@ -19,6 +19,24 @@ import kotlin.test.assertTrue
 
 class HealthServiceTest {
     @Test
+    fun `existing service constructor denies explicit destruction without touching health`() {
+        val fixture = HealthFixture(createInitial = false)
+        val health = Health(20.0, 10.0)
+        val citadel = fixture.create(health = health)
+        fixture.service.registerPolicy(HealthFixture.TYPE, DamagePolicy.ALLOW)
+        fixture.service.enable()
+        fixture.chunk.resetDirty()
+
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
+            DamageAction(ActionContext.SYSTEM, citadel.position, 0.0, DamageAction.Mode.DESTROY)
+        ))
+
+        assertTrue(citadel.isCurrent)
+        assertEquals(10.0, health.health)
+        assertFalse(fixture.chunk.isDirty)
+    }
+
+    @Test
     fun `refresh returns both health values from one behavior update`() {
         val fixture = HealthFixture(createInitial = false)
         val component = Health(20.0, 10.0)
