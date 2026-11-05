@@ -1,5 +1,6 @@
 /.idea/
 /fornaxcitadel-paper/.gradle/
+/fornaxcitadel-paper/run/
 .gradle/
 .kotlin/
 build/
