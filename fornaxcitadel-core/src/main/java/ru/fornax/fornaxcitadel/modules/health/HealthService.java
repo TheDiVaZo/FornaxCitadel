@@ -88,13 +88,15 @@ public final class HealthService implements LifecycleService {
 
     @Nullable
     public Double getCurrentHealth(@NotNull UUID world, int x, int y, int z) {
-        Health component = refresh(componentManager.findCitadel(world, x, y, z));
+        CitadelHandle citadel = componentManager.findCitadel(world, x, y, z);
+        Health component = citadel == null ? null : refreshHealth(citadel);
         return component == null ? null : component.health;
     }
 
     @Nullable
     public Double getCurrentMaxHealth(@NotNull UUID world, int x, int y, int z) {
-        Health component = refresh(componentManager.findCitadel(world, x, y, z));
+        CitadelHandle citadel = componentManager.findCitadel(world, x, y, z);
+        Health component = citadel == null ? null : refreshHealth(citadel);
         return component == null ? null : component.maxHealth;
     }
 
@@ -141,9 +143,16 @@ public final class HealthService implements LifecycleService {
         return citadel == null ? ActionResult.DENIED : damage(citadel, action.getDamage());
     }
 
+    /**
+     * Lazily updates health once through the registered behavior and marks mutations dirty,
+     * including partial mutations when the behavior throws. Call only on the owning game thread.
+     * The result is a live component: read its current and maximum health together without retaining it.
+     * Returns null for stale or foreign handles, missing health, or health removed or replaced during the update.
+     */
     @Nullable
-    private Health refresh(@Nullable CitadelHandle citadel) {
-        if (citadel == null) return null;
+    public Health refreshHealth(@NotNull CitadelHandle citadel) {
+        Objects.requireNonNull(citadel, "citadel");
+        if (!componentManager.isCurrent(citadel)) return null;
         Health component = citadel.getComponent(Health.class);
         if (component == null) return null;
         HealthBehavior behavior = behaviorFor(citadel);

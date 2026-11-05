@@ -12,11 +12,109 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class HealthServiceTest {
+    @Test
+    fun `refresh returns both health values from one behavior update`() {
+        val fixture = HealthFixture(createInitial = false)
+        val component = Health(20.0, 10.0)
+        val citadel = fixture.create(health = component)
+        var updates = 0
+        fixture.service.registerBehavior(HealthFixture.TYPE, object : HealthBehavior {
+            override fun initializeHealth(component: Health, draft: CitadelDraft) = Unit
+            override fun updateHealth(component: Health, citadel: CitadelHandle): Boolean {
+                updates++
+                component.maxHealth = 40.0
+                component.health = 15.0
+                return false
+            }
+        })
+        fixture.chunk.resetDirty()
+
+        val refreshed = assertNotNull(fixture.service.refreshHealth(citadel))
+
+        assertSame(component, refreshed)
+        assertEquals(40.0, refreshed.maxHealth)
+        assertEquals(15.0, refreshed.health)
+        assertEquals(1, updates)
+        assertTrue(fixture.chunk.isDirty)
+
+        fixture.chunk.resetDirty()
+        assertSame(component, fixture.service.refreshHealth(citadel))
+        assertEquals(2, updates)
+        assertFalse(fixture.chunk.isDirty)
+    }
+
+    @Test
+    fun `refresh ignores stale foreign and unloaded handles without updating health`() {
+        val fixture = HealthFixture(createInitial = false)
+        val old = fixture.create(health = Health(20.0, 10.0))
+        assertTrue(fixture.manager.removeCitadel(old))
+        val replacementHealth = Health(20.0, 15.0)
+        val replacement = fixture.create(health = replacementHealth)
+        val otherFixture = HealthFixture(createInitial = false)
+        val foreignHealth = Health(20.0, 12.0)
+        val foreign = otherFixture.create(health = foreignHealth)
+        var updates = 0
+        fixture.service.registerBehavior(HealthFixture.TYPE, object : HealthBehavior {
+            override fun initializeHealth(component: Health, draft: CitadelDraft) = Unit
+            override fun updateHealth(component: Health, citadel: CitadelHandle): Boolean {
+                updates++
+                component.health = 1.0
+                return true
+            }
+        })
+        val loadedChunk = fixture.chunk
+        loadedChunk.resetDirty()
+        otherFixture.chunk.resetDirty()
+
+        assertNull(fixture.service.refreshHealth(old))
+        assertNull(fixture.service.refreshHealth(foreign))
+        fixture.storage.chunk = null
+        assertNull(fixture.service.refreshHealth(replacement))
+
+        assertEquals(0, updates)
+        assertEquals(15.0, replacementHealth.health)
+        assertEquals(12.0, foreignHealth.health)
+        assertFalse(loadedChunk.isDirty)
+        assertFalse(otherFixture.chunk.isDirty)
+    }
+
+    @Test
+    fun `refresh does not return health removed or replaced during the update`() {
+        for (replace in listOf(false, true)) {
+            val fixture = HealthFixture(createInitial = false)
+            val original = Health(20.0, 10.0)
+            val replacement = Health(40.0, 35.0)
+            val citadel = fixture.create(health = original)
+            fixture.service.registerBehavior(HealthFixture.TYPE, object : HealthBehavior {
+                override fun initializeHealth(component: Health, draft: CitadelDraft) = Unit
+                override fun updateHealth(component: Health, citadel: CitadelHandle): Boolean {
+                    component.health = 7.0
+                    if (replace) {
+                        fixture.manager.putComponent(Health::class.java, citadel.world, citadel.x, citadel.y, citadel.z, replacement)
+                    } else {
+                        fixture.manager.removeComponent(Health::class.java, citadel.world, citadel.x, citadel.y, citadel.z)
+                    }
+                    return true
+                }
+            })
+            fixture.chunk.resetDirty()
+
+            assertNull(fixture.service.refreshHealth(citadel))
+
+            assertEquals(7.0, original.health)
+            assertEquals(35.0, replacement.health)
+            assertSame(if (replace) replacement else null, citadel.getComponent(Health::class.java))
+            assertTrue(fixture.chunk.isDirty)
+            if (!replace) assertNull(fixture.service.refreshHealth(citadel))
+        }
+    }
+
     @Test
     fun `both health getters mark maturation changes dirty but leave unchanged reads clean`() {
         for (readMaxHealth in listOf(false, true)) {
@@ -148,8 +246,8 @@ class HealthServiceTest {
     }
 
     @Test
-    fun `partial behavior mutations remain dirty when getters or damage throw`() {
-        for (operation in 0..2) {
+    fun `partial behavior mutations remain dirty when getters refresh or damage throw`() {
+        for (operation in 0..3) {
             val fixture = HealthFixture(createInitial = false)
             val component = Health(20.0, 10.0)
             val citadel = fixture.create(health = component)
@@ -167,6 +265,7 @@ class HealthServiceTest {
                 when (operation) {
                     0 -> fixture.service.getCurrentHealth(HealthFixture.WORLD, 0, 0, 0)
                     1 -> fixture.service.getCurrentMaxHealth(HealthFixture.WORLD, 0, 0, 0)
+                    2 -> fixture.service.refreshHealth(citadel)
                     else -> fixture.service.damage(citadel, 1.0)
                 }
             }
