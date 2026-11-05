@@ -15,9 +15,10 @@ observation:
     horizontal-radius-chunks: 3
     vertical-radius-sections: 3
 
-# Every player hit starts at 1 damage before applying player-specific modifiers.
+# Ordinary player hits start at 1 damage before applying player-specific modifiers.
 player-damage:
-  # Creative hits remove damageable reinforcement, while permissions still apply.
+  # Creative hits remove any reinforcement, including invulnerable types, and keep the block.
+  # Permissions and protection validators still apply. False uses ordinary damage rules.
   creative-mode: true
   newcomers:
     enabled: false
@@ -53,7 +54,8 @@ explosions:
 # Item keys default to the minecraft namespace when omitted.
 # External providers register their own namespace (e.g. otherplugin:reinforcement).
 # Materials are resolved on use; providers may register after FornaxCitadel enables.
-# damage-policy defaults to allow; deny blocks damage from every source.
+# damage-policy defaults to allow; deny blocks ordinary damage from every source.
+# Authorized creative destruction and administrative removal can still remove these types.
 citadel-types:
   reinforced_light:
     item: minecraft:copper_ingot

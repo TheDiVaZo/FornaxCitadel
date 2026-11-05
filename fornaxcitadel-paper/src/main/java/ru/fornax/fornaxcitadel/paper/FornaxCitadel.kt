@@ -11,11 +11,11 @@ import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
-import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.CreativeModeDamageModifier
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.NerfingNewcomersModifier
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
@@ -44,7 +44,7 @@ class FornaxCitadel : JavaPlugin() {
         private set
     lateinit var citadelTypes: PaperCitadelTypes
         private set
-    /** Additional player damage modifiers can be registered on the main thread after enable. */
+    /** Modifiers for ordinary player damage can be registered on the main thread after enable. */
     lateinit var playerDamage: PlayerDamageModifierService
         private set
     /** Register presentation systems on the main thread after enable. Players are observed automatically. */
@@ -80,6 +80,9 @@ class FornaxCitadel : JavaPlugin() {
                 manager, scheduler,
                 removalPolicy = RemovalPolicy { context, _ -> permissions.canAdminister(context) },
                 maxActionsPerTick = settings.postedActionLimit,
+                destructionPolicy = DamagePolicy { context, _ ->
+                    settings.playerDamage.creativeModeEnabled && permissions.canDestroyInCreative(context)
+                },
                 actionFailureHandler = { failure ->
                     logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
                 }
@@ -100,9 +103,8 @@ class FornaxCitadel : JavaPlugin() {
                         settings.playerDamage.newcomerPlayTimeTicks
                     ))
                 }
-                if (settings.playerDamage.creativeModeEnabled) register(CreativeModeDamageModifier())
             }
-            services.add(PaperBreakingService(this, module, playerDamage, messages))
+            services.add(PaperBreakingService(this, module, playerDamage, messages, settings.playerDamage.creativeModeEnabled))
             services.add(PaperExplosionService(this, module, settings.explosionPowers))
             services.add(PaperEnvironmentService(this, module))
 

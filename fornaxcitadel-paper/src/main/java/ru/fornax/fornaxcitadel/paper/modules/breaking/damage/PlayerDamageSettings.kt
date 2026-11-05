@@ -3,7 +3,7 @@ package ru.fornax.fornaxcitadel.paper.modules.breaking.damage
 import org.bukkit.configuration.ConfigurationSection
 import java.time.Duration
 
-/** Optional built-in modifiers; an unmodified player hit always starts at one damage. */
+/** Creative destruction and optional damage modifiers; ordinary hits start at one damage. */
 data class PlayerDamageSettings(
     val creativeModeEnabled: Boolean = true,
     val newcomersEnabled: Boolean = false,

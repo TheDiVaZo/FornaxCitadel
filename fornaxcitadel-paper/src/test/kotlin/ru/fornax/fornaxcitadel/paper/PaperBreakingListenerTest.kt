@@ -1,6 +1,5 @@
 package ru.fornax.fornaxcitadel.paper
 
-import org.bukkit.GameMode
 import org.bukkit.block.BlockFace
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockDamageEvent
@@ -10,7 +9,6 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier
-import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.CreativeModeDamageModifier
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -233,34 +231,6 @@ class PaperBreakingListenerTest {
 
         assertTrue(event.isCancelled)
         assertEquals(100.0, fixture.health())
-        assertEquals(0, fixture.vanillaBlockChanges)
-    }
-
-    @Test
-    fun `creative lethal damage still respects permissions and invulnerable definitions`() {
-        val fixture = PaperTestFixture(permissions = true)
-        fixture.playerDamage.register(CreativeModeDamageModifier())
-        fixture.installer.gameMode = GameMode.CREATIVE
-        fixture.place()
-        fixture.installer.permissions.remove("fornaxcitadel.damage")
-        val denied = BlockBreakEvent(fixture.block(), fixture.installer.player)
-
-        dispatch(fixture.breakingListener, denied, fixture.plugin)
-
-        assertTrue(denied.isCancelled)
-        assertEquals(100.0, fixture.health())
-        fixture.installer.permissions.add("fornaxcitadel.damage")
-        val allowed = BlockBreakEvent(fixture.block(), fixture.installer.player)
-        dispatch(fixture.breakingListener, allowed, fixture.plugin)
-        assertTrue(allowed.isCancelled)
-        assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-
-        fixture.installer.permissions.add("fornaxcitadel.admin")
-        fixture.place(PaperCitadelTypes.INVULNERABLE)
-        val invulnerable = BlockBreakEvent(fixture.block(), fixture.installer.player)
-        dispatch(fixture.breakingListener, invulnerable, fixture.plugin)
-        assertTrue(invulnerable.isCancelled)
-        assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(0, fixture.vanillaBlockChanges)
     }
 }

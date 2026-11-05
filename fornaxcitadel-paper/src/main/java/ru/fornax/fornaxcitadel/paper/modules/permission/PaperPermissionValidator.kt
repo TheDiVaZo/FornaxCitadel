@@ -24,11 +24,19 @@ class PaperPermissionValidator(
         return player.isOnline && player.hasPermission("fornaxcitadel.admin")
     }
 
+    /** Resolves the actor when the action executes, including requests queued on earlier ticks. */
+    fun canDestroyInCreative(context: ActionContext): Boolean {
+        val player = context.actorId?.let(server::getPlayer) ?: return false
+        return player.isOnline && player.gameMode == GameMode.CREATIVE &&
+            player.hasPermission("fornaxcitadel.damage")
+    }
+
     override fun validate(action: ActionData): ActionValidator.Result {
         val permission = when (action) {
             is PlaceAction -> "fornaxcitadel.place"
-            // Only damage from a typed explosion uses environmental permission rules.
-            is DamageAction -> if (action.context.source is ExplosionSource) null else "fornaxcitadel.damage"
+            // Only ordinary damage from a typed explosion uses environmental permission rules.
+            is DamageAction -> if (action.mode == DamageAction.Mode.DAMAGE && action.context.source is ExplosionSource)
+                null else "fornaxcitadel.damage"
             is RemoveAction -> "fornaxcitadel.admin"
             else -> return ActionValidator.Result.Neutral
         }

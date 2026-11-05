@@ -104,7 +104,8 @@ internal class PaperTestFixture(
     moduleSchedulerFactory: (Plugin) -> Scheduler = { ManualScheduler() },
     initializeModule: Boolean = true,
     maxActionsPerTick: Int = 1024,
-    messages: PaperMessages = PaperMessages.defaults()
+    messages: PaperMessages = PaperMessages.defaults(),
+    creativeModeEnabled: Boolean = true
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
@@ -211,10 +212,13 @@ internal class PaperTestFixture(
     val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
     val manager = ComponentManager(storage, types)
     private val moduleScheduler = moduleSchedulerFactory(plugin)
-    val module = CitadelModule(manager, moduleScheduler, RemovalPolicy { context, _ ->
-        context.actorId?.let(players::get)?.let { it.online && "fornaxcitadel.admin" in it.permissions } == true
-    }, maxActionsPerTick)
     val citadelTypes = PaperCitadelTypes(citadelSettings)
+    private val permissionValidator = PaperPermissionValidator(server, citadelTypes)
+    val module = CitadelModule(manager, moduleScheduler,
+        RemovalPolicy { context, _ -> permissionValidator.canAdminister(context) }, maxActionsPerTick,
+        destructionPolicy = DamagePolicy { context, _ ->
+            creativeModeEnabled && permissionValidator.canDestroyInCreative(context)
+        })
     val materials = CombineMaterialRegistry()
     val placementService = PaperPlacementService(plugin, module, materials, placementSettings, messages).also { service ->
         citadelTypes.keys.forEach { definition ->
@@ -222,7 +226,7 @@ internal class PaperTestFixture(
         }
     }
     val playerDamage = PlayerDamageModifierService()
-    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages)
+    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
     val explosionService = PaperExplosionService(plugin, module, explosionPowers)
     val environmentService = PaperEnvironmentService(plugin, module)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
@@ -244,12 +248,7 @@ internal class PaperTestFixture(
                 if (remaining.isNotEmpty()) PaperCitadelTypes(CitadelTypesSettings(remaining)).register(module)
             }
         }
-        if (permissions) module.actions.validatorCoordinator.registerValidator(
-            PaperPermissionValidator(
-                server,
-                citadelTypes
-            )
-        )
+        if (permissions) module.actions.validatorCoordinator.registerValidator(permissionValidator)
         if (initializeModule) module.enable()
         if (initializeSystems) {
             placementService.enable()

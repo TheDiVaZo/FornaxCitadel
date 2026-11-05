@@ -1,5 +1,6 @@
 package ru.fornax.fornaxcitadel.paper.modules.breaking
 
+import org.bukkit.GameMode
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
@@ -16,12 +17,13 @@ import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifie
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
 
-/** Calculates player mining damage and submits it through the shared damage action pipeline. */
+/** Submits ordinary mining damage or creative destruction through the shared action pipeline. */
 class PaperBreakingService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
     private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService(),
-    private val messages: PaperMessages = PaperMessages.defaults()
+    private val messages: PaperMessages = PaperMessages.defaults(),
+    private val creativeModeEnabled: Boolean = true
 ) : LifecycleService {
     private val manager = module.actions.componentManager
     private val listener = PaperBreakingListener(this)
@@ -68,9 +70,11 @@ class PaperBreakingService @JvmOverloads constructor(
                 return true
             }
             val citadel = manager.findCitadel(block.world.uid, block.x, block.y, block.z) ?: return false
-            val damage = damageModifiers.getDamage(citadel, player)
+            val destroy = creativeModeEnabled && player.gameMode == GameMode.CREATIVE
+            val mode = if (destroy) DamageAction.Mode.DESTROY else DamageAction.Mode.DAMAGE
+            val damage = if (destroy) Double.MAX_VALUE else damageModifiers.getDamage(citadel, player)
             val result = module.actions.execute(DamageAction(
-                ActionContext(player.uniqueId, BREAK_SOURCE), citadel.position, damage
+                ActionContext(player.uniqueId, BREAK_SOURCE), citadel.position, damage, mode
             ))
             if (result != ActionResult.SUCCESS) {
                 messages.sendGameplay(player, "breaking.denied")

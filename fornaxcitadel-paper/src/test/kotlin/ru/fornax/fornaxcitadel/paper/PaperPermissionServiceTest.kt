@@ -1,7 +1,13 @@
 package ru.fornax.fornaxcitadel.paper
 
+import org.bukkit.GameMode
+import org.bukkit.Material
+import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -11,6 +17,28 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperPermissionServiceTest {
+    @Test
+    fun `destruction requests cannot use the environmental damage permission exemption`() {
+        PaperTestFixture(initializeSystems = false).use { fixture ->
+            val validator = PaperPermissionValidator(fixture.server, fixture.citadelTypes)
+            val source = ExplosionSource.Block(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0),
+                4.0f, Material.TNT)
+            val environmental = ActionContext(null, source)
+            assertSame(ActionValidator.Result.Success, validator.validate(
+                DamageAction(environmental, fixture.position, 1.0)
+            ))
+            assertSame(ActionValidator.Result.Rejected, validator.validate(
+                DamageAction(environmental, fixture.position, Double.MAX_VALUE, DamageAction.Mode.DESTROY)
+            ))
+            fixture.stranger.gameMode = GameMode.CREATIVE
+            fixture.stranger.permissions.remove("fornaxcitadel.damage")
+            assertSame(ActionValidator.Result.Rejected, validator.validate(
+                DamageAction(ActionContext(fixture.stranger.id, source), fixture.position,
+                    Double.MAX_VALUE, DamageAction.Mode.DESTROY)
+            ))
+        }
+    }
+
     @Test
     fun `permission lifecycle owns the supplied validator and leaves external checks registered`() {
         PaperTestFixture(initializeSystems = false).use { fixture ->
