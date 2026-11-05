@@ -157,6 +157,7 @@ internal class PaperTestFixture(
             "getPlayer", "getPlayerExact" -> if (args[0] is UUID) players[args[0]]?.player
                 else players.values.firstOrNull { it.name == args[0] }?.player
             "getOnlinePlayers" -> players.values.filter { it.online }.map { it.player }
+            "getCurrentTick" -> currentTick.toInt()
             "isPrimaryThread" -> mainThread
             "getLogger" -> Logger.getLogger("PaperTest")
             "getName", "getVersion", "getBukkitVersion" -> "PaperTest"
@@ -357,6 +358,10 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
     var firstPlayed = 0L
     var playTimeTicks = 0
     var actionBarFailure: RuntimeException? = null
+    var blockDamageFailure: RuntimeException? = null
+    var blockDamageAttempts = 0
+    val blockDamagePackets = mutableListOf<TestBlockDamage>()
+    val sentChunks = mutableSetOf(0L)
     var held: ItemStack = TestItemStack(Material.AIR, 0)
     var target: Block? = null
     var targetLookups = 0
@@ -386,6 +391,7 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
             "getInventory" -> inventory
             "getTargetBlockExact" -> { targetLookups++; target }
             "isOnline" -> online
+            "isChunkSent" -> (args.single() as Long) in sentChunks
             "isDead" -> false
             "hasPermission" -> args[0] in permissions
             "sendMessage" -> { messages.add(args.lastOrNull()); null }
@@ -394,10 +400,19 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
                 messages.add(args.lastOrNull())
                 null
             }
+            "sendBlockDamage" -> {
+                blockDamageAttempts++
+                blockDamageFailure?.let { throw it }
+                blockDamagePackets.add(TestBlockDamage((args[0] as Location).clone(),
+                    args[1] as Float, args[2] as Int))
+                null
+            }
             else -> unsupported(method)
         }
     }
 }
+
+internal data class TestBlockDamage(val location: Location, val progress: Float, val sourceId: Int)
 
 internal class TestScheduledTask(
     val action: Runnable,

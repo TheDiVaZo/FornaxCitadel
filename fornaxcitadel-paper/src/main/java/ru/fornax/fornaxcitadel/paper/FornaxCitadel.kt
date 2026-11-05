@@ -20,6 +20,7 @@ import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.NerfingNe
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
+import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.observation.Full3DObservation
 import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationService
@@ -112,6 +113,7 @@ class FornaxCitadel : JavaPlugin() {
             observation = ObservationService(manager, scheduler, settings.observation.intervalTicks) { failure ->
                 logger.log(Level.SEVERE, "Citadel observation failed", failure)
             }
+            observation.registerSystem(CrackHealthObservationSystem(this, module.health))
             val observationSource = Full3DObservation(this, manager, module.lifecycle, chunks, settings.observation.full3D)
             services.add(PaperObservationService(this, observation, observationSource))
             services.forEach { it.enable() }
