@@ -223,12 +223,12 @@ class ObservationRequirementsTest {
         var onEnter: ((CitadelHandle, String) -> Unit)? = null
         var onTick: ((CitadelHandle) -> Unit)? = null
 
-        override fun onViewerEnter(citadel: CitadelHandle, viewer: String) {
+        override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
             events.add("enter:${citadel.x}:$viewer")
             onEnter?.invoke(citadel, viewer)
         }
 
-        override fun tick(citadel: CitadelHandle, viewers: List<String>) {
+        override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
             events.add("tick:${citadel.x}")
             tickedIds.add(citadel.runtimeId)
             onTick?.invoke(citadel)

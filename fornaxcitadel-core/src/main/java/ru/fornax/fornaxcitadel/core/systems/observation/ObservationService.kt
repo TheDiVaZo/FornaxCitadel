@@ -265,7 +265,7 @@ class ObservationService<V> @JvmOverloads constructor(
             // Track before the callback: even an unsuccessful enter may have acquired resources.
             current.viewers[viewer.id] = viewer
             safely("viewer enter for ${target.key}") {
-                system.system.onViewerEnter(target.handle, viewer.viewer)
+                system.system.onViewerEnter(target.handle, target.key, viewer.viewer)
             }
         }
         binding?.let { current ->
@@ -323,7 +323,7 @@ class ObservationService<V> @JvmOverloads constructor(
         val audience = binding.viewers.values.filter(::isActive).map { it.viewer }
         if (audience.isEmpty()) return
         safely("tick system at ${target.key}") {
-            system.system.tick(target.handle, Collections.unmodifiableList(audience))
+            system.system.tick(target.handle, target.key, Collections.unmodifiableList(audience))
         }
     }
 

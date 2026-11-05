@@ -647,13 +647,13 @@ class ObservationServiceTest {
         var onLeave: ((ObservationTarget, String) -> Unit)? = null
         var onDetached: ((ObservationTarget) -> Unit)? = null
 
-        override fun onViewerEnter(citadel: CitadelHandle, viewer: String) {
+        override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
             val component = checkNotNull(citadel.getComponent(ValueComponent::class.java))
             enters.add(Enter(citadel, component, viewer))
             onEnter?.invoke(citadel, component, viewer)
         }
 
-        override fun tick(citadel: CitadelHandle, viewers: List<String>) {
+        override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
             val component = checkNotNull(citadel.getComponent(ValueComponent::class.java))
             ticks.add(Tick(citadel, component, viewers))
             onTick?.invoke(citadel, component, viewers)

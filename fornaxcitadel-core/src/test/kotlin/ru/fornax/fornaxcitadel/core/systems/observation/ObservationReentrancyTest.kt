@@ -33,12 +33,12 @@ class ObservationReentrancyTest {
             val system = object : ObservationSystem<String> {
                 override val requiredComponents = setOf(ValueComponent::class.java)
 
-                override fun onViewerEnter(citadel: CitadelHandle, viewer: String) {
+                override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
                     assertTrue(resources.add(citadel.runtimeId), "New resources must follow the previous detach")
                     events.add(citadel.runtimeId to "enter")
                 }
 
-                override fun tick(citadel: CitadelHandle, viewers: List<String>) {
+                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
                     assertTrue(citadel.runtimeId in resources, "Old cleanup must not destroy the new session")
                 }
 
@@ -83,7 +83,7 @@ class ObservationReentrancyTest {
             val system = object : ObservationSystem<String> {
                 override val requiredComponents = setOf(ValueComponent::class.java)
 
-                override fun onViewerEnter(citadel: CitadelHandle, viewer: String) {
+                override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
                     val component = checkNotNull(citadel.getComponent(ValueComponent::class.java))
                     enters++
                     // Fail promptly if reconciliation regresses to an endless enter/replace loop.
@@ -95,7 +95,7 @@ class ObservationReentrancyTest {
                     )
                 }
 
-                override fun tick(citadel: CitadelHandle, viewers: List<String>) {
+                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
                     assertTrue(citadel.runtimeId in resources)
                 }
 

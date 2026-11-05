@@ -89,7 +89,7 @@ class PaperObservationServiceTest {
                     }
                 }
 
-                override fun tick(citadel: CitadelHandle, viewers: List<Player>) {
+                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<Player>) {
                     audiences.add(viewers.map { it.uniqueId })
                 }
             })

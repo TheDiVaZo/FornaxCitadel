@@ -9,6 +9,9 @@ import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
  * core APIs. Calls depend on viewers being present; their count is not a measure of game time.
  * Components are live and owner-thread confined: use editComponent/markDirty for mutations.
  * Keep transient display resources in the system, not in persistent components.
+ * All callbacks share the service's existing [ObservationTarget] instance across systems and
+ * viewers while the citadel remains observed. Repeated publications and component replacement
+ * preserve it. After observation ends and starts again, use value equality rather than identity.
  * Registration changes are applied after the current dispatch. If callbacks repeatedly replace
  * their required components or membership, re-entering the same target/viewer is deferred to a later pass.
  */
@@ -20,13 +23,14 @@ interface ObservationSystem<V> {
      */
     val requiredComponents: Set<Class<out Component>>
 
-    fun onViewerEnter(citadel: CitadelHandle, viewer: V) {}
+    fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: V) {}
 
     /**
      * Once per matching active citadel per scheduled pass, with a stable, unmodifiable audience.
      * Requirements are checked before the call; read needed components through [CitadelHandle].
+     * [target] identifies [citadel] and can be reused as the key for this system's runtime state.
      */
-    fun tick(citadel: CitadelHandle, viewers: List<V>)
+    fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<V>)
 
     /** Releases this viewer's resources without requiring an available component or live handle. */
     fun onViewerLeave(citadel: ObservationTarget, viewer: V) {}
