@@ -84,7 +84,7 @@ class ObservationServiceTest {
     }
 
     @Test
-    fun `published collections and tick audiences cannot mutate stored membership`() {
+    fun `audience snapshots are reused until membership changes and remain immutable`() {
         val fixture = Fixture()
         val target = fixture.create(1)
         val system = RecordingSystem()
@@ -99,12 +99,80 @@ class ObservationServiceTest {
         val firstAudience = system.ticks.single().viewers
         assertEquals(listOf("alice"), firstAudience)
         assertFailsWith<UnsupportedOperationException> { (firstAudience as MutableList<String>).add("forged") }
+        fixture.scheduler.tick()
+        assertSame(firstAudience, system.ticks.last().viewers)
+        alice.observation.publish(listOf(fixture.find(1), target))
+        fixture.scheduler.tick()
+        assertSame(firstAudience, system.ticks.last().viewers)
+
         val bob = fixture.observe(BOB, "bob")
+        bob.observation.publish(listOf(target))
+        fixture.scheduler.tick()
+        val sharedAudience = system.ticks.last().viewers
+        assertEquals(listOf("alice", "bob"), sharedAudience)
+        assertFalse(firstAudience === sharedAudience)
+
+        bob.observation.publish(emptyList())
+        fixture.scheduler.tick()
+        val afterLeave = system.ticks.last().viewers
+        assertEquals(listOf("alice"), afterLeave)
+        assertFalse(sharedAudience === afterLeave)
+
         bob.observation.publish(listOf(target))
         fixture.scheduler.tick()
 
         assertEquals(listOf("alice"), firstAudience)
-        assertEquals(setOf("alice", "bob"), system.ticks.last().viewers.toSet())
+        assertEquals(listOf("alice", "bob"), sharedAudience)
+        assertEquals(listOf("alice"), afterLeave)
+        assertEquals(listOf("alice", "bob"), system.ticks.last().viewers)
+        assertFalse(afterLeave === system.ticks.last().viewers)
+    }
+
+    @Test
+    fun `cached audiences exclude closed registrations before deferred replacement reaches later systems and targets`() {
+        val fixture = Fixture()
+        val targets = listOf(fixture.create(1), fixture.create(2))
+        val first = RecordingSystem()
+        val second = RecordingSystem()
+        fixture.service.registerSystem(first)
+        fixture.service.registerSystem(second)
+        fixture.service.enable()
+        val old = fixture.observe(ALICE, "old", targets)
+        fixture.observe(BOB, "bob", targets)
+        fixture.scheduler.tick()
+        val previousAudiences = (first.ticks + second.ticks).map { it.viewers }
+        first.ticks.clear()
+        second.ticks.clear()
+        var replacement: Viewer? = null
+        first.onTick = { citadel, _, audience ->
+            assertEquals(targets.first().runtimeId, citadel.runtimeId)
+            first.onTick = null
+            assertSame(previousAudiences.first(), audience)
+            old.subscription.close()
+            replacement = fixture.observe(ALICE, "new", targets)
+            assertEquals(listOf("old", "bob"), audience)
+            assertTrue(first.enters.none { it.viewer == "new" })
+            assertTrue(second.enters.none { it.viewer == "new" })
+        }
+
+        fixture.scheduler.tick()
+
+        assertEquals(listOf(listOf("old", "bob"), listOf("bob")), first.ticks.map { it.viewers })
+        assertEquals(listOf(listOf("bob"), listOf("bob")), second.ticks.map { it.viewers })
+        assertTrue(previousAudiences.all { it == listOf("old", "bob") })
+        assertEquals(targets.map { it.runtimeId }, first.enters.filter { it.viewer == "new" }.map { it.handle.runtimeId })
+        assertEquals(targets.map { it.runtimeId }, second.enters.filter { it.viewer == "new" }.map { it.handle.runtimeId })
+        assertEquals(1, old.observation.closeCalls)
+        assertEquals(0, checkNotNull(replacement).observation.closeCalls)
+        first.ticks.clear()
+        second.ticks.clear()
+
+        fixture.scheduler.tick()
+
+        assertEquals(listOf(listOf("bob", "new"), listOf("bob", "new")), first.ticks.map { it.viewers })
+        assertEquals(listOf(listOf("bob", "new"), listOf("bob", "new")), second.ticks.map { it.viewers })
+        assertTrue(previousAudiences.all { it == listOf("old", "bob") })
+        assertTrue(fixture.failures.isEmpty())
     }
 
     @Test
@@ -449,6 +517,103 @@ class ObservationServiceTest {
     }
 
     @Test
+    fun `system replacement from a callback or failure handler preserves dispatch and cleanup order`() {
+        for (fromFailureHandler in listOf(false, true)) {
+            val fixture = Fixture()
+            val targets = listOf(fixture.create(1), fixture.create(2))
+            val events = mutableListOf<String>()
+            val mutating = RecordingSystem()
+            val departing = RecordingSystem().apply {
+                onLeave = { target, _ -> events.add("departing:leave:${target.position.x}") }
+                onDetached = { target -> events.add("departing:detach:${target.position.x}") }
+            }
+            val remaining = RecordingSystem().apply {
+                onTick = { target, _, _ -> events.add("remaining:tick:${target.x}") }
+            }
+            val added = RecordingSystem().apply {
+                onEnter = { target, _, _ -> events.add("added:enter:${target.x}") }
+            }
+            fixture.service.registerSystem(mutating)
+            fixture.service.registerSystem(departing)
+            fixture.service.registerSystem(remaining)
+            fixture.service.enable()
+            fixture.observe(ALICE, "alice", targets)
+            val replaceSystem: () -> Unit = {
+                assertTrue(fixture.service.unregisterSystem(departing))
+                fixture.service.registerSystem(added)
+                events.add("replace")
+            }
+            if (fromFailureHandler) fixture.onFailure = { replaceSystem() }
+            var replaced = false
+            mutating.onTick = { target, _, _ ->
+                events.add("mutating:tick:${target.x}")
+                if (!replaced) {
+                    replaced = true
+                    if (fromFailureHandler) error("replace from failure handler")
+                    replaceSystem()
+                }
+            }
+
+            fixture.scheduler.tick()
+
+            assertEquals(
+                listOf(
+                    "mutating:tick:1", "replace", "remaining:tick:1",
+                    "mutating:tick:2", "remaining:tick:2",
+                    "departing:leave:1", "departing:detach:1",
+                    "departing:leave:2", "departing:detach:2",
+                    "added:enter:1", "added:enter:2"
+                ),
+                events
+            )
+            assertTrue(departing.ticks.isEmpty())
+            assertTrue(added.ticks.isEmpty())
+            assertEquals(if (fromFailureHandler) 1 else 0, fixture.failures.size)
+
+            fixture.scheduler.tick()
+
+            assertEquals(targets.map { it.runtimeId }, added.ticks.map { it.handle.runtimeId })
+            assertTrue(departing.ticks.isEmpty())
+            assertEquals(4, remaining.ticks.size)
+        }
+    }
+
+    @Test
+    fun `departures are selected before leave callbacks close another viewer`() {
+        val fixture = Fixture()
+        val target = fixture.create(1)
+        val events = mutableListOf<String>()
+        val first = RecordingSystem().apply {
+            onDetached = { events.add("first:detach") }
+        }
+        val second = RecordingSystem().apply {
+            onLeave = { _, viewer -> events.add("second:leave:$viewer") }
+            onDetached = { events.add("second:detach") }
+        }
+        fixture.service.registerSystem(first)
+        fixture.service.registerSystem(second)
+        fixture.service.enable()
+        val alice = fixture.observe(ALICE, "alice", listOf(target))
+        val bob = fixture.observe(BOB, "bob", listOf(target))
+        first.onLeave = { _, viewer ->
+            events.add("first:leave:$viewer")
+            if (viewer == "alice") bob.subscription.close()
+        }
+
+        alice.observation.publish(emptyList())
+
+        assertEquals(
+            listOf(
+                "first:leave:alice", "second:leave:alice", "second:leave:bob",
+                "second:detach", "first:leave:bob", "first:detach"
+            ),
+            events
+        )
+        assertEquals(1, bob.observation.closeCalls)
+        assertTrue(fixture.failures.isEmpty())
+    }
+
+    @Test
     fun `callback failures do not skip other systems or interrupt cleanup`() {
         val fixture = Fixture()
         val target = fixture.create(1)
@@ -593,7 +758,11 @@ class ObservationServiceTest {
         private val storage = MemoryStorage()
         val manager = ComponentManager(storage, TypeManager())
         val failures = mutableListOf<Exception>()
-        val service = ObservationService<String>(manager, scheduler, intervalTicks, failures::add)
+        var onFailure: ((Exception) -> Unit)? = null
+        val service = ObservationService<String>(manager, scheduler, intervalTicks) { failure ->
+            failures.add(failure)
+            onFailure?.invoke(failure)
+        }
 
         init {
             manager.registerComponent("test", "observation_value", ValueComponent::class.java)

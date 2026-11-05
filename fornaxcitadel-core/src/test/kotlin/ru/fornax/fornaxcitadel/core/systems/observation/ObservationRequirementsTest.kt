@@ -44,6 +44,75 @@ class ObservationRequirementsTest {
     }
 
     @Test
+    fun `successful bindings stay independent across partial component matches`() {
+        Fixture().use { fixture ->
+            val first = fixture.create(primary = Primary(11), secondary = Secondary(12))
+            val partial = fixture.create(primary = Primary(21), secondary = null)
+            val last = fixture.create(primary = Primary(31), secondary = Secondary(32))
+            val system = RecordingSystem(BOTH)
+            fixture.start(system)
+
+            fixture.observe(listOf(first, partial, last))
+            assertEquals(listOf("enter:1:alice", "enter:3:alice"), system.events)
+            system.events.clear()
+
+            repeat(3) {
+                fixture.scheduler.tick()
+                assertEquals(listOf("tick:1", "tick:3"), system.events)
+                system.events.clear()
+            }
+
+            fixture.put(partial, Secondary::class.java, Secondary(22))
+            fixture.scheduler.tick()
+            assertEquals(listOf("enter:2:alice", "tick:1", "tick:2", "tick:3"), system.events)
+            system.events.clear()
+
+            repeat(3) {
+                fixture.scheduler.tick()
+                assertEquals(listOf("tick:1", "tick:2", "tick:3"), system.events)
+                system.events.clear()
+            }
+            assertTrue(fixture.failures.isEmpty())
+        }
+    }
+
+    @Test
+    fun `failed secondary reads recover without contaminating a queued observation`() {
+        Fixture().use { fixture ->
+            val first = fixture.create(primary = Primary(11), secondary = null)
+            val second = fixture.create(primary = Primary(21), secondary = null)
+            val system = RecordingSystem(linkedSetOf(Primary::class.java, LateSecondary::class.java))
+            fixture.start(system)
+            fixture.onFailure = { failure ->
+                assertTrue(failure.cause is IllegalArgumentException)
+                assertTrue(failure.message.orEmpty().contains(LateSecondary::class.java.name))
+                fixture.onFailure = null
+                fixture.manager.registerComponent("test", "observation_late_secondary", LateSecondary::class.java)
+                fixture.put(first, LateSecondary::class.java, LateSecondary(12))
+                fixture.put(second, LateSecondary::class.java, LateSecondary(22))
+                fixture.observe(listOf(second), BOB, "bob")
+                assertTrue(system.events.isEmpty(), "The queued observation must wait for the failed read to finish")
+            }
+
+            fixture.observe(listOf(first))
+            assertEquals(1, fixture.failures.size)
+            assertEquals(listOf("enter:2:bob"), system.events)
+            system.events.clear()
+
+            fixture.scheduler.tick()
+            assertEquals(listOf("enter:1:alice", "tick:1", "tick:2"), system.events)
+            system.events.clear()
+
+            repeat(3) {
+                fixture.scheduler.tick()
+                assertEquals(listOf("tick:1", "tick:2"), system.events)
+                system.events.clear()
+            }
+            assertEquals(1, fixture.failures.size)
+        }
+    }
+
+    @Test
     fun `adding removing and restoring a secondary requirement updates the existing audience`() {
         Fixture().use { fixture ->
             val target = fixture.create(secondary = null)
@@ -247,7 +316,11 @@ class ObservationRequirementsTest {
         val scheduler = ManualScheduler()
         val manager = ComponentManager(MemoryStorage(), TypeManager())
         val failures = mutableListOf<Exception>()
-        val service = ObservationService<String>(manager, scheduler, failureHandler = failures::add)
+        var onFailure: ((Exception) -> Unit)? = null
+        val service = ObservationService<String>(manager, scheduler, failureHandler = { failure ->
+            failures.add(failure)
+            onFailure?.invoke(failure)
+        })
         private var nextX = 1
 
         init {
@@ -324,6 +397,11 @@ class ObservationRequirementsTest {
     }
 
     private data class Extra(var value: Int = 0) : Component() {
+        override fun read(input: DataInput) { value = input.readInt() }
+        override fun write(output: DataOutput) { output.writeInt(value) }
+    }
+
+    private data class LateSecondary(var value: Int = 0) : Component() {
         override fun read(input: DataInput) { value = input.readInt() }
         override fun write(output: DataOutput) { output.writeInt(value) }
     }

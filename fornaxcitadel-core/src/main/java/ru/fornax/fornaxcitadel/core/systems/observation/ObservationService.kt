@@ -31,8 +31,12 @@ class ObservationService<V> @JvmOverloads constructor(
     private val viewers = LinkedHashMap<UUID, ViewerRegistration>()
     private val targets = LinkedHashMap<ObservationTarget, TargetEntry>()
     private val systems = mutableListOf<SystemRegistration>()
+    // Callbacks may change registrations; each traversal keeps its captured snapshot.
+    private var systemsSnapshot: List<SystemRegistration> = emptyList()
     private val changes = ArrayDeque<() -> Unit>()
-    private val dirtyTargets = LinkedHashSet<ObservationTarget>()
+    private val dirtySlots = HashMap<ObservationTarget, DirtySlot>()
+    private var pendingDirty = ArrayList<DirtySlot>()
+    private var processingDirty = ArrayList<DirtySlot>()
     private val enteredDuringFlush = HashSet<EnterAttempt>()
     private var run: Run? = null
     private var dispatching = false
@@ -63,16 +67,16 @@ class ObservationService<V> @JvmOverloads constructor(
         val stopped = run ?: return
         run = null
         val registrations = viewers.values.toList()
-        val stoppedSystems = systems.toList()
+        val stoppedSystems = systemsSnapshot
         viewers.clear()
         registrations.forEach { it.active = false }
         enqueue {
-            safely("cancel timer") { stopped.task?.cancel() }
+            safely({ "cancel timer" }) { stopped.task?.cancel() }
             for (registration in registrations) releaseViewer(registration)
             // A callback may already have enabled a new run. Its subscriptions must not reuse
             // runtime resources from the stopped run, even if they observe the same components.
             for (system in stoppedSystems) detachSystem(system)
-            dirtyTargets.addAll(targets.keys)
+            markAllTargetsDirty()
         }
     }
 
@@ -80,10 +84,11 @@ class ObservationService<V> @JvmOverloads constructor(
     fun registerSystem(system: ObservationSystem<V>) {
         if (systems.any { it.system === system }) return
         val registration = SystemRegistration(system).also(systems::add)
+        systemsSnapshot = systems.toList()
         enqueue {
             if (registration.active) {
                 registration.ready = true
-                dirtyTargets.addAll(targets.keys)
+                markAllTargetsDirty()
             }
         }
     }
@@ -93,6 +98,7 @@ class ObservationService<V> @JvmOverloads constructor(
         val registration = systems.find { it.system === system } ?: return false
         registration.active = false
         systems.remove(registration)
+        systemsSnapshot = systems.toList()
         enqueue { detachSystem(registration) }
         return true
     }
@@ -162,7 +168,7 @@ class ObservationService<V> @JvmOverloads constructor(
         for (key in registration.observed.keys) {
             if (key !in snapshot) {
                 targets[key]?.viewers?.remove(registration.id, registration)
-                dirtyTargets.add(key)
+                markDirty(key)
             }
         }
         registration.observed.clear()
@@ -170,13 +176,13 @@ class ObservationService<V> @JvmOverloads constructor(
             // A deferred publication may have become stale since it was copied.
             if (!isCurrent(handle)) {
                 targets[key]?.viewers?.remove(registration.id, registration)
-                dirtyTargets.add(key)
+                markDirty(key)
                 continue
             }
             registration.observed[key] = handle
             val target = targets.getOrPut(key) { TargetEntry(key, handle) }
             target.viewers[registration.id] = registration
-            dirtyTargets.add(key)
+            markDirty(target.dirtySlot)
         }
     }
 
@@ -184,10 +190,10 @@ class ObservationService<V> @JvmOverloads constructor(
         registration.pending = null
         val subscription = registration.subscription
         registration.subscription = null
-        safely("close observation for ${registration.id}") { subscription?.close() }
+        safely({ "close observation for ${registration.id}" }) { subscription?.close() }
         for (key in registration.observed.keys) {
             targets[key]?.viewers?.remove(registration.id, registration)
-            dirtyTargets.add(key)
+            markDirty(key)
         }
         registration.observed.clear()
     }
@@ -200,16 +206,46 @@ class ObservationService<V> @JvmOverloads constructor(
         if (!dispatching && !flushing) flushChanges()
     }
 
+    private fun dirtySlotFor(key: ObservationTarget): DirtySlot =
+        dirtySlots.getOrPut(key) { DirtySlot(key) }
+
+    private fun markDirty(key: ObservationTarget) {
+        // A missing target may be recreated by a later queued change. Preserve its queue position.
+        markDirty(dirtySlotFor(key))
+    }
+
+    private fun markDirty(slot: DirtySlot) {
+        if (slot.queued) return
+        pendingDirty.add(slot)
+        slot.queued = true
+    }
+
+    private fun markAllTargetsDirty() {
+        for (target in targets.values) markDirty(target.dirtySlot)
+    }
+
     /** Applies publications after callbacks, never while their audiences are being traversed. */
     private fun flushChanges() {
         if (dispatching || flushing) return
         flushing = true
         try {
-            while (changes.isNotEmpty() || dirtyTargets.isNotEmpty()) {
+            while (changes.isNotEmpty() || pendingDirty.isNotEmpty()) {
                 while (changes.isNotEmpty()) changes.removeFirst().invoke()
-                val refresh = dirtyTargets.toList()
-                dirtyTargets.clear()
-                for (key in refresh) targets[key]?.let(::refreshTarget)
+                val batch = pendingDirty
+                pendingDirty = processingDirty
+                processingDirty = batch
+                try {
+                    // Reset the whole batch before callbacks so even a later target can be requeued.
+                    for (index in batch.indices) batch[index].queued = false
+                    for (index in batch.indices) targets[batch[index].key]?.let(::refreshTarget)
+                } finally {
+                    for (index in batch.indices) {
+                        val slot = batch[index]
+                        // Requeued slots belong to the next batch, including after a callback error.
+                        if (!slot.queued && !targets.containsKey(slot.key)) dirtySlots.remove(slot.key, slot)
+                    }
+                    batch.clear()
+                }
             }
         } finally {
             enteredDuringFlush.clear()
@@ -222,10 +258,13 @@ class ObservationService<V> @JvmOverloads constructor(
             for (viewer in target.viewers.values) viewer.observed.remove(target.key)
             target.viewers.clear()
         } else {
-            val expired = target.viewers.values.filterNot(::isActive)
-            for (viewer in expired) target.viewers.remove(viewer.id, viewer)
+            val iterator = target.viewers.values.iterator()
+            while (iterator.hasNext()) {
+                if (!isActive(iterator.next())) iterator.remove()
+            }
         }
-        for (system in systems.toList()) refreshSystem(system, target)
+        val registeredSystems = systemsSnapshot
+        for (system in registeredSystems) refreshSystem(system, target)
         if (target.viewers.isEmpty()) targets.remove(target.key, target)
     }
 
@@ -237,19 +276,32 @@ class ObservationService<V> @JvmOverloads constructor(
                 detach(system, target.key, binding)
                 binding = null
             } else {
-                val departed = binding.viewers.values.filter { target.viewers[it.id] !== it || !isActive(it) }
-                for (viewer in departed) {
-                    binding.viewers.remove(viewer.id)
-                    safely("viewer leave for ${target.key}") { system.system.onViewerLeave(target.key, viewer.viewer) }
+                var departed: ArrayList<ViewerRegistration>? = null
+                for (viewer in binding.viewers.values) {
+                    if (target.viewers[viewer.id] !== viewer || !isActive(viewer)) {
+                        if (departed == null) departed = ArrayList()
+                        departed.add(viewer)
+                    }
+                }
+                // Capture all departures before callbacks, which may close additional viewers.
+                if (departed != null) {
+                    for (viewer in departed) {
+                        binding.cachedAudience = null
+                        binding.viewers.remove(viewer.id)
+                        safely({ "viewer leave for ${target.key}" }) {
+                            system.system.onViewerLeave(target.key, viewer.viewer)
+                        }
+                    }
                 }
             }
         }
-        for (viewer in target.viewers.values.toList()) {
+        // Membership changes from callbacks are queued until this refresh finishes.
+        for (viewer in target.viewers.values) {
             if (!system.active) return
             if (!isActive(viewer)) continue
             // Cleanup and previous callbacks may have changed any of the required components.
             if (binding != null && !matchesBinding(system, target.handle, binding)) {
-                dirtyTargets.add(target.key)
+                markDirty(target.dirtySlot)
                 return
             }
             val current = binding ?: createBinding(system, target.handle) ?: return
@@ -263,15 +315,16 @@ class ObservationService<V> @JvmOverloads constructor(
                 binding = current
             }
             // Track before the callback: even an unsuccessful enter may have acquired resources.
+            current.cachedAudience = null
             current.viewers[viewer.id] = viewer
-            safely("viewer enter for ${target.key}") {
+            safely({ "viewer enter for ${target.key}" }) {
                 system.system.onViewerEnter(target.handle, target.key, viewer.viewer)
             }
         }
         binding?.let { current ->
             if (current.viewers.isEmpty()) detach(system, target.key, current)
             else if (system.active && !matchesBinding(system, target.handle, current)) {
-                dirtyTargets.add(target.key)
+                markDirty(target.dirtySlot)
             }
         }
     }
@@ -283,11 +336,12 @@ class ObservationService<V> @JvmOverloads constructor(
     ) {
         if (!system.bindings.remove(key, binding)) return
         val audience = binding.viewers.values.toList()
+        binding.cachedAudience = null
         binding.viewers.clear()
         for (viewer in audience) {
-            safely("viewer leave for $key") { system.system.onViewerLeave(key, viewer.viewer) }
+            safely({ "viewer leave for $key" }) { system.system.onViewerLeave(key, viewer.viewer) }
         }
-        safely("detach system from $key") { system.system.onDetach(key) }
+        safely({ "detach system from $key" }) { system.system.onDetach(key) }
     }
 
     private fun detachSystem(system: SystemRegistration) {
@@ -296,22 +350,23 @@ class ObservationService<V> @JvmOverloads constructor(
 
     private fun tick(expected: Run) {
         if (run !== expected || dispatching || flushing) return
-        dirtyTargets.addAll(targets.keys)
+        markAllTargetsDirty()
         flushChanges()
         if (run !== expected) return
         dispatching = true
         try {
-            val registeredSystems = systems.toList()
-            for (target in targets.values.toList()) {
-                for (system in registeredSystems) {
+            val registeredSystems = systemsSnapshot
+            // Structural target changes are deferred until dispatch completes.
+            for (target in targets.values) {
+                for (index in registeredSystems.indices) {
                     if (run !== expected) return
-                    tickSystem(system, target)
+                    tickSystem(registeredSystems[index], target)
                 }
             }
         } finally {
             dispatching = false
             // Gameplay callbacks may have changed components or removed other observed citadels.
-            dirtyTargets.addAll(targets.keys)
+            markAllTargetsDirty()
             flushChanges()
         }
     }
@@ -320,20 +375,40 @@ class ObservationService<V> @JvmOverloads constructor(
         if (!system.active || !system.ready) return
         val binding = system.bindings[target.key] ?: return
         if (!matchesBinding(system, target.handle, binding)) return
-        val audience = binding.viewers.values.filter(::isActive).map { it.viewer }
+        val audience = audienceFor(binding)
         if (audience.isEmpty()) return
-        safely("tick system at ${target.key}") {
-            system.system.tick(target.handle, target.key, Collections.unmodifiableList(audience))
+        safely({ "tick system at ${target.key}" }) {
+            system.system.tick(target.handle, target.key, audience)
         }
+    }
+
+    private fun audienceFor(binding: SystemBinding): List<V> {
+        val cached = binding.cachedAudience
+        // Closing a subscription revokes it immediately, before deferred membership cleanup.
+        if (cached != null && binding.viewers.values.all(::isActive)) return cached
+
+        val audience = ArrayList<V>(binding.viewers.size)
+        for (registration in binding.viewers.values) {
+            if (isActive(registration)) audience.add(registration.viewer)
+        }
+        // Once exposed to a system, a snapshot's backing list must never be changed or reused.
+        val snapshot = if (audience.isEmpty()) emptyList() else Collections.unmodifiableList(audience)
+        binding.cachedAudience = snapshot
+        return snapshot
     }
 
     private fun createBinding(system: SystemRegistration, handle: CitadelHandle): SystemBinding? {
         if (!isCurrent(handle)) return null
-        val components = ArrayList<Component>(system.requiredComponents.size)
-        for (componentClass in system.requiredComponents) {
-            components.add(readComponent(handle, componentClass) ?: return null)
+        val components = system.componentBuffer
+        // Binding creation runs only during flushing, which prevents nested use of this buffer.
+        try {
+            for (index in system.requiredComponents.indices) {
+                components.add(readComponent(handle, system.requiredComponents[index]) ?: return null)
+            }
+            return SystemBinding(components.toList())
+        } finally {
+            components.clear()
         }
-        return SystemBinding(components)
     }
 
     private fun matchesBinding(
@@ -363,11 +438,11 @@ class ObservationService<V> @JvmOverloads constructor(
         false
     }
 
-    private inline fun safely(operation: String, action: () -> Unit) {
+    private inline fun safely(operation: () -> String, action: () -> Unit) {
         try {
             action()
         } catch (failure: Exception) {
-            report(operation, failure)
+            report(operation(), failure)
         }
     }
 
@@ -398,12 +473,14 @@ class ObservationService<V> @JvmOverloads constructor(
     }
 
     private inner class TargetEntry(val key: ObservationTarget, val handle: CitadelHandle) {
+        val dirtySlot = dirtySlotFor(key)
         val viewers = LinkedHashMap<UUID, ViewerRegistration>()
     }
 
     private inner class SystemRegistration(val system: ObservationSystem<V>) {
         // A private ordered copy keeps the requirements and bound instances aligned.
         val requiredComponents = system.requiredComponents.toList()
+        val componentBuffer = ArrayList<Component>(requiredComponents.size)
         var active = true
         var ready = false
         val bindings = LinkedHashMap<ObservationTarget, SystemBinding>()
@@ -411,6 +488,11 @@ class ObservationService<V> @JvmOverloads constructor(
 
     private inner class SystemBinding(val components: List<Component>) {
         val viewers = LinkedHashMap<UUID, ViewerRegistration>()
+        var cachedAudience: List<V>? = null
+    }
+
+    private class DirtySlot(val key: ObservationTarget) {
+        var queued = false
     }
 
     private class Run {
