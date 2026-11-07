@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind;
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause;
 import ru.fornax.fornaxcitadel.core.facade.ActionManager;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
+import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException;
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager;
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
@@ -47,7 +48,7 @@ public final class HealthService implements LifecycleService {
         this.componentManager = actions.getComponentManager();
         this.removeService = Objects.requireNonNull(removeService, "removeService");
         this.destructionPolicy = Objects.requireNonNull(destructionPolicy, "destructionPolicy");
-        this.damageValidator = new DamagePolicyValidator(componentManager, this);
+        this.damageValidator = new DamagePolicyValidator(actions.getCitadels(), this);
         componentManager.registerComponent(Health.KEY, Health.class);
         componentManager.registerComponent(Maturing.KEY, Maturing.class);
         registerModifier(new MaturingDamageModifier(Objects.requireNonNull(clock, "clock")));
@@ -181,17 +182,20 @@ public final class HealthService implements LifecycleService {
 
     @NotNull
     protected ActionResult onDamage(@NotNull DamageAction action) {
-        if (!componentManager.isChunkLoaded(action.getCitadelW(), action.getCitadelX() >> 4, action.getCitadelZ() >> 4)) {
+        CitadelHandle citadel;
+        try {
+            citadel = actions.getCitadels().findProtecting(action.getPosition());
+        } catch (CitadelResolutionUnavailableException unavailable) {
             return ActionResult.DENIED;
         }
-        CitadelHandle citadel = componentManager.findCitadel(
-                action.getCitadelW(), action.getCitadelX(), action.getCitadelY(), action.getCitadelZ());
         if (citadel == null) return ActionResult.DENIED;
         if (action.getMode() == DamageAction.Mode.DESTROY) {
             // Other validators may have changed live authorization since policy validation.
             if (!allowsDestruction(action.getContext(), citadel)) return ActionResult.DENIED;
             return removeService.remove(citadel, RemovalCause.DESTROYED);
         }
+        // A later validator may have changed the resolved reinforcement or its policy.
+        if (!allowsDamage(action.getContext(), citadel)) return ActionResult.DENIED;
         return damage(citadel, action.getDamage(), action.getContext());
     }
 

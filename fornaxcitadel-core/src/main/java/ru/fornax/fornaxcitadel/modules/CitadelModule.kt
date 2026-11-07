@@ -4,7 +4,10 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.CitadelResolver
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.facade.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
@@ -33,8 +36,19 @@ class CitadelModule @JvmOverloads constructor(
     removalPolicy: RemovalPolicy = RemovalPolicy.DENY,
     maxActionsPerTick: Int = 1024,
     destructionPolicy: DamagePolicy = DamagePolicy.DENY,
+    resolver: CitadelResolver = DirectCitadelResolver(manager),
     actionFailureHandler: (Exception) -> Unit = ActionQueueService.DEFAULT_FAILURE_HANDLER
 ) : LifecycleService {
+    constructor(
+        manager: ComponentManager,
+        scheduler: Scheduler,
+        removalPolicy: RemovalPolicy,
+        maxActionsPerTick: Int,
+        destructionPolicy: DamagePolicy,
+        actionFailureHandler: (Exception) -> Unit
+    ) : this(manager, scheduler, removalPolicy, maxActionsPerTick, destructionPolicy,
+        DirectCitadelResolver(manager), actionFailureHandler)
+
     constructor(
         manager: ComponentManager,
         scheduler: Scheduler,
@@ -45,7 +59,8 @@ class CitadelModule @JvmOverloads constructor(
 
     val definitions = CitadelDefinitionRegistry()
     val lifecycle = CitadelLifecycleNotifications()
-    val actions = ActionManager(manager)
+    val citadels = CitadelFacade(manager, resolver)
+    val actions = ActionManager(manager, citadels = citadels)
     val place = PlaceService(actions, definitions, lifecycle)
     val remove = RemoveService(actions, lifecycle, removalPolicy)
     val health = HealthService(actions, remove, destructionPolicy)

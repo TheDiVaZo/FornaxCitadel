@@ -4,6 +4,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
@@ -28,11 +29,11 @@ class RemoveService @JvmOverloads constructor(
 
     fun request(action: RemoveAction): ActionResult {
         notifications.checkMutationAllowed()
-        if (!manager.isChunkLoaded(action.citadelW, action.citadelX shr 4, action.citadelZ shr 4)) {
+        val citadel = try {
+            actions.citadels.findProtecting(action.position)
+        } catch (_: CitadelResolutionUnavailableException) {
             return ActionResult.DENIED
-        }
-        val citadel = manager.findCitadel(action.citadelW, action.citadelX, action.citadelY, action.citadelZ)
-            ?: return ActionResult.DENIED
+        } ?: return ActionResult.DENIED
         if (!requestPolicy.mayRemove(action.context, citadel)) return ActionResult.DENIED
         return remove(citadel, RemovalCause.ADMIN)
     }

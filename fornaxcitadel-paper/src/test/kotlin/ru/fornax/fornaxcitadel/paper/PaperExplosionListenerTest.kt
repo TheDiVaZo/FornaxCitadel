@@ -330,11 +330,14 @@ class PaperExplosionListenerTest {
         assertEquals(100.0, fixture.health())
         dispatch(fixture.explosionListener, fixture.blockExplosion(fixture.block()), fixture.plugin)
         assertEquals(100.0, fixture.health())
+        assertTrue(observed.isEmpty())
         dispatch(fixture.explosionListener, fixture.entityExplosion(fixture.block()), fixture.plugin)
 
         assertEquals(60.0, fixture.health())
-        assertEquals(UUID(10L, 20L), observed.single().entityId)
-        assertEquals(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0), observed.single().position)
+        // The policy validates the request and is checked again for the actual resolved target.
+        val expected = ExplosionSource.Entity(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0),
+            4.0f, UUID(10L, 20L), EntityType.CREEPER)
+        assertEquals(listOf(expected, expected), observed)
     }
 
     @Test

@@ -11,11 +11,16 @@ import java.util.ArrayDeque
  * Validates and executes actions synchronously on the calling thread.
  * Not thread-safe; use on the owning game thread, like [componentManager].
  */
-class ActionManager(
+class ActionManager @JvmOverloads constructor(
     val componentManager: ComponentManager,
     val processorCoordinator: ProcessorCoordinator = ProcessorCoordinator(),
-    val validatorCoordinator: ValidatorCoordinator = ValidatorCoordinator()
+    val validatorCoordinator: ValidatorCoordinator = ValidatorCoordinator(),
+    val citadels: CitadelFacade = CitadelFacade(componentManager)
 ) {
+    init {
+        require(citadels.componentManager === componentManager) { "Actions and citadel facade must share their storage" }
+    }
+
     private var executing = false
     private val posted = ArrayDeque<ActionData>()
 

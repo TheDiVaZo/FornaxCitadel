@@ -6,7 +6,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 /**
  * Read-only authorization rule for ordinary damage or explicit destruction.
  * Type rules apply to ordinary damage; explicit destruction uses the module's separate policy.
- * Must not mutate or retain live components. Destruction checks may run more than once per action.
+ * Must not mutate or retain live components. Policy checks may run more than once per action.
  */
 fun interface DamagePolicy {
     fun allowsDamage(context: ActionContext, citadel: CitadelHandle): Boolean

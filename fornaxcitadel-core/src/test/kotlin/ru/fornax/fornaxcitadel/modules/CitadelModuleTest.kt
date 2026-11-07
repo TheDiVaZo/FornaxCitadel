@@ -454,7 +454,9 @@ class CitadelModuleTest {
         assertTrue(policyContexts.isEmpty())
         assertEquals(1, fixture.module.actions.drainPosted(1))
         assertEquals(90.0, fixture.health().health)
-        assertSame(context, policyContexts.single())
+        // The policy sees the same context during validation and the final target check.
+        assertEquals(2, policyContexts.size)
+        policyContexts.forEach { assertSame(context, it) }
         assertSame(source, validatedContexts.single().source)
         assertEquals(PLACER, validatedContexts.single().actorId)
         fixture.chunk().resetDirty()
@@ -463,7 +465,7 @@ class CitadelModuleTest {
         assertEquals(1, fixture.module.actions.drainPosted())
         assertEquals(90.0, fixture.health().health)
         assertFalse(fixture.chunk().isDirty)
-        assertEquals(2, policyContexts.size)
+        assertEquals(3, policyContexts.size)
         assertEquals(1, validatedContexts.size)
     }
 
