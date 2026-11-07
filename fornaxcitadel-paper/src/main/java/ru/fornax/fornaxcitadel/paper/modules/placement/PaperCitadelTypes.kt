@@ -1,9 +1,12 @@
 package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
+import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
+import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
+import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import java.util.Locale
 import kotlin.collections.iterator
 
@@ -30,11 +33,13 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
                 CitadelDamagePolicy.ALLOW -> DamagePolicy.ALLOW
                 CitadelDamagePolicy.DENY -> DamagePolicy.DENY
             }
-            module.registerDefinition(
-                CitadelDefinition(byName.getValue(name), emptyList()),
-                policy,
-                settings.health?.createBehavior()
-            )
+            val initializers = buildList<CitadelInitializer> {
+                settings.health?.let { add(HealthInitializer(it.max)) }
+                settings.maturing?.let {
+                    add(MaturingInitializer(Math.multiplyExact(it.durationSeconds, 1000), it.initialDamageMultiplier))
+                }
+            }
+            module.registerDefinition(CitadelDefinition(byName.getValue(name), initializers), policy)
         }
     }
 

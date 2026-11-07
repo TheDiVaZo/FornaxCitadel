@@ -8,6 +8,7 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 
+/** Authoritative current and maximum health; directly readable without a service refresh. */
 public class Health extends Component {
     public static final Key KEY = new Key("fornaxcitadel", "health");
 

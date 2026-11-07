@@ -8,8 +8,6 @@ import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
-import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
-import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceService
 import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
@@ -83,24 +81,16 @@ class CitadelModule @JvmOverloads constructor(
     }
 
     /**
-     * Registers a type with its rules. When [healthBehavior] is supplied, a HealthInitializer
-     * is appended after custom initializers so it can see their components in the draft.
-     * Do not also add a HealthInitializer manually. Existing definitions cannot be replaced.
+     * Registers a type with its damage rules. The definition's initializers prepare all
+     * components, including health and optional maturation. Existing definitions cannot be replaced.
      */
-    @JvmOverloads
     fun registerDefinition(
         definition: CitadelDefinition,
-        damagePolicy: DamagePolicy,
-        healthBehavior: HealthBehavior? = null
+        damagePolicy: DamagePolicy
     ) {
         require(definitions.find(definition.key) == null) { "Citadel definition already registered: ${definition.key}" }
         require(health.findPolicy(definition.key) == null) { "Damage policy already registered: ${definition.key}" }
-        require(health.findBehavior(definition.key) == null) { "Health behavior already registered: ${definition.key}" }
-        val prepared = if (healthBehavior == null) definition else CitadelDefinition(
-            definition.key, definition.initializers + HealthInitializer(healthBehavior)
-        )
-        definitions.register(prepared)
+        definitions.register(definition)
         health.registerPolicy(definition.key, damagePolicy)
-        if (healthBehavior != null) health.registerBehavior(definition.key, healthBehavior)
     }
 }

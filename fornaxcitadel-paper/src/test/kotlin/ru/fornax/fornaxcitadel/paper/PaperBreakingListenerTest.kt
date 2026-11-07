@@ -7,6 +7,8 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
+import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -20,6 +22,48 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperBreakingListenerTest {
+    @Test
+    fun `player modifiers precede one maturation multiplier and reload preserves fixed health`() {
+        PaperTestFixture().use { fixture ->
+            fixture.place(PaperCitadelTypes.MATURING)
+            val target = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
+            assertTrue(target.editComponent(Maturing::class.java) { it.startedAtMillis = Long.MAX_VALUE })
+            var modifierCalls = 0
+            fixture.playerDamage.register(PlayerDamageModifier { _, _, current -> modifierCalls++; current * 2.0 })
+            val sourceDamage = mutableListOf<Double>()
+            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                override val actionClass = DamageAction::class.java
+                override fun validate(action: DamageAction): ActionValidator.Result {
+                    sourceDamage.add(action.damage)
+                    return ActionValidator.Result.Neutral
+                }
+            })
+
+            dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
+
+            assertEquals(32.0, fixture.health())
+            assertEquals(40.0, target.getComponent(Health::class.java)?.maxHealth)
+            assertEquals(listOf(2.0), sourceDamage)
+            assertEquals(1, modifierCalls)
+            fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
+            fixture.manager.loadChunk(fixture.worldId, 0, 0).join()
+            val restored = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
+            val maturing = assertNotNull(restored.getComponent(Maturing::class.java))
+            assertEquals(Long.MAX_VALUE, maturing.startedAtMillis)
+            assertEquals(600_000L, maturing.maturationDurationMillis)
+            assertEquals(4.0, maturing.initialDamageMultiplier)
+            assertEquals(32.0, fixture.health())
+
+            dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
+            assertEquals(24.0, fixture.health())
+            assertTrue(restored.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
+            dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
+            assertEquals(22.0, fixture.health())
+            assertEquals(listOf(2.0, 2.0, 2.0), sourceDamage)
+            assertEquals(3, modifierCalls)
+        }
+    }
+
     @Test
     fun `explicit removal of damage protected reinforcement preserves the physical block`() {
         val fixture = PaperTestFixture(permissions = true, damagePolicy = DamagePolicy.DENY)

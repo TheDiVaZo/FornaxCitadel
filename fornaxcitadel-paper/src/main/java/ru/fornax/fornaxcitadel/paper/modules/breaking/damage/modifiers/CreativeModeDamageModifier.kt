@@ -9,6 +9,6 @@ class CreativeModeDamageModifier : PlayerDamageModifier {
     override fun priority(): PlayerDamageModifier.Priority = PlayerDamageModifier.Priority.LOWEST
 
     override fun getDamage(player: Player, citadel: CitadelHandle, currentDamage: Double): Double =
-        // Keep damage finite and lethal even if health matures before the action is applied.
+        // Keep creative damage finite and lethal.
         if (player.gameMode == GameMode.CREATIVE) Double.MAX_VALUE else currentDamage
 }

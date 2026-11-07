@@ -1,7 +1,6 @@
 package ru.fornax.fornaxcitadel.modules
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
-import ru.fornax.fornaxcitadel.core.citadel.CitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
@@ -9,7 +8,6 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.component.TypeManager
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
@@ -26,19 +24,17 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.health.DamageModifier
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.Maturing
-import ru.fornax.fornaxcitadel.modules.health.MaturingHealthBehavior
-import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
+import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import java.time.Clock
 import java.time.Instant
-import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
@@ -56,8 +52,8 @@ class CitadelModuleTest {
     @Test
     fun `placement publishes a complete citadel and occupied placement leaves it unchanged`() {
         val fixture = Fixture()
-        val clock = MutableClock(1_793_204_123_456L)
-        fixture.register(behavior = MaturingHealthBehavior(20.0, 100.0, 1_000L, clock))
+        val clock = Clock.fixed(Instant.ofEpochMilli(1_793_204_123_456L), ZoneOffset.UTC)
+        fixture.register(initializers = listOf(MaturingInitializer(1_000L, 5.0, clock)))
         fixture.load()
         var observedKind: Key? = null
         var observedHealth: Double? = null
@@ -74,16 +70,16 @@ class CitadelModuleTest {
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
         assertEquals(DEFAULT_KIND, observedKind)
-        assertEquals(20.0, observedHealth)
-        assertEquals(clock.timeMillis, observedStart)
+        assertEquals(100.0, observedHealth)
+        assertEquals(clock.millis(), observedStart)
         assertEquals(listOf(POSITION), fixture.placements)
         val original = fixture.handle()
         fixture.chunk().resetDirty()
 
         assertEquals(ActionResult.DENIED, fixture.place(context = STRANGER_CONTEXT))
         assertTrue(original.isCurrent)
-        assertEquals(20.0, fixture.health().health)
-        assertEquals(clock.timeMillis, fixture.handle().getComponent(Maturing::class.java)?.startedAtMillis)
+        assertEquals(100.0, fixture.health().health)
+        assertEquals(clock.millis(), fixture.handle().getComponent(Maturing::class.java)?.startedAtMillis)
         assertEquals(1, fixture.placements.size)
         assertFalse(fixture.chunk().isDirty)
     }
@@ -196,12 +192,11 @@ class CitadelModuleTest {
     @Test
     fun `invulnerable definition needs no artificial health component`() {
         val fixture = Fixture()
-        fixture.register(behavior = null, policy = DamagePolicy.DENY)
+        fixture.register(maxHealth = null, policy = DamagePolicy.DENY)
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
         assertNull(fixture.handle().getComponent(Health::class.java))
-        assertNull(fixture.module.health.getCurrentHealth(WORLD, POSITION.x, POSITION.y, POSITION.z))
         assertEquals(ActionResult.DENIED, fixture.damage(PLACER_CONTEXT, 100.0))
         assertEquals(
             ActionResult.DENIED,
@@ -215,7 +210,7 @@ class CitadelModuleTest {
     fun `explicit destruction is denied by default even when ordinary damage is allowed`() {
         for (withHealth in listOf(false, true)) {
             val fixture = Fixture()
-            fixture.register(behavior = if (withHealth) SimpleHealthBehavior(100.0) else null)
+            fixture.register(maxHealth = if (withHealth) 100.0 else null)
             fixture.load()
             assertEquals(ActionResult.SUCCESS, fixture.place())
             val original = fixture.handle()
@@ -233,26 +228,20 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `authorized destruction removes protected healthy and healthless citadels without health updates`() {
+    fun `authorized destruction removes protected healthy and healthless citadels without damage modifiers`() {
         for (withHealth in listOf(false, true)) {
-            var behaviorUpdates = 0
-            val behavior = object : HealthBehavior {
-                override fun initializeHealth(component: Health, draft: CitadelDraft) {
-                    component.maxHealth = 100.0
-                    component.health = 73.0
-                }
-
-                override fun updateHealth(component: Health, citadel: CitadelHandle): Boolean {
-                    behaviorUpdates++
-                    error("Destruction must not update health")
-                }
-            }
+            var modifierCalls = 0
             val fixture = Fixture(destructionPolicy = DamagePolicy { context, citadel ->
                 context.actorId == PLACER && citadel.position == POSITION
             })
-            fixture.register(behavior = behavior.takeIf { withHealth }, policy = DamagePolicy.DENY)
+            fixture.module.health.registerModifier(DamageModifier { _, _, _ ->
+                modifierCalls++
+                error("Destruction must not calculate damage")
+            })
+            fixture.register(maxHealth = if (withHealth) 100.0 else null, policy = DamagePolicy.DENY)
             fixture.load()
             assertEquals(ActionResult.SUCCESS, fixture.place())
+            if (withHealth) assertTrue(fixture.handle().editComponent(Health::class.java) { it.health = 73.0 })
             fixture.manager.saveAll().join()
             val original = fixture.handle()
             val originalHealth = original.getComponent(Health::class.java)
@@ -264,7 +253,7 @@ class CitadelModuleTest {
             assertFalse(fixture.chunk().isDirty)
             assertEquals(ActionResult.SUCCESS, fixture.destroy(PLACER_CONTEXT))
 
-            assertEquals(0, behaviorUpdates)
+            assertEquals(0, modifierCalls)
             if (withHealth) assertEquals(73.0, assertNotNull(originalHealth).health)
             assertFalse(original.isCurrent)
             assertNull(fixture.find())
@@ -345,7 +334,7 @@ class CitadelModuleTest {
             }
             true
         })
-        fixture.register(behavior = null, policy = DamagePolicy.DENY)
+        fixture.register(maxHealth = null, policy = DamagePolicy.DENY)
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         val original = fixture.handle()
@@ -481,9 +470,7 @@ class CitadelModuleTest {
     @Test
     fun `a type with health but no registered damage policy rejects damage`() {
         val fixture = Fixture()
-        val behavior = SimpleHealthBehavior(100.0)
-        fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(behavior))))
-        fixture.module.health.registerBehavior(DEFAULT_KIND, behavior)
+        fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(100.0))))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
@@ -513,23 +500,32 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `one module routes health updates to the behavior selected by each stored type`() {
+    fun `one module applies maturation per target while stored health stays directly readable`() {
         val fixture = Fixture()
-        val clock = MutableClock(1_000L)
-        fixture.register(behavior = SimpleHealthBehavior(25.0))
-        fixture.register(MATURING_KIND, MaturingHealthBehavior(20.0, 100.0, 1_000L, clock))
+        val clock = Clock.fixed(Instant.ofEpochMilli(Long.MAX_VALUE), ZoneOffset.UTC)
+        fixture.register(maxHealth = 25.0)
+        fixture.register(MATURING_KIND, initializers = listOf(MaturingInitializer(1_000L, 5.0, clock)))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.place(SECOND_POSITION, MATURING_KIND))
+        fixture.chunk().resetDirty()
 
-        clock.timeMillis = 1_500L
-
-        assertEquals(25.0, fixture.module.health.getCurrentMaxHealth(WORLD, POSITION.x, POSITION.y, POSITION.z))
-        assertEquals(60.0, fixture.module.health.getCurrentMaxHealth(WORLD, SECOND_POSITION.x, SECOND_POSITION.y, SECOND_POSITION.z))
+        assertEquals(25.0, fixture.health().maxHealth)
+        assertEquals(100.0, fixture.health(SECOND_POSITION).maxHealth)
+        assertEquals(100.0, fixture.health(SECOND_POSITION).health)
+        assertFalse(fixture.chunk().isDirty)
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 5.0))
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 10.0, SECOND_POSITION))
         assertEquals(20.0, fixture.health().health)
         assertEquals(50.0, fixture.health(SECOND_POSITION).health)
+
+        assertTrue(fixture.handle(SECOND_POSITION).editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
+        fixture.chunk().resetDirty()
+        assertEquals(50.0, fixture.health(SECOND_POSITION).health)
+        assertEquals(100.0, fixture.health(SECOND_POSITION).maxHealth)
+        assertFalse(fixture.chunk().isDirty)
+        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 10.0, SECOND_POSITION))
+        assertEquals(40.0, fixture.health(SECOND_POSITION).health)
     }
 
     @Test
@@ -706,25 +702,39 @@ class CitadelModuleTest {
     @Test
     fun `save and reload preserve type damage and maturation without another placement`() {
         val fixture = Fixture()
-        val startedAt = 1_793_204_123_456L
-        val clock = MutableClock(startedAt)
-        fixture.register(behavior = MaturingHealthBehavior(20.0, 100.0, 1_000L, clock))
+        val startedAt = Long.MAX_VALUE
+        val clock = Clock.fixed(Instant.ofEpochMilli(startedAt), ZoneOffset.UTC)
+        fixture.register(initializers = listOf(MaturingInitializer(1_000L, 5.0, clock)))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 15.0))
         val oldHandle = fixture.handle()
 
         fixture.manager.unloadChunk(WORLD, 0, 0).join()
-        clock.timeMillis = startedAt + 500L
         fixture.load()
 
         val restored = fixture.handle()
         assertFalse(oldHandle.isCurrent)
         assertEquals(DEFAULT_KIND, restored.getComponent(CitadelKind::class.java)?.definitionKey)
-        assertEquals(startedAt, restored.getComponent(Maturing::class.java)?.startedAtMillis)
-        assertEquals(5.0, fixture.health().health)
-        assertEquals(15.0, fixture.module.health.getCurrentHealth(WORLD, POSITION.x, POSITION.y, POSITION.z))
-        assertEquals(60.0, fixture.health().maxHealth)
+        val maturing = assertNotNull(restored.getComponent(Maturing::class.java))
+        assertEquals(startedAt, maturing.startedAtMillis)
+        assertEquals(1_000L, maturing.maturationDurationMillis)
+        assertEquals(5.0, maturing.initialDamageMultiplier)
+        assertEquals(25.0, fixture.health().health)
+        assertEquals(100.0, fixture.health().maxHealth)
+        assertFalse(fixture.chunk().isDirty)
+        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 1.0))
+        assertEquals(20.0, fixture.health().health)
+
+        assertTrue(restored.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
+        fixture.manager.unloadChunk(WORLD, 0, 0).join()
+        fixture.load()
+
+        assertEquals(20.0, fixture.health().health)
+        assertEquals(100.0, fixture.health().maxHealth)
+        assertFalse(fixture.chunk().isDirty)
+        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 5.0))
+        assertEquals(15.0, fixture.health().health)
         assertEquals(listOf(POSITION), fixture.placements)
         assertTrue(fixture.chunk().isDirty)
     }
@@ -780,11 +790,12 @@ class CitadelModuleTest {
 
         fun register(
             key: Key = DEFAULT_KIND,
-            behavior: HealthBehavior? = SimpleHealthBehavior(100.0),
+            maxHealth: Double? = 100.0,
             policy: DamagePolicy = DamagePolicy.ALLOW,
             initializers: List<CitadelInitializer> = emptyList()
         ) {
-            module.registerDefinition(CitadelDefinition(key, initializers), policy, behavior)
+            val prepared = initializers + listOfNotNull(maxHealth?.let(::HealthInitializer))
+            module.registerDefinition(CitadelDefinition(key, prepared), policy)
         }
 
         fun load() { manager.loadChunk(WORLD, 0, 0).join() }
@@ -846,13 +857,6 @@ class CitadelModuleTest {
             persisted[snapshot.location] = ChunkCordSnapshot.fromByteArray(snapshot.toByteArray())
             return CompletableFuture.completedFuture(null)
         }
-    }
-
-    private class MutableClock(var timeMillis: Long) : Clock() {
-        override fun getZone(): ZoneId = ZoneOffset.UTC
-        override fun withZone(zone: ZoneId): Clock = Clock.fixed(instant(), zone)
-        override fun instant(): Instant = Instant.ofEpochMilli(timeMillis)
-        override fun millis(): Long = timeMillis
     }
 
     private companion object {

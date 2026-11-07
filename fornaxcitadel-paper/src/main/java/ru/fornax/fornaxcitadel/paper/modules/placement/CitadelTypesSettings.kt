@@ -2,9 +2,6 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import org.bukkit.configuration.ConfigurationSection
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
-import ru.fornax.fornaxcitadel.modules.health.MaturingHealthBehavior
-import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
 import java.math.BigDecimal
 import java.util.Locale
 
@@ -23,17 +20,17 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
     companion object {
         val DEFAULT_TYPES: Map<String, CitadelTypeSettings> = linkedMapOf(
             "reinforced_light" to CitadelTypeSettings(Key("minecraft", "copper_ingot"),
-                health = HealthBehaviorSettings.Simple(10.0)),
+                health = HealthSettings(10.0)),
             "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"),
-                health = HealthBehaviorSettings.Simple(20.0)),
+                health = HealthSettings(20.0)),
             "reinforced_heavy" to CitadelTypeSettings(Key("minecraft", "diamond"),
-                health = HealthBehaviorSettings.Simple(30.0)),
+                health = HealthSettings(30.0)),
             "maturing_fast" to CitadelTypeSettings(Key("minecraft", "amethyst_shard"),
-                health = HealthBehaviorSettings.Maturing(10.0, 20.0, 300)),
+                health = HealthSettings(20.0), maturing = MaturingSettings(300, 2.0)),
             "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"),
-                health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)),
+                health = HealthSettings(40.0), maturing = MaturingSettings(600, 4.0)),
             "maturing_strong" to CitadelTypeSettings(Key("minecraft", "netherite_ingot"),
-                health = HealthBehaviorSettings.Maturing(20.0, 80.0, 1800)),
+                health = HealthSettings(80.0), maturing = MaturingSettings(1800, 4.0)),
             "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
         )
         private val ID_PATTERN = Regex("[a-z0-9_-]+")
@@ -56,7 +53,7 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 
         private fun readType(value: Any?, path: String): CitadelTypeSettings {
             val values = readMapping(value, path)
-            val unknown = values.keys.firstOrNull { it !in setOf("item", "damage-policy", "health") }
+            val unknown = values.keys.firstOrNull { it !in setOf("item", "damage-policy", "health", "maturing") }
             require(unknown == null) { "Unknown configuration field $path.$unknown" }
             val item = readItem(values["item"], "$path.item")
             val rawPolicy = if (values.containsKey("damage-policy")) values["damage-policy"] else "allow"
@@ -70,7 +67,9 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
             require(policy != CitadelDamagePolicy.ALLOW || health != null) {
                 "$path.health is required for damage-policy allow"
             }
-            return CitadelTypeSettings(item, policy, health)
+            val maturing = if (values.containsKey("maturing")) readMaturing(values["maturing"], "$path.maturing") else null
+            require(maturing == null || health != null) { "$path.maturing requires $path.health" }
+            return CitadelTypeSettings(item, policy, health, maturing)
         }
 
         private fun readItem(value: Any?, path: String): Key {
@@ -87,21 +86,20 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
             return Key(namespace, item)
         }
 
-        private fun readHealth(value: Any?, path: String): HealthBehaviorSettings {
+        private fun readHealth(value: Any?, path: String): HealthSettings {
             val values = readMapping(value, path)
-            val behavior = values["behavior"]
-            require(behavior is String) { "$path.behavior must be simple or maturing" }
-            return when (behavior.lowercase(Locale.ROOT)) {
-                "simple" -> HealthBehaviorSettings.Simple(readPositive(values["max"], "$path.max"))
-                "maturing" -> {
-                    val initial = readPositive(values["initial"], "$path.initial")
-                    val mature = readPositive(values["mature"], "$path.mature")
-                    require(mature >= initial) { "$path.mature must be at least $path.initial" }
-                    HealthBehaviorSettings.Maturing(initial, mature,
-                        readDuration(values["duration-seconds"], "$path.duration-seconds"))
-                }
-                else -> throw IllegalArgumentException("Unknown $path.behavior: $behavior; expected simple or maturing")
-            }
+            val unknown = values.keys.firstOrNull { it != "max" }
+            require(unknown == null) { "Unknown configuration field $path.$unknown" }
+            return HealthSettings(readPositive(values["max"], "$path.max"))
+        }
+
+        private fun readMaturing(value: Any?, path: String): MaturingSettings {
+            val values = readMapping(value, path)
+            val unknown = values.keys.firstOrNull { it !in setOf("duration-seconds", "initial-damage-multiplier") }
+            require(unknown == null) { "Unknown configuration field $path.$unknown" }
+            val multiplier = readPositive(values["initial-damage-multiplier"], "$path.initial-damage-multiplier")
+            require(multiplier >= 1.0) { "$path.initial-damage-multiplier must be at least 1" }
+            return MaturingSettings(readDuration(values["duration-seconds"], "$path.duration-seconds"), multiplier)
         }
 
         private fun readMapping(value: Any?, path: String): Map<String, Any?> {
@@ -143,7 +141,8 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 data class CitadelTypeSettings(
     val item: Key,
     val damagePolicy: CitadelDamagePolicy = CitadelDamagePolicy.ALLOW,
-    val health: HealthBehaviorSettings? = null
+    val health: HealthSettings? = null,
+    val maturing: MaturingSettings? = null
 ) {
     init {
         require(item.namespace.isNotEmpty() && item.key.isNotEmpty()) {
@@ -152,32 +151,25 @@ data class CitadelTypeSettings(
         require(damagePolicy != CitadelDamagePolicy.ALLOW || health != null) {
             "Health settings are required for damage-policy allow"
         }
+        require(maturing == null || health != null) { "Maturing settings require health" }
     }
 }
 
 enum class CitadelDamagePolicy { ALLOW, DENY }
 
-sealed interface HealthBehaviorSettings {
-    fun createBehavior(): HealthBehavior
-
-    data class Simple(val max: Double) : HealthBehaviorSettings {
-        init {
-            require(max.isFinite() && max > 0.0) { "health.max must be positive and finite" }
-        }
-
-        override fun createBehavior(): HealthBehavior = SimpleHealthBehavior(max)
+data class HealthSettings(val max: Double) {
+    init {
+        require(max.isFinite() && max > 0.0) { "health.max must be positive and finite" }
     }
+}
 
-    data class Maturing(val initial: Double, val mature: Double, val durationSeconds: Long) : HealthBehaviorSettings {
-        init {
-            require(initial.isFinite() && initial > 0.0) { "health.initial must be positive and finite" }
-            require(mature.isFinite() && mature >= initial) { "health.mature must be finite and at least health.initial" }
-            require(durationSeconds > 0 && durationSeconds <= Long.MAX_VALUE / 1000) {
-                "health.duration-seconds must be positive and fit in milliseconds without overflow"
-            }
+data class MaturingSettings(val durationSeconds: Long, val initialDamageMultiplier: Double) {
+    init {
+        require(durationSeconds > 0 && durationSeconds <= Long.MAX_VALUE / 1000) {
+            "maturing.duration-seconds must be positive and fit in milliseconds without overflow"
         }
-
-        override fun createBehavior(): HealthBehavior =
-            MaturingHealthBehavior(initial, mature, Math.multiplyExact(durationSeconds, 1000))
+        require(initialDamageMultiplier.isFinite() && initialDamageMultiplier >= 1.0) {
+            "maturing.initial-damage-multiplier must be finite and at least 1"
+        }
     }
 }

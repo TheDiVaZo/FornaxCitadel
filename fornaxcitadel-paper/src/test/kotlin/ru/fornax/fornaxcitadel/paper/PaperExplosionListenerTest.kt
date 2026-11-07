@@ -26,6 +26,7 @@ import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
@@ -44,6 +45,37 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PaperExplosionListenerTest {
+    @Test
+    fun `entity and block explosion damage receive maturation exactly once in core`() {
+        for (entityExplosion in listOf(true, false)) {
+            PaperTestFixture(explosionPowers = ExplosionPowerSettings(
+                defaultEntityPower = 0.5f, defaultBlockPower = 0.5f, blockPowers = emptyMap()
+            )).use { fixture ->
+                fixture.place(PaperCitadelTypes.MATURING)
+                val target = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
+                assertTrue(target.editComponent(Maturing::class.java) { it.startedAtMillis = Long.MAX_VALUE })
+                val sourceDamage = mutableListOf<Double>()
+                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                    override val actionClass = DamageAction::class.java
+                    override fun validate(action: DamageAction): ActionValidator.Result {
+                        sourceDamage.add(action.damage)
+                        return ActionValidator.Result.Neutral
+                    }
+                })
+                if (entityExplosion) {
+                    dispatch(fixture.explosionListener, fixture.entityExplosion(fixture.block()), fixture.plugin)
+                } else {
+                    dispatch(fixture.explosionListener, fixture.blockExplosion(fixture.block()), fixture.plugin)
+                }
+
+                assertEquals(listOf(5.0), sourceDamage)
+                assertEquals(20.0, fixture.health())
+                assertEquals(40.0, target.getComponent(Health::class.java)?.maxHealth)
+                assertEquals(0, fixture.vanillaBlockChanges)
+            }
+        }
+    }
+
     @Test
     fun `one damage validator rejects player and explosion damage across health service reenable`() {
         val fixture = PaperTestFixture(permissions = true)

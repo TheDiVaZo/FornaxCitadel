@@ -5,7 +5,7 @@ import org.bukkit.Location
 import org.bukkit.World
 import org.bukkit.entity.Player
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
-import ru.fornax.fornaxcitadel.core.citadel.CitadelDraft
+import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
@@ -16,7 +16,7 @@ import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSubscription
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.HealthBehavior
+import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
@@ -77,16 +77,14 @@ class PaperCrackHealthObservationSystemTest {
     }
 
     @Test
-    fun `one target health refresh serves the entire audience each observation pass`() {
+    fun `stored health changes are displayed consistently to the entire audience`() {
         Fixture().use { fixture ->
             fixture.observe(fixture.paper.installer)
             fixture.observe(fixture.paper.stranger)
-            val callsBeforeTick = fixture.behavior.updates
-            fixture.behavior.nextHealth = 25.0
+            fixture.health(25.0)
 
             fixture.paper.advanceTicks(1)
 
-            assertEquals(callsBeforeTick + 1, fixture.behavior.updates)
             assertEquals(0.75f, fixture.paper.installer.blockDamagePackets.last().progress)
             assertEquals(0.75f, fixture.paper.stranger.blockDamagePackets.last().progress)
             assertEquals(1, fixture.paper.scheduledTasks.count { !it.cancelled && it.repeating })
@@ -100,8 +98,8 @@ class PaperCrackHealthObservationSystemTest {
     fun `every health bearing type is displayed with an independent negative source id`() {
         Fixture().use { fixture ->
             val protectedType = Key("test", "protected_health")
-            fixture.paper.module.registerDefinition(CitadelDefinition(protectedType, emptyList()),
-                DamagePolicy.DENY, UpdatingHealth(75.0))
+            fixture.paper.module.registerDefinition(CitadelDefinition(protectedType, listOf(initialHealth(75.0))),
+                DamagePolicy.DENY)
             val protected = fixture.create(2, type = protectedType)
             val emptyType = Key("test", "without_health")
             fixture.paper.module.registerDefinition(CitadelDefinition(emptyType, emptyList()), DamagePolicy.ALLOW)
@@ -272,38 +270,38 @@ class PaperCrackHealthObservationSystemTest {
     }
 
     @Test
-    fun `health refresh failure clears existing overlays and successful refresh restores them`() {
+    fun `observing a maturing target reads fixed health without dirtying storage`() {
         Fixture().use { fixture ->
+            val position = fixture.target.position
+            fixture.paper.manager.putComponent(Maturing::class.java, position.world, position.x,
+                position.y, position.z, Maturing(0L, 1L, 4.0))
+            fixture.paper.manager.saveAll().join()
+            val saves = fixture.paper.backend.saves
             fixture.observe(fixture.paper.installer)
             fixture.observe(fixture.paper.stranger)
-            val failure = IllegalStateException("health update failed")
-            fixture.behavior.failure = failure
+            fixture.paper.advanceTicks(40)
+            fixture.paper.manager.saveAll().join()
 
-            fixture.paper.advanceTicks(1)
-
-            assertEquals(listOf(0.5f, 0f), fixture.paper.installer.blockDamagePackets.map { it.progress })
-            assertEquals(listOf(0.5f, 0f), fixture.paper.stranger.blockDamagePackets.map { it.progress })
-            assertEquals(1, fixture.failures.size)
-            assertSame(failure, fixture.failures.single().cause)
-
-            fixture.behavior.failure = null
-            fixture.paper.advanceTicks(1)
-            assertEquals(listOf(0.5f, 0f, 0.5f), fixture.paper.installer.blockDamagePackets.map { it.progress })
-            assertEquals(listOf(0.5f, 0f, 0.5f), fixture.paper.stranger.blockDamagePackets.map { it.progress })
+            assertEquals(saves, fixture.paper.backend.saves)
+            val health = assertNotNull(fixture.target.getComponent(Health::class.java))
+            assertEquals(50.0, health.health)
+            assertEquals(100.0, health.maxHealth)
+            assertTrue(fixture.paper.installer.blockDamagePackets.all { it.progress == 0.5f })
+            assertTrue(fixture.paper.stranger.blockDamagePackets.all { it.progress == 0.5f })
+            assertTrue(fixture.failures.isEmpty())
         }
     }
 
     private class Fixture : AutoCloseable {
         val paper = PaperTestFixture(initializeSystems = false, registerTypes = false)
-        val behavior = UpdatingHealth(50.0)
         private val scheduler = PaperScheduler(paper.plugin)
         val failures = mutableListOf<Exception>()
         val observations = ObservationService<Player>(paper.manager, scheduler, failureHandler = failures::add)
-        val system = CrackHealthObservationSystem(paper.plugin, paper.module.health)
+        val system = CrackHealthObservationSystem(paper.plugin)
         val target: CitadelHandle
 
         init {
-            paper.module.registerDefinition(CitadelDefinition(TYPE, emptyList()), DamagePolicy.ALLOW, behavior)
+            paper.module.registerDefinition(CitadelDefinition(TYPE, listOf(initialHealth(50.0))), DamagePolicy.ALLOW)
             target = create(paper.position.x)
             observations.registerSystem(system)
             observations.enable()
@@ -334,26 +332,6 @@ class PaperCrackHealthObservationSystemTest {
         }
     }
 
-    private class UpdatingHealth(private val initial: Double) : HealthBehavior {
-        var updates = 0
-        var nextHealth: Double? = null
-        var failure: RuntimeException? = null
-
-        override fun initializeHealth(component: Health, draft: CitadelDraft) {
-            component.maxHealth = 100.0
-            component.health = initial
-        }
-
-        override fun updateHealth(component: Health, citadel: CitadelHandle): Boolean {
-            updates++
-            failure?.let { throw it }
-            val replacement = nextHealth ?: return false
-            nextHealth = null
-            component.health = replacement
-            return true
-        }
-    }
-
     private class ReplacementHealth(maximum: Double, current: Double) : Health(maximum, current)
 
     private fun TestBlockDamage.position() = CitadelPosition(checkNotNull(location.world).uid,
@@ -368,5 +346,8 @@ class PaperCrackHealthObservationSystemTest {
 
     private companion object {
         val TYPE = Key("test", "crack_health")
+        fun initialHealth(current: Double) = CitadelInitializer { _, draft ->
+            draft.addComponent(Health::class.java, ReplacementHealth(100.0, current))
+        }
     }
 }

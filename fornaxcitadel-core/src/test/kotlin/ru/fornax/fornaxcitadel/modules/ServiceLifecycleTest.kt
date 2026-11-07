@@ -2,6 +2,7 @@ package ru.fornax.fornaxcitadel.modules
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
+import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
@@ -24,7 +25,7 @@ import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.health.Maturing
-import ru.fornax.fornaxcitadel.modules.health.MaturingHealthBehavior
+import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceService
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
@@ -60,6 +61,9 @@ class ServiceLifecycleTest {
         val citadel = assertNotNull(fixture.find())
         assertEquals(TYPE, citadel.getComponent(CitadelKind::class.java)?.definitionKey)
         assertEquals(1_000L, citadel.getComponent(Maturing::class.java)?.startedAtMillis)
+        assertEquals(10_000L, citadel.getComponent(Maturing::class.java)?.maturationDurationMillis)
+        assertEquals(2.0, citadel.getComponent(Maturing::class.java)?.initialDamageMultiplier)
+        assertEquals(10.0, citadel.getComponent(Health::class.java)?.maxHealth)
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 2.0)))
         assertEquals(8.0, fixture.currentHealth())
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 3.0)))
@@ -158,8 +162,8 @@ class ServiceLifecycleTest {
     fun `root lifecycle preserves definitions and data but discards pending actions`() {
         val fixture = RootFixture()
         val module = fixture.module
-        val definition = CitadelDefinition(TYPE, emptyList())
-        module.registerDefinition(definition, DamagePolicy.ALLOW, behavior())
+        val definition = CitadelDefinition(TYPE, initializers())
+        module.registerDefinition(definition, DamagePolicy.ALLOW)
         fixture.load()
         assertEquals(ActionResult.DENIED, module.actions.execute(placeAction()))
         assertTrue(fixture.scheduler.tasks.isEmpty())
@@ -211,7 +215,7 @@ class ServiceLifecycleTest {
     fun `root queue dispatches actions through existing validators using configured limit`() {
         val fixture = RootFixture(maxActionsPerTick = 1)
         val module = fixture.module
-        module.registerDefinition(CitadelDefinition(TYPE, emptyList()), DamagePolicy.ALLOW, behavior())
+        module.registerDefinition(CitadelDefinition(TYPE, initializers()), DamagePolicy.ALLOW)
         fixture.load()
         module.enable()
         assertEquals(ActionResult.SUCCESS, module.actions.execute(placeAction()))
@@ -291,9 +295,7 @@ class ServiceLifecycleTest {
         fun disable() = services.asReversed().forEach { it.disable() }
 
         fun prepare(policy: DamagePolicy = DamagePolicy.ALLOW) {
-            val behavior = behavior()
-            definitions.register(CitadelDefinition(TYPE, listOf(HealthInitializer(behavior))))
-            health.registerBehavior(TYPE, behavior)
+            definitions.register(CitadelDefinition(TYPE, initializers()))
             health.registerPolicy(TYPE, policy)
             storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0))
         }
@@ -332,8 +334,10 @@ class ServiceLifecycleTest {
         val ACTION_KEYS = listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY)
 
         fun placeAction() = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
-        fun behavior() = MaturingHealthBehavior(10.0, 20.0, 10_000L,
-            Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))
+        fun initializers(): List<CitadelInitializer> = listOf(
+            HealthInitializer(10.0),
+            MaturingInitializer(10_000L, 2.0, Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))
+        )
 
         fun damageProcessor() = object : ActionProcessor<DamageAction>() {
             override val actionClass = DamageAction::class.java

@@ -8,7 +8,6 @@ import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSystem
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationTarget
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 import java.util.UUID
 import java.util.logging.Level
 
@@ -19,10 +18,7 @@ import java.util.logging.Level
  * Unchanged stages are resent on the first observation pass after 20 server ticks; this keeps
  * client animations alive without an additional timer. Larger observation intervals delay it.
  */
-class CrackHealthObservationSystem(
-    private val plugin: Plugin,
-    private val health: HealthService
-) : ObservationSystem<Player> {
+class CrackHealthObservationSystem(private val plugin: Plugin) : ObservationSystem<Player> {
     override val requiredComponents = setOf(Health::class.java)
 
     private val overlays = HashMap<ObservationTarget, MutableMap<UUID, Overlay>>()
@@ -50,13 +46,7 @@ class CrackHealthObservationSystem(
 
     private fun update(citadel: CitadelHandle, target: ObservationTarget, viewers: List<Player>, force: Boolean) {
         checkMainThread()
-        // Refresh once for the complete audience, including time-dependent HealthBehavior.
-        val component = try {
-            health.refreshHealth(citadel)
-        } catch (failure: Exception) {
-            clearTarget(target)
-            throw failure
-        }
+        val component = citadel.getComponent(Health::class.java)
         if (component == null) {
             clearTarget(target)
             return

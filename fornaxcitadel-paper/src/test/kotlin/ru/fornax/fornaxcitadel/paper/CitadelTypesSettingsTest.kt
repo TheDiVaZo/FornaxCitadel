@@ -2,17 +2,15 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.configuration.file.YamlConfiguration
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.health.MaturingHealthBehavior
-import ru.fornax.fornaxcitadel.modules.health.SimpleHealthBehavior
 import ru.fornax.fornaxcitadel.paper.material.BukkitMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthBehaviorSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -28,27 +26,27 @@ class CitadelTypesSettingsTest {
         assertEquals(linkedMapOf(
             "reinforced_light" to CitadelTypeSettings(
                 Key("minecraft", "copper_ingot"),
-                health = HealthBehaviorSettings.Simple(10.0)
+                health = HealthSettings(10.0)
             ),
             "reinforced" to CitadelTypeSettings(
                 Key("minecraft", "iron_ingot"),
-                health = HealthBehaviorSettings.Simple(20.0)
+                health = HealthSettings(20.0)
             ),
             "reinforced_heavy" to CitadelTypeSettings(
                 Key("minecraft", "diamond"),
-                health = HealthBehaviorSettings.Simple(30.0)
+                health = HealthSettings(30.0)
             ),
             "maturing_fast" to CitadelTypeSettings(
                 Key("minecraft", "amethyst_shard"),
-                health = HealthBehaviorSettings.Maturing(10.0, 20.0, 300)
+                health = HealthSettings(20.0), maturing = MaturingSettings(300, 2.0)
             ),
             "maturing" to CitadelTypeSettings(
                 Key("minecraft", "emerald"),
-                health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)
+                health = HealthSettings(40.0), maturing = MaturingSettings(600, 4.0)
             ),
             "maturing_strong" to CitadelTypeSettings(
                 Key("minecraft", "netherite_ingot"),
-                health = HealthBehaviorSettings.Maturing(20.0, 80.0, 1800)
+                health = HealthSettings(80.0), maturing = MaturingSettings(1800, 4.0)
             ),
             "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
         ), types)
@@ -56,20 +54,21 @@ class CitadelTypesSettingsTest {
     }
 
     @Test
-    fun `custom catalog selects health behavior and permits health on an invulnerable type`() {
+    fun `custom catalog separates fixed health from maturation and permits protected health`() {
         val config = yaml("""
             citadel-types:
               copper_wall:
                 item: diamond
-                health: {behavior: simple, max: 35.5}
+                health: {max: 35.5}
               growing-wall:
                 item: minecraft:emerald
                 damage-policy: allow
-                health: {behavior: maturing, initial: 4, mature: 12, duration-seconds: 90}
+                health: {max: 12}
+                maturing: {duration-seconds: 90, initial-damage-multiplier: 3}
               protected_wall:
                 item: custommaterials:wand/defender
                 damage-policy: deny
-                health: {behavior: simple, max: 100}
+                health: {max: 100}
               protected_marker:
                 item: custommaterials:protected_marker
                 damage-policy: deny
@@ -78,22 +77,20 @@ class CitadelTypesSettingsTest {
 
         assertEquals(setOf("copper_wall", "growing-wall", "protected_wall", "protected_marker"), types.keys)
         assertEquals(
-            CitadelTypeSettings(Key("minecraft", "diamond"), health = HealthBehaviorSettings.Simple(35.5)),
+            CitadelTypeSettings(Key("minecraft", "diamond"), health = HealthSettings(35.5)),
             types["copper_wall"])
         assertEquals(
-            CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthBehaviorSettings.Maturing(4.0, 12.0, 90)),
+            CitadelTypeSettings(Key("minecraft", "emerald"), health = HealthSettings(12.0), maturing = MaturingSettings(90, 3.0)),
             types["growing-wall"])
         assertEquals(
             CitadelTypeSettings(
                 Key("custommaterials", "wand/defender"),
-                CitadelDamagePolicy.DENY, HealthBehaviorSettings.Simple(100.0)
+                CitadelDamagePolicy.DENY, HealthSettings(100.0)
             ),
             types["protected_wall"])
         assertEquals(
             CitadelTypeSettings(Key("custommaterials", "protected_marker"), CitadelDamagePolicy.DENY),
             types["protected_marker"])
-        assertIs<SimpleHealthBehavior>(types.getValue("copper_wall").health!!.createBehavior())
-        assertIs<MaturingHealthBehavior>(types.getValue("growing-wall").health!!.createBehavior())
     }
 
     @Test
@@ -102,7 +99,7 @@ class CitadelTypesSettingsTest {
             citadel-types:
               reinforced:
                 item: iron_ingot
-                health: {behavior: simple, max: 20}
+                health: {max: 20}
               bundled_only:
                 item: nether_star
                 damage-policy: deny
@@ -139,7 +136,7 @@ class CitadelTypesSettingsTest {
             citadel-types:
               reinforced:
                 item: iron_ingot
-                health: {behavior: simple, max: 20}
+                health: {max: 20}
         """)
         val invalidItems = listOf(
             null, "", " ", "DIAMOND", "Minecraft:diamond", "minecraft:DIAMOND",
@@ -147,7 +144,7 @@ class CitadelTypesSettingsTest {
             true, 42, listOf("diamond"), mapOf("name" to "diamond")
         )
         for (item in invalidItems) {
-            val config = yaml("citadel-types: {reinforced: {health: {behavior: simple, max: 20}}}").apply {
+            val config = yaml("citadel-types: {reinforced: {health: {max: 20}}}").apply {
                 set("citadel-types.reinforced.item", item)
             }
             for (withDefaults in listOf(false, true)) {
@@ -184,14 +181,14 @@ class CitadelTypesSettingsTest {
             CitadelTypesSettings(
                 mapOf(
                     "first" to CitadelTypeSettings(item, CitadelDamagePolicy.DENY),
-                    "second" to CitadelTypeSettings(item, health = HealthBehaviorSettings.Simple(20.0))
+                    "second" to CitadelTypeSettings(item, health = HealthSettings(20.0))
                 )
             )
         }
     }
 
     @Test
-    fun `invalid structures identifiers and behavior choices report their configuration path`() {
+    fun `invalid structures identifiers and obsolete fields report their configuration path`() {
         val invalid = listOf(
             "citadel-types: []" to "citadel-types",
             "citadel-types: {bad: 123}" to "citadel-types.bad",
@@ -201,8 +198,11 @@ class CitadelTypesSettingsTest {
             "citadel-types: {bad: {item: diamond, damage-policy: unknown}}" to "citadel-types.bad.damage-policy",
             "citadel-types: {bad: {item: diamond}}" to "citadel-types.bad.health",
             "citadel-types: {bad: {item: diamond, health: []}}" to "citadel-types.bad.health",
-            "citadel-types: {bad: {item: diamond, health: {max: 10}}}" to "citadel-types.bad.health.behavior",
-            "citadel-types: {bad: {item: diamond, health: {behavior: other, max: 10}}}" to "citadel-types.bad.health.behavior"
+            "citadel-types: {bad: {item: diamond, health: {behavior: simple, max: 10}}}" to "citadel-types.bad.health.behavior",
+            "citadel-types: {bad: {item: diamond, health: {initial: 2, mature: 10}}}" to "citadel-types.bad.health.initial",
+            "citadel-types: {bad: {item: diamond, health: {max: 10}, maturing: []}}" to "citadel-types.bad.maturing",
+            "citadel-types: {bad: {item: diamond, health: {max: 10}, maturing: {unknown: 1}}}" to "citadel-types.bad.maturing.unknown",
+            "citadel-types: {bad: {item: diamond, damage-policy: deny, maturing: {duration-seconds: 10, initial-damage-multiplier: 2}}}" to "citadel-types.bad.maturing"
         )
         for ((source, path) in invalid) {
             val exception = assertFailsWith<IllegalArgumentException>(source) { CitadelTypesSettings.read(yaml(source)) }
@@ -218,7 +218,7 @@ class CitadelTypesSettingsTest {
                   protected_wall:
                     item: diamond
                     $field: unbreakable
-                    health: {behavior: simple, max: 100}
+                    health: {max: 100}
             """)
             val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(config) }
             assertTrue(exception.message.orEmpty().contains("citadel-types.protected_wall.$field"), exception.message)
@@ -237,15 +237,16 @@ class CitadelTypesSettingsTest {
             "" to "max"
         )
         for ((properties, field) in cases) {
-            val config = yaml("citadel-types: {bad: {item: diamond, health: {behavior: simple, $properties}}}")
+            val config = yaml("citadel-types: {bad: {item: diamond, health: {$properties}}}")
             val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(config) }
             assertTrue(exception.message.orEmpty().contains("citadel-types.bad.health.$field"), exception.message)
         }
         val maturingCases = listOf(
-            "initial" to 0,
-            "initial" to Double.NaN,
-            "mature" to 1,
-            "mature" to Double.POSITIVE_INFINITY,
+            "initial-damage-multiplier" to 0,
+            "initial-damage-multiplier" to 0.5,
+            "initial-damage-multiplier" to Double.NaN,
+            "initial-damage-multiplier" to Double.POSITIVE_INFINITY,
+            "initial-damage-multiplier" to "4",
             "duration-seconds" to 0,
             "duration-seconds" to -1,
             "duration-seconds" to 0.5,
@@ -255,13 +256,12 @@ class CitadelTypesSettingsTest {
             "duration-seconds" to Long.MAX_VALUE / 1000 + 1
         )
         for ((field, value) in maturingCases) {
-            val config = yaml("citadel-types: {bad: {item: diamond, health: {behavior: maturing, initial: 2, mature: 4, duration-seconds: 10}}}")
-            config.set("citadel-types.bad.health.$field", value)
+            val config = yaml("citadel-types: {bad: {item: diamond, health: {max: 4}, maturing: {duration-seconds: 10, initial-damage-multiplier: 2}}}")
+            config.set("citadel-types.bad.maturing.$field", value)
             val exception = assertFailsWith<IllegalArgumentException>("$field=$value") { CitadelTypesSettings.read(config) }
-            assertTrue(exception.message.orEmpty().contains("citadel-types.bad.health.$field"), exception.message)
+            assertTrue(exception.message.orEmpty().contains("citadel-types.bad.maturing.$field"), exception.message)
         }
-        val maximum = HealthBehaviorSettings.Maturing(1.0, 1.0, Long.MAX_VALUE / 1000)
-        assertIs<MaturingHealthBehavior>(maximum.createBehavior())
+        assertEquals(Long.MAX_VALUE / 1000, MaturingSettings(Long.MAX_VALUE / 1000, 1.0).durationSeconds)
     }
 
     @Test
@@ -274,10 +274,14 @@ class CitadelTypesSettingsTest {
                 CitadelDamagePolicy.DENY
             )
         }
-        assertFailsWith<IllegalArgumentException> { HealthBehaviorSettings.Simple(Double.NaN) }
-        assertFailsWith<IllegalArgumentException> { HealthBehaviorSettings.Simple(0.0) }
-        assertFailsWith<IllegalArgumentException> { HealthBehaviorSettings.Maturing(2.0, 1.0, 10) }
-        assertFailsWith<IllegalArgumentException> { HealthBehaviorSettings.Maturing(1.0, 2.0, Long.MAX_VALUE) }
+        assertFailsWith<IllegalArgumentException> { HealthSettings(Double.NaN) }
+        assertFailsWith<IllegalArgumentException> { HealthSettings(0.0) }
+        assertFailsWith<IllegalArgumentException> { MaturingSettings(10, 0.5) }
+        assertFailsWith<IllegalArgumentException> { MaturingSettings(Long.MAX_VALUE, 2.0) }
+        assertFailsWith<IllegalArgumentException> {
+            CitadelTypeSettings(Key("minecraft", "diamond"), CitadelDamagePolicy.DENY,
+                maturing = MaturingSettings(10, 2.0))
+        }
         assertFailsWith<IllegalArgumentException> {
             CitadelTypesSettings(
                 mapOf(

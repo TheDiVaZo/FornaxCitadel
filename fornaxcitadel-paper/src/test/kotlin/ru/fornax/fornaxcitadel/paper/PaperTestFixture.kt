@@ -45,6 +45,7 @@ import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
@@ -60,7 +61,8 @@ import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthBehaviorSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
@@ -89,11 +91,11 @@ internal class PaperTestFixture(
         linkedMapOf(
             "reinforced" to CitadelTypeSettings(
                 Key("minecraft", "iron_ingot"),
-                health = HealthBehaviorSettings.Simple(100.0)
+                health = HealthSettings(100.0)
             ),
             "maturing" to CitadelTypeSettings(
                 Key("minecraft", "emerald"),
-                health = HealthBehaviorSettings.Maturing(10.0, 40.0, 600)
+                health = HealthSettings(40.0), maturing = MaturingSettings(600, 4.0)
             ),
             "invulnerable" to CitadelTypeSettings(
                 Key("minecraft", "nether_star"),
@@ -242,8 +244,8 @@ internal class PaperTestFixture(
                 citadelTypes.register(module)
             } else {
                 val reinforced = citadelSettings.types.getValue("reinforced")
-                module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, emptyList()),
-                    damagePolicy, reinforced.health?.createBehavior())
+                val initializers = listOfNotNull(reinforced.health?.let { HealthInitializer(it.max) })
+                module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, initializers), damagePolicy)
                 val remaining = citadelSettings.types.filterKeys { it != "reinforced" }
                 if (remaining.isNotEmpty()) PaperCitadelTypes(CitadelTypesSettings(remaining)).register(module)
             }
@@ -481,9 +483,12 @@ internal class TestItemStack(private val material: Material, amount: Int) : Item
 
 internal class MemoryBackend : DBStorage {
     private val snapshots = mutableMapOf<WXZCord, ByteArray>()
+    var saves = 0
+        private set
     override fun loadChunk(location: WXZCord): CompletableFuture<ChunkCordSnapshot?> =
         CompletableFuture.completedFuture(snapshots[location]?.let(ChunkCordSnapshot::fromByteArray))
     override fun saveChunk(snapshot: ChunkCordSnapshot): CompletableFuture<Void> {
+        saves++
         snapshots[snapshot.location] = snapshot.toByteArray()
         return CompletableFuture.completedFuture(null)
     }

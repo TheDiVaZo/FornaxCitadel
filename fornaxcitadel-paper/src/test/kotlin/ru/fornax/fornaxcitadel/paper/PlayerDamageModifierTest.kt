@@ -3,11 +3,16 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.GameMode
 import org.bukkit.entity.Player
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier.Priority
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.CreativeModeDamageModifier
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.NerfingNewcomersModifier
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -109,6 +114,25 @@ class PlayerDamageModifierTest {
 
             assertEquals(expected, modifier.getDamage(fixture.installer.player, target, 1.0),
                 "age=$ageDays days, play=$playTicks ticks")
+        }
+    }
+
+    @Test
+    fun `newcomer damage is rounded before the common maturation multiplier`() {
+        PaperTestFixture().use { fixture ->
+            fixture.place(PaperCitadelTypes.MATURING)
+            val target = assertNotNull(fixture.manager.findCitadel(
+                fixture.worldId, fixture.position.x, fixture.position.y, fixture.position.z))
+            assertTrue(target.editComponent(Maturing::class.java) { it.startedAtMillis = Long.MAX_VALUE })
+            fixture.stranger.firstPlayed = CLOCK.millis()
+            fixture.stranger.playTimeTicks = 333
+            fixture.playerDamage.register(NerfingNewcomersModifier(Duration.ofDays(10), 1000L, CLOCK))
+
+            val damage = fixture.playerDamage.getDamage(target, fixture.stranger.player)
+            assertEquals(0.33, damage)
+            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+                DamageAction(ActionContext.SYSTEM, target.position, damage)))
+            assertEquals(38.68, fixture.health(), 1e-12)
         }
     }
 

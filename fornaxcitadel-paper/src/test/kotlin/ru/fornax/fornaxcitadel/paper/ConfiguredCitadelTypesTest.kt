@@ -24,7 +24,8 @@ import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthBehaviorSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -34,7 +35,33 @@ import kotlin.test.assertTrue
 
 class ConfiguredCitadelTypesTest {
     @Test
-    fun `custom identifiers register independent simple and maturing health behaviors`() {
+    fun `info reads a maturing citadel without changing health or dirtying storage`() {
+        PaperTestFixture(permissions = true, citadelSettings = CUSTOM_TYPES).use { fixture ->
+            fixture.installer.permissions.add("fornaxcitadel.info")
+            fixture.installer.target = fixture.block()
+            fixture.place(assertNotNull(fixture.citadelTypes.find("growing_wall")))
+            val target = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
+            assertTrue(target.editComponent(Health::class.java) { it.health = 24.0 })
+            assertTrue(target.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
+            fixture.manager.saveAll().join()
+            val saves = fixture.backend.saves
+            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
+                fixture.materials, fixture.citadelTypes) {}
+
+            repeat(3) { commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("info")) }
+            fixture.manager.saveAll().join()
+
+            assertEquals(saves, fixture.backend.saves)
+            assertEquals(24.0, target.getComponent(Health::class.java)?.health)
+            assertEquals(48.0, target.getComponent(Health::class.java)?.maxHealth)
+            val messages = fixture.installer.messages.filterIsInstance<Component>()
+                .map(PlainTextComponentSerializer.plainText()::serialize)
+            assertEquals(3, messages.count { it.contains("24.0 / 48.0") })
+        }
+    }
+
+    @Test
+    fun `custom identifiers register fixed health and optional maturation independently`() {
         val fixture = PaperTestFixture(permissions = true, citadelSettings = CUSTOM_TYPES)
         assertEquals(CUSTOM_TYPES.types.keys.toList(), fixture.citadelTypes.names)
         assertNull(fixture.citadelTypes.find("reinforced"))
@@ -52,11 +79,13 @@ class ConfiguredCitadelTypesTest {
         assertNull(handles[0].getComponent(Maturing::class.java))
         assertNull(handles[1].getComponent(Maturing::class.java))
         val growing = handles[2]
-        assertEquals(6.0, growing.getComponent(Health::class.java)?.health)
-        assertNotNull(growing.getComponent(Maturing::class.java))
+        assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
+        val maturing = assertNotNull(growing.getComponent(Maturing::class.java))
+        assertEquals(30_000L, maturing.maturationDurationMillis)
+        assertEquals(8.0, maturing.initialDamageMultiplier)
         assertTrue(growing.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
-        assertEquals(48.0, fixture.module.health.getCurrentMaxHealth(fixture.worldId, 2, 64, 2))
-        assertEquals(48.0, fixture.module.health.getCurrentHealth(fixture.worldId, 2, 64, 2))
+        assertEquals(48.0, growing.getComponent(Health::class.java)?.maxHealth)
+        assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
     }
 
     @Test
@@ -144,7 +173,6 @@ class ConfiguredCitadelTypesTest {
                   diamond_wall:
                     item: diamond
                     health:
-                      behavior: simple
                       max: 37.0
             """.trimIndent())
         }
@@ -173,7 +201,6 @@ class ConfiguredCitadelTypesTest {
                   steel_guard:
                     item: thirdparty:steel_plate
                     health:
-                      behavior: simple
                       max: 29.0
             """.trimIndent())
         }
@@ -202,7 +229,7 @@ class ConfiguredCitadelTypesTest {
         val settings = CitadelTypesSettings(
             mapOf(
                 "steel_guard" to
-                        CitadelTypeSettings(itemKey, health = HealthBehaviorSettings.Simple(29.0))
+                        CitadelTypeSettings(itemKey, health = HealthSettings(29.0))
             )
         )
         val fixture = PaperTestFixture(permissions = true, citadelSettings = settings)
@@ -244,7 +271,7 @@ class ConfiguredCitadelTypesTest {
                 citadel-types:
                   steel_guard:
                     item: thirdparty:steel_plate
-                    health: {behavior: simple, max: 29.0}
+                    health: {max: 29.0}
             """.trimIndent())
         }
         val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
@@ -283,15 +310,15 @@ class ConfiguredCitadelTypesTest {
             linkedMapOf(
                 "clay_guard" to CitadelTypeSettings(
                     Key("minecraft", "clay_ball"),
-                    health = HealthBehaviorSettings.Simple(13.0)
+                    health = HealthSettings(13.0)
                 ),
                 "titanium" to CitadelTypeSettings(
                     Key("minecraft", "iron_ingot"),
-                    health = HealthBehaviorSettings.Simple(73.0)
+                    health = HealthSettings(73.0)
                 ),
                 "growing_wall" to CitadelTypeSettings(
                     Key("minecraft", "emerald"),
-                    health = HealthBehaviorSettings.Maturing(6.0, 48.0, 30)
+                    health = HealthSettings(48.0), maturing = MaturingSettings(30, 8.0)
                 ),
                 "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
             )

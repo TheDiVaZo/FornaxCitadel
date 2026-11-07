@@ -7,7 +7,6 @@ import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthBehaviorSettings
 import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,7 +18,7 @@ import kotlin.test.assertTrue
 
 class PaperConfigurationTest {
     @Test
-    fun `shipped config registers every configured definition with its intended health behavior`() {
+    fun `shipped config registers fixed health and independent maturation settings`() {
         val settings = shippedSettings()
         val fixture = PaperTestFixture(load = false, registerTypes = false, citadelSettings = settings.citadelTypes)
         fixture.citadelTypes.register(fixture.module)
@@ -34,16 +33,15 @@ class PaperConfigurationTest {
 
         for ((name, type) in settings.citadelTypes.types) {
             val handle = handles.getValue(name)
-            when (val health = type.health) {
-                is HealthBehaviorSettings.Simple -> {
-                    assertEquals(health.max, handle.getComponent(Health::class.java)?.health)
-                    assertNull(handle.getComponent(Maturing::class.java))
-                }
-                is HealthBehaviorSettings.Maturing -> {
-                    assertEquals(health.initial, handle.getComponent(Health::class.java)?.health)
-                    assertNotNull(handle.getComponent(Maturing::class.java))
-                }
-                null -> assertNull(handle.getComponent(Health::class.java))
+            assertEquals(type.health?.max, handle.getComponent(Health::class.java)?.health)
+            assertEquals(type.health?.max, handle.getComponent(Health::class.java)?.maxHealth)
+            val maturing = handle.getComponent(Maturing::class.java)
+            if (type.maturing == null) {
+                assertNull(maturing)
+            } else {
+                assertNotNull(maturing)
+                assertEquals(type.maturing.durationSeconds * 1000, maturing.maturationDurationMillis)
+                assertEquals(type.maturing.initialDamageMultiplier, maturing.initialDamageMultiplier)
             }
         }
     }

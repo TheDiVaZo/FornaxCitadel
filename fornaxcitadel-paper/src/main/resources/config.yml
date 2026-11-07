@@ -56,43 +56,42 @@ explosions:
 # Materials are resolved on use; providers may register after FornaxCitadel enables.
 # damage-policy defaults to allow; deny blocks ordinary damage from every source.
 # Authorized creative destruction and administrative removal can still remove these types.
+# Maximum health is fixed; maturing amplifies ordinary damage from every source.
+# Maturation settings are stored at placement; config changes affect newly placed citadels.
 citadel-types:
   reinforced_light:
     item: minecraft:copper_ingot
     health:
-      behavior: simple
       max: 10.0
   reinforced:
     item: minecraft:iron_ingot
     health:
-      behavior: simple
       max: 20.0
   reinforced_heavy:
     item: minecraft:diamond
     health:
-      behavior: simple
       max: 30.0
   maturing_fast:
     item: minecraft:amethyst_shard
     health:
-      behavior: maturing
-      initial: 10.0
-      mature: 20.0
+      max: 20.0
+    maturing:
       duration-seconds: 300
+      initial-damage-multiplier: 2.0
   maturing:
     item: minecraft:emerald
     health:
-      behavior: maturing
-      initial: 10.0
-      mature: 40.0
+      max: 40.0
+    maturing:
       duration-seconds: 600
+      initial-damage-multiplier: 4.0
   maturing_strong:
     item: minecraft:netherite_ingot
     health:
-      behavior: maturing
-      initial: 20.0
-      mature: 80.0
+      max: 80.0
+    maturing:
       duration-seconds: 1800
+      initial-damage-multiplier: 4.0
   invulnerable:
     item: minecraft:nether_star
     # Invulnerable types require administrator permission to install.

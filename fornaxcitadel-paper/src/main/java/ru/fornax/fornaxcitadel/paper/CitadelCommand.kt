@@ -15,6 +15,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
@@ -157,12 +158,11 @@ class CitadelCommand(
                 val type = kind?.let(citadelTypes::name) ?: kind?.asString()
                     ?: messages.plainText("commands.info.unknown-type")
                 sender.message("commands.info.type", "type" to type)
-                val health = module.health.getCurrentHealth(position.world, position.x, position.y, position.z)
-                val maximum = module.health.getCurrentMaxHealth(position.world, position.x, position.y, position.z)
-                if (health != null && maximum != null) {
+                val health = citadel.getComponent(Health::class.java)
+                if (health != null) {
                     sender.message("commands.info.health",
-                        "health" to String.format(Locale.ROOT, "%.1f", health),
-                        "maximum" to String.format(Locale.ROOT, "%.1f", maximum))
+                        "health" to String.format(Locale.ROOT, "%.1f", health.health),
+                        "maximum" to String.format(Locale.ROOT, "%.1f", health.maxHealth))
                 }
                 if (kind != null && citadelTypes.isInvulnerable(kind)) sender.message("commands.info.invulnerable")
             }

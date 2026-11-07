@@ -25,14 +25,16 @@ import kotlin.test.assertNotNull
 internal class HealthFixture(
     startedAtMillis: Long? = 1_000L,
     createInitial: Boolean = true,
-    loaded: Boolean = true
+    loaded: Boolean = true,
+    val clock: MutableHealthClock = MutableHealthClock(1_000L),
+    destructionPolicy: DamagePolicy = DamagePolicy.DENY
 ) {
     val types = TypeManager()
     val storage = MemoryStorage(if (loaded) ChunkCord(WXZCord(WORLD, 0, 0)) else null)
     val manager = ComponentManager(storage, types)
     val notifications = CitadelLifecycleNotifications()
     val actions = ActionManager(manager)
-    val service = HealthService(actions, RemoveService(actions, notifications))
+    val service = HealthService(actions, RemoveService(actions, notifications), destructionPolicy, clock)
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)
     val citadel: CitadelHandle get() = reference()
 
@@ -49,10 +51,20 @@ internal class HealthFixture(
             addComponent(CitadelKind::class.java, CitadelKind(definitionKey))
         }
 
-    fun create(x: Int = 0, health: Health? = null, startedAtMillis: Long? = null, definitionKey: Key = TYPE): CitadelHandle {
+    fun create(
+        x: Int = 0,
+        health: Health? = null,
+        startedAtMillis: Long? = null,
+        definitionKey: Key = TYPE,
+        maturationDurationMillis: Long = 1_000L,
+        initialDamageMultiplier: Double = 1.0
+    ): CitadelHandle {
         val draft = draft(x, definitionKey)
         if (health != null) draft.addComponent(Health::class.java, health)
-        if (startedAtMillis != null) draft.addComponent(Maturing::class.java, Maturing(startedAtMillis))
+        if (startedAtMillis != null) {
+            draft.addComponent(Maturing::class.java,
+                Maturing(startedAtMillis, maturationDurationMillis, initialDamageMultiplier))
+        }
         return publish(draft)
     }
 
