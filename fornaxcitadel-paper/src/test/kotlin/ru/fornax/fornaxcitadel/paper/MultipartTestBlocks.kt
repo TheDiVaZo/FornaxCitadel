@@ -5,6 +5,7 @@ import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.block.data.Bisected
 import org.bukkit.block.data.type.Bed
+import org.bukkit.block.data.type.Chest
 import org.bukkit.block.data.type.Door
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
@@ -70,6 +71,49 @@ internal fun PaperTestFixture.bed(
     }
     return foot to head
 }
+
+internal val copperChestMaterials = listOf(
+    Material.COPPER_CHEST, Material.EXPOSED_COPPER_CHEST,
+    Material.WEATHERED_COPPER_CHEST, Material.OXIDIZED_COPPER_CHEST,
+    Material.WAXED_COPPER_CHEST, Material.WAXED_EXPOSED_COPPER_CHEST,
+    Material.WAXED_WEATHERED_COPPER_CHEST, Material.WAXED_OXIDIZED_COPPER_CHEST
+)
+
+internal fun PaperTestFixture.doubleChest(
+    x: Int = 5,
+    y: Int = 64,
+    z: Int = 5,
+    facing: BlockFace = BlockFace.NORTH,
+    leftMaterial: Material = Material.CHEST,
+    rightMaterial: Material = leftMaterial
+): Pair<Block, Block> {
+    // Explicit coordinates independently describe Minecraft's LEFT/RIGHT convention.
+    val rightOffset = when (facing) {
+        BlockFace.NORTH -> 1 to 0
+        BlockFace.EAST -> 0 to 1
+        BlockFace.SOUTH -> -1 to 0
+        BlockFace.WEST -> 0 to -1
+        else -> error("A chest must face horizontally")
+    }
+    val left = block(x, y, z)
+    val right = block(x + rightOffset.first, y, z + rightOffset.second)
+    material(leftMaterial, left.testPosition())
+    blockData(chestData(Chest.Type.LEFT, facing, leftMaterial), left.testPosition())
+    material(rightMaterial, right.testPosition())
+    blockData(chestData(Chest.Type.RIGHT, facing, rightMaterial), right.testPosition())
+    return left to right
+}
+
+internal fun chestData(type: Chest.Type, facing: BlockFace, material: Material = Material.CHEST): Chest =
+    paperProxy("chest $type $facing $material") { method, _ ->
+        when (method.name) {
+            "getType" -> type
+            "getFacing" -> facing
+            "getMaterial" -> material
+            "isWaterlogged" -> false
+            else -> unsupported(method)
+        }
+    }
 
 /** Simulates persisted legacy records independently of the current placement resolver. */
 internal fun PaperTestFixture.placeExact(

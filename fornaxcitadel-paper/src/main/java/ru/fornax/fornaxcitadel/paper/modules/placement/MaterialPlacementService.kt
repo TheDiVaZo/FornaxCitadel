@@ -30,11 +30,13 @@ class MaterialPlacementService(
     init {
         val doors = DoorMaterialPlacementRule(::findExact, ::findLoadedRelative)
         val beds = BedMaterialPlacementRule(::findExact, ::findLoadedRelative)
+        val chests = ChestMaterialPlacementRule(::findExact, ::findLoadedRelative)
         for (material in Material.entries) {
             if (material.isLegacy) continue
             val rule = when {
                 material.name.endsWith("_DOOR") -> doors
                 material.name.endsWith("_BED") -> beds
+                ChestMaterialPlacementRule.supports(material) -> chests
                 else -> continue
             }
             rules[Key("minecraft", material.name.lowercase(Locale.ROOT))] = rule
