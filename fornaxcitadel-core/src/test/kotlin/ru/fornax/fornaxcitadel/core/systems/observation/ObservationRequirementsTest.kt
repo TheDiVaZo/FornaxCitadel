@@ -87,7 +87,7 @@ class ObservationRequirementsTest {
                 assertTrue(failure.cause is IllegalArgumentException)
                 assertTrue(failure.message.orEmpty().contains(LateSecondary::class.java.name))
                 fixture.onFailure = null
-                fixture.manager.registerComponent("test", "observation_late_secondary", LateSecondary::class.java)
+                fixture.manager.registerComponent(Key("test", "observation_late_secondary"), LateSecondary::class.java)
                 fixture.put(first, LateSecondary::class.java, LateSecondary(12))
                 fixture.put(second, LateSecondary::class.java, LateSecondary(22))
                 fixture.observe(listOf(second), BOB, "bob")
@@ -324,9 +324,9 @@ class ObservationRequirementsTest {
         private var nextX = 1
 
         init {
-            manager.registerComponent("test", "observation_primary", Primary::class.java)
-            manager.registerComponent("test", "observation_secondary", Secondary::class.java)
-            manager.registerComponent("test", "observation_extra", Extra::class.java)
+            manager.registerComponent(Key("test", "observation_primary"), Primary::class.java)
+            manager.registerComponent(Key("test", "observation_secondary"), Secondary::class.java)
+            manager.registerComponent(Key("test", "observation_extra"), Extra::class.java)
             manager.loadChunk(WORLD, 0, 0).join()
         }
 

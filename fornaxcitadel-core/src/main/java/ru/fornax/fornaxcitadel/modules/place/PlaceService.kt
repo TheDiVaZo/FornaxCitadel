@@ -18,7 +18,7 @@ class PlaceService(
     private val processor = PlaceProcessor(this)
 
     init {
-        manager.registerComponent(CitadelKind.KEY.namespace, CitadelKind.KEY.key, CitadelKind::class.java)
+        manager.registerComponent(CitadelKind.KEY, CitadelKind::class.java)
     }
 
     override fun enable() {

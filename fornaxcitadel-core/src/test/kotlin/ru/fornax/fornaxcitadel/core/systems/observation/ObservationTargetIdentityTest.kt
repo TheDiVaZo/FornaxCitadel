@@ -139,7 +139,7 @@ class ObservationTargetIdentityTest {
         val service = ObservationService<String>(manager, scheduler, failureHandler = failures::add)
 
         init {
-            manager.registerComponent("test", "observation_target_identity", ValueComponent::class.java)
+            manager.registerComponent(Key("test", "observation_target_identity"), ValueComponent::class.java)
         }
 
         fun create(): CitadelHandle {

@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.core.component.ComponentType
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.pool.WXZCordPool
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
+import ru.fornax.fornaxcitadel.core.storage.CitadelEntity
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -31,8 +32,8 @@ class ComponentManager(
     private val pool = WXZCordPool()
 
     /** Register before loading chunks. Does not decode opaque data in already loaded chunks. */
-    fun <T : Component> registerComponent(namespace: String, key: String, componentClass: Class<T>) {
-        typeManager.registerType(Key(namespace, key), componentClass)
+    fun <T : Component> registerComponent(key: Key, componentClass: Class<T>) {
+        typeManager.registerType(key, componentClass)
     }
 
     /**
@@ -65,7 +66,7 @@ class ComponentManager(
     fun findCitadel(world: UUID, x: Int, y: Int, z: Int): CitadelHandle? {
         val chunk = findChunk(world, x, y, z) ?: return null
         val entity = chunk.getCitadel(x and 15, y, z and 15) ?: return null
-        return CitadelHandle(this, chunk, entity, CitadelPosition(world, x, y, z))
+        return CitadelHandle(this, CitadelPosition(world, x, y, z), entity.id)
     }
 
     /**
@@ -95,48 +96,50 @@ class ComponentManager(
         val baseX = chunkX shl 4
         val baseZ = chunkZ shl 4
         chunk.forEachCitadelInYRange(minY, maxY) { x, y, z, entity ->
-            action(CitadelHandle(this, chunk, entity, CitadelPosition(world, baseX + x, y, baseZ + z)))
+            action(CitadelHandle(this, CitadelPosition(world, baseX + x, y, baseZ + z), entity.id))
         }
     }
 
     /** False for a handle owned by a different manager, removed entity, or unloaded chunk. */
-    fun isCurrent(handle: CitadelHandle): Boolean {
-        if (handle.manager !== this) return false
-        val chunk = findChunk(handle.world, handle.x, handle.y, handle.z) ?: return false
-        return chunk === handle.chunk &&
-            chunk.getCitadel(handle.x and 15, handle.y, handle.z and 15) === handle.entity
-    }
+    fun isCurrent(handle: CitadelHandle): Boolean =
+        withCurrentCitadel(handle) { _, _ -> true } ?: false
 
     /** Removes only the original entity. A replacement at the same position is left untouched. */
-    fun removeCitadel(handle: CitadelHandle): Boolean {
-        if (!isCurrent(handle)) return false
-        return handle.chunk.removeCitadel(handle.x and 15, handle.y, handle.z and 15) != null
-    }
+    fun removeCitadel(handle: CitadelHandle): Boolean =
+        withCurrentCitadel(handle) { chunk, _ ->
+            chunk.removeCitadel(handle.x and 15, handle.y, handle.z and 15) != null
+        } ?: false
 
     internal fun <T : Component> getComponent(handle: CitadelHandle, componentClass: Class<T>): T? {
         val type = requireType(componentClass)
-        if (!isCurrent(handle)) return null
-        return handle.chunk.getComponent(handle.entity, type)
+        return withCurrentCitadel(handle) { chunk, entity -> chunk.getComponent(entity, type) }
     }
 
     internal fun <T : Component> editComponent(
         handle: CitadelHandle, componentClass: Class<T>, action: (T) -> Unit
     ): Boolean {
-        val component = getComponent(handle, componentClass) ?: return false
-        try {
-            action(component)
-        } finally {
-            handle.chunk.markDirty()
-        }
-        return true
+        val type = requireType(componentClass)
+        return withCurrentCitadel(handle) { chunk, entity ->
+            val component = chunk.getComponent(entity, type) ?: return@withCurrentCitadel false
+            try {
+                action(component)
+            } finally {
+                // The callback may have unloaded or replaced the chunk; mark the original instance.
+                chunk.markDirty()
+            }
+            true
+        } ?: false
     }
 
     internal fun <T : Component> markDirty(
         handle: CitadelHandle, componentClass: Class<T>, component: T
     ): Boolean {
-        if (getComponent(handle, componentClass) !== component) return false
-        handle.chunk.markDirty()
-        return true
+        val type = requireType(componentClass)
+        return withCurrentCitadel(handle) { chunk, entity ->
+            if (chunk.getComponent(entity, type) !== component) return@withCurrentCitadel false
+            chunk.markDirty()
+            true
+        } ?: false
     }
 
     /** Returns the live instance, or null if the chunk, position, or component is absent. */
@@ -327,6 +330,17 @@ class ComponentManager(
             "Component ${component.javaClass.name} does not match ${componentClass.name}"
         }
         return requireType(componentClass as Class<Component>) to component
+    }
+
+    /** Resolves one loaded entity for an operation. Runtime IDs are never reused. */
+    private inline fun <R> withCurrentCitadel(
+        handle: CitadelHandle, action: (ChunkCord, CitadelEntity) -> R
+    ): R? {
+        if (handle.manager !== this) return null
+        val chunk = findChunk(handle.world, handle.x, handle.y, handle.z) ?: return null
+        val entity = chunk.getCitadel(handle.x and 15, handle.y, handle.z and 15) ?: return null
+        if (entity.id != handle.runtimeId) return null
+        return action(chunk, entity)
     }
 
     private fun findChunk(world: UUID, x: Int, y: Int, z: Int): ChunkCord? {

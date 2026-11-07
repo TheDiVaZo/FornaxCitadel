@@ -765,7 +765,7 @@ class ObservationServiceTest {
         }
 
         init {
-            manager.registerComponent("test", "observation_value", ValueComponent::class.java)
+            manager.registerComponent(Key("test", "observation_value"), ValueComponent::class.java)
             manager.loadChunk(WORLD, 0, 0).join()
         }
 

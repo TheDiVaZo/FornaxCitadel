@@ -11,6 +11,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.util.Key
 import java.io.DataInput
 import java.io.DataOutput
 import java.util.UUID
@@ -32,7 +33,7 @@ class ComponentManagerTest {
     @Test
     fun `draft creation publishes all components and consumes the draft`() {
         val fixture = Fixture()
-        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
         fixture.manager.loadChunk(WORLD, -2, 1).join()
         val position = CitadelPosition(WORLD, -17, 319, 31)
         val value = ValueComponent(42)
@@ -96,7 +97,7 @@ class ComponentManagerTest {
         assertTrue(fixture.chunk().isEmpty)
         assertFalse(fixture.chunk().isDirty)
 
-        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
         assertEquals(ActionResult.SUCCESS, fixture.manager.createCitadel(draft))
         fixture.manager.saveAll().join()
         val handle = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
@@ -184,10 +185,46 @@ class ComponentManagerTest {
     }
 
     @Test
+    fun `failed handle edit after chunk reload dirties only the originally captured chunk`() {
+        val fixture = Fixture()
+        fixture.load()
+        val original = fixture.put(1)
+        val oldHandle = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        val originalChunk = fixture.chunk()
+        fixture.manager.saveAll().join()
+        assertFalse(originalChunk.isDirty)
+        val failure = IllegalStateException("Failed after reloading and mutating the old component")
+
+        val actual = assertFailsWith<IllegalStateException> {
+            oldHandle.editComponent(ValueComponent::class.java) {
+                assertSame(original, it)
+                fixture.manager.unloadChunk(WORLD, 0, 0).join()
+                fixture.load()
+                it.value = 2
+                throw failure
+            }
+        }
+
+        val replacementChunk = fixture.chunk()
+        val currentHandle = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        val current = assertNotNull(currentHandle.getComponent(ValueComponent::class.java))
+        assertSame(failure, actual)
+        assertNotSame(originalChunk, replacementChunk)
+        assertTrue(originalChunk.isDirty)
+        assertFalse(replacementChunk.isDirty)
+        assertFalse(oldHandle.isCurrent)
+        assertTrue(currentHandle.isCurrent)
+        assertNotSame(original, current)
+        assertEquals(2, original.value)
+        assertEquals(1, current.value)
+        assertEquals(1, fixture.savedValue())
+    }
+
+    @Test
     fun `iteration selects the type and chunk and exposes citadel ids and global coordinates with live components`() {
         val fixture = Fixture()
         val otherWorld = UUID(3L, 4L)
-        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
         fixture.manager.loadChunk(WORLD, -2, 1).join()
         fixture.manager.loadChunk(WORLD, -1, 1).join()
         fixture.manager.loadChunk(otherWorld, -2, 1).join()
@@ -225,7 +262,7 @@ class ComponentManagerTest {
         assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
         fixture.load()
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, action)
-        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
         fixture.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, action)
     }
@@ -234,7 +271,7 @@ class ComponentManagerTest {
     fun `height range iteration visits inclusive layers from the center with global coordinates and live components`() {
         val fixture = Fixture()
         val otherWorld = UUID(3L, 4L)
-        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
         fixture.manager.loadChunk(WORLD, -2, 1).join()
         fixture.manager.loadChunk(WORLD, -1, 1).join()
         fixture.manager.loadChunk(otherWorld, -2, 1).join()
@@ -373,7 +410,7 @@ class ComponentManagerTest {
         assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
         fixture.load()
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
-        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
         fixture.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, 0, 0, 0, 2, action)
         fixture.putComponent(ValueComponent::class.java, WORLD, 0, 20, 0, ValueComponent())
@@ -409,7 +446,7 @@ class ComponentManagerTest {
         val otherWorld = UUID(3L, 4L)
         fixture.load()
         fixture.manager.loadChunk(otherWorld, 0, 0).join()
-        fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+        fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
         val first = fixture.put(1)
         val replacement = ValueComponent(2)
         val other = OtherComponent()
@@ -586,7 +623,7 @@ class ComponentManagerTest {
     fun `failed component writes do not prevent unload or close from saving other components`() {
         for (close in listOf(false, true)) {
             val fixture = Fixture()
-            fixture.manager.registerComponent("test", "other", OtherComponent::class.java)
+            fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
             fixture.load()
             fixture.put(1).writeFailure = IllegalStateException("Cannot serialize")
             fixture.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
@@ -628,7 +665,7 @@ class ComponentManagerTest {
         val manager = ComponentManager(storage, types)
 
         init {
-            manager.registerComponent("test", "value", ValueComponent::class.java)
+            manager.registerComponent(Key("test", "value"), ValueComponent::class.java)
         }
 
         fun load() { manager.loadChunk(WORLD, 0, 0).join() }

@@ -41,8 +41,8 @@ public final class HealthService implements LifecycleService {
         this.removeService = Objects.requireNonNull(removeService, "removeService");
         this.destructionPolicy = Objects.requireNonNull(destructionPolicy, "destructionPolicy");
         this.damageValidator = new DamagePolicyValidator(componentManager, this);
-        componentManager.registerComponent(Health.KEY.getNamespace(), Health.KEY.getKey(), Health.class);
-        componentManager.registerComponent(Maturing.KEY.getNamespace(), Maturing.KEY.getKey(), Maturing.class);
+        componentManager.registerComponent(Health.KEY, Health.class);
+        componentManager.registerComponent(Maturing.KEY, Maturing.class);
     }
 
     @Override

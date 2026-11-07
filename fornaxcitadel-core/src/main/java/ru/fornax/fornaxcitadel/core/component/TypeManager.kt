@@ -11,10 +11,8 @@ class TypeManager {
     private val typesByKey = mutableMapOf<Key, ComponentType<out Component>>()
     private val typeList = mutableListOf<ComponentType<out Component>>()
     private val typesById = Byte2ObjectOpenHashMap<ComponentType<out Component>>()
-    private val groupsById = Long2ObjectOpenHashMap<ComponentGroup>()
 
     private var nextFlag = 1L
-    private var genGroupID: Short = 0
     private var genTypeID: Byte = 0
 
     @Suppress("UNCHECKED_CAST")
@@ -75,19 +73,6 @@ class TypeManager {
 
             type
         }
-    }
-
-    fun getOrRegisterGroup(name: String? = null, vararg types: ComponentType<*>): ComponentGroup {
-        var group: ComponentGroup?
-        var mask: Long = 0
-        for (type in types) mask = mask or type.flag
-        group = groupsById.get(mask)
-        if (group == null) {
-            group = ComponentGroup(name, mask, genGroupID)
-            groupsById.put(group.mask, group)
-            genGroupID++
-        }
-        return group
     }
 
     companion object {

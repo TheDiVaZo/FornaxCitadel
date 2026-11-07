@@ -37,7 +37,7 @@ internal class HealthFixture(
     val citadel: CitadelHandle get() = reference()
 
     init {
-        manager.registerComponent(CitadelKind.KEY.namespace, CitadelKind.KEY.key, CitadelKind::class.java)
+        manager.registerComponent(CitadelKind.KEY, CitadelKind::class.java)
         if (createInitial) {
             create(startedAtMillis = startedAtMillis)
             chunk.resetDirty()

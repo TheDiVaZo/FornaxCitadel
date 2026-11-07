@@ -299,7 +299,7 @@ class ObservationReentrancyTest {
         val service = ObservationService<String>(manager, scheduler, failureHandler = failures::add)
 
         init {
-            manager.registerComponent("test", "observation_reentrancy_value", ValueComponent::class.java)
+            manager.registerComponent(Key("test", "observation_reentrancy_value"), ValueComponent::class.java)
             manager.loadChunk(WORLD, 0, 0).join()
         }
 
