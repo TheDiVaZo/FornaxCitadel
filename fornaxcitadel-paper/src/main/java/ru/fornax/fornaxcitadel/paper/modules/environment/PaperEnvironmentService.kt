@@ -8,13 +8,14 @@ import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.paper.modules.isProtected
+import java.util.logging.Level
 
 /** Keeps environmental changes from moving or replacing reinforced blocks. */
 class PaperEnvironmentService(
     private val plugin: Plugin,
     module: CitadelModule
 ) : LifecycleService {
-    private val manager = module.actions.componentManager
+    private val citadels = module.citadels
     private val listener = PaperEnvironmentListener(this)
     private var enabled = false
 
@@ -35,7 +36,12 @@ class PaperEnvironmentService(
         enabled = false
     }
 
-    fun isProtected(block: Block): Boolean = manager.isProtected(block)
+    fun isProtected(block: Block): Boolean = try {
+        citadels.isProtected(block)
+    } catch (exception: Exception) {
+        plugin.logger.log(Level.SEVERE, "Could not resolve environmental block protection", exception)
+        true
+    }
 
     fun blocksPistonExtension(piston: Block, blocks: List<Block>, direction: BlockFace): Boolean =
         isProtected(piston) || isProtected(piston.getRelative(direction)) ||

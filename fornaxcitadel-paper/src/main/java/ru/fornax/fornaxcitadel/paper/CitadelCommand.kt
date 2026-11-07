@@ -10,6 +10,7 @@ import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -72,6 +73,8 @@ class CitadelCommand(
                 }
                 "place", "remove", "info" -> target(sender, operation, args)
             }
+        } catch (_: CitadelResolutionUnavailableException) {
+            sender.message("commands.chunk-unavailable")
         } catch (exception: Exception) {
             plugin.logger.log(Level.SEVERE, "Citadel command failed", exception)
             sender.message("commands.error")
@@ -149,7 +152,7 @@ class CitadelCommand(
                 sender.message(if (result == ActionResult.SUCCESS) "commands.remove.success" else "commands.remove.denied")
             }
             "info" -> {
-                val citadel = manager.findCitadel(position.world, position.x, position.y, position.z)
+                val citadel = module.citadels.findProtecting(position)
                 if (citadel == null) {
                     sender.message("commands.info.not-reinforced")
                     return

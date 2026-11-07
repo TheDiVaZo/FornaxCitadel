@@ -293,7 +293,7 @@ class PaperCrackHealthObservationSystemTest {
     }
 
     private class Fixture : AutoCloseable {
-        val paper = PaperTestFixture(initializeSystems = false, registerTypes = false)
+        val paper = PaperTestFixture(initializeSystems = false, registerTypes = false, resolveMaterials = false)
         private val scheduler = PaperScheduler(paper.plugin)
         val failures = mutableListOf<Exception>()
         val observations = ObservationService<Player>(paper.manager, scheduler, failureHandler = failures::add)

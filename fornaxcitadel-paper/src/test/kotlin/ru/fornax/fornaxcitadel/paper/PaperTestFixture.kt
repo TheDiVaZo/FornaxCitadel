@@ -10,6 +10,7 @@ import org.bukkit.Statistic
 import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
+import org.bukkit.block.data.BlockData
 import org.bukkit.block.data.Directional
 import org.bukkit.entity.Player
 import org.bukkit.event.Event
@@ -31,6 +32,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.facade.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.ScheduledTask
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
@@ -63,6 +65,7 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
@@ -107,13 +110,15 @@ internal class PaperTestFixture(
     initializeModule: Boolean = true,
     maxActionsPerTick: Int = 1024,
     messages: PaperMessages = PaperMessages.defaults(),
-    creativeModeEnabled: Boolean = true
+    creativeModeEnabled: Boolean = true,
+    resolveMaterials: Boolean = true
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
     var mainThread = true
     var enabled = true
     var worldChunkLoaded = true
+    val loadedWorldChunks = mutableSetOf(0 to 0)
     var worldAvailable = true
     var worldSaveCount = 0
     var worldSaveFailure: RuntimeException? = null
@@ -134,6 +139,7 @@ internal class PaperTestFixture(
     val players = mutableMapOf<UUID, TestPlayer>()
     private val blocks = mutableMapOf<Triple<Int, Int, Int>, Block>()
     private val blockMaterials = mutableMapOf<Triple<Int, Int, Int>, Material>()
+    private val blockData = mutableMapOf<Triple<Int, Int, Int>, BlockData>()
     val chunkData = TestPersistentData()
     val chunk: Chunk by lazy { chunkWrapper() }
     val world: World = paperProxy("world") { method, args ->
@@ -142,8 +148,10 @@ internal class PaperTestFixture(
             "getName" -> "test_world"
             "getMinHeight" -> -64
             "getMaxHeight" -> 320
-            "isChunkLoaded" -> worldChunkLoaded && args[0] == 0 && args[1] == 0
-            "getLoadedChunks" -> if (worldChunkLoaded) arrayOf(if (freshChunkWrappers) chunkWrapper() else chunk) else emptyArray<Chunk>()
+            "isChunkLoaded" -> worldChunkLoaded && (args[0] as Int to args[1] as Int) in loadedWorldChunks
+            "getLoadedChunks" -> if (worldChunkLoaded) loadedWorldChunks.map { (x, z) ->
+                if (x == 0 && z == 0 && !freshChunkWrappers) chunk else chunkWrapper(x, z)
+            }.toTypedArray() else emptyArray<Chunk>()
             "save" -> { worldSaveFailure?.let { throw it }; worldSaveCount++; null }
             "getBlockAt" -> {
                 blockLookups++
@@ -216,12 +224,13 @@ internal class PaperTestFixture(
     private val moduleScheduler = moduleSchedulerFactory(plugin)
     val citadelTypes = PaperCitadelTypes(citadelSettings)
     private val permissionValidator = PaperPermissionValidator(server, citadelTypes)
+    val materials = CombineMaterialRegistry()
+    val materialPlacement = MaterialPlacementService(server, materials, manager)
     val module = CitadelModule(manager, moduleScheduler,
         RemovalPolicy { context, _ -> permissionValidator.canAdminister(context) }, maxActionsPerTick,
         destructionPolicy = DamagePolicy { context, _ ->
             creativeModeEnabled && permissionValidator.canDestroyInCreative(context)
-        })
-    val materials = CombineMaterialRegistry()
+        }, resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager))
     val placementService = PaperPlacementService(plugin, module, materials, placementSettings, messages).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
@@ -263,11 +272,12 @@ internal class PaperTestFixture(
 
     fun player(id: UUID, name: String): TestPlayer = TestPlayer(id, name, world).also { players[id] = it }
 
-    fun chunkWrapper(): Chunk = paperProxy("chunk wrapper") { method, _ ->
+    fun chunkWrapper(x: Int = 0, z: Int = 0): Chunk = paperProxy("chunk wrapper") { method, _ ->
         when (method.name) {
             "getWorld" -> world
-            "getX", "getZ" -> 0
-            "isLoaded" -> worldChunkLoaded
+            "getX" -> x
+            "getZ" -> z
+            "isLoaded" -> worldChunkLoaded && (x to z) in loadedWorldChunks
             "getPersistentDataContainer" -> { pdcAccesses++; chunkData.container }
             else -> unsupported(method)
         }
@@ -283,11 +293,11 @@ internal class PaperTestFixture(
                     "getY" -> y
                     "getZ" -> z
                     "getType" -> blockMaterials[key] ?: Material.STONE
-                    "getBlockData" -> paperProxy<Directional>("piston facing") { property, _ ->
+                    "getBlockData" -> blockData[key] ?: paperProxy<Directional>("piston facing") { property, _ ->
                         if (property.name == "getFacing") BlockFace.SOUTH else unsupported(property)
                     }
                     "isEmpty", "isLiquid" -> false
-                    "getChunk" -> chunk
+                    "getChunk" -> if (x shr 4 == 0 && z shr 4 == 0) chunk else chunkWrapper(x shr 4, z shr 4)
                     "getLocation" -> Location(world, x.toDouble(), y.toDouble(), z.toDouble())
                     "getRelative" -> if (args[0] is BlockFace) {
                         val direction = args[0] as BlockFace
@@ -303,6 +313,15 @@ internal class PaperTestFixture(
 
     fun material(material: Material, position: CitadelPosition = this.position) {
         blockMaterials[Triple(position.x, position.y, position.z)] = material
+    }
+
+    fun blockData(data: BlockData, position: CitadelPosition = this.position) {
+        blockData[Triple(position.x, position.y, position.z)] = data
+    }
+
+    fun loadChunk(x: Int, z: Int) {
+        loadedWorldChunks.add(x to z)
+        manager.loadChunk(worldId, x, z).join()
     }
 
     fun place(type: Key = PaperCitadelTypes.REINFORCED) {

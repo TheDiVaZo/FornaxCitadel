@@ -12,6 +12,7 @@ import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.modules.CitadelModule
@@ -96,7 +97,7 @@ class PaperExplosionService @JvmOverloads constructor(
     }
 
     private fun damageBlocks(blocks: MutableList<Block>, sourceFactory: () -> ExplosionSource) {
-        val targets = mutableListOf<CitadelHandle>()
+        val targets = linkedMapOf<CitadelPosition, Pair<CitadelHandle, CitadelPosition>>()
         val iterator = blocks.iterator()
         while (iterator.hasNext()) {
             val block = iterator.next()
@@ -106,9 +107,17 @@ class PaperExplosionService @JvmOverloads constructor(
                 iterator.remove()
                 continue
             }
-            val citadel = manager.findCitadel(world, block.x, block.y, block.z) ?: continue
-            iterator.remove()
-            targets.add(citadel)
+            val originalPosition = CitadelPosition(world, block.x, block.y, block.z)
+            try {
+                val citadel = module.citadels.findProtecting(originalPosition) ?: continue
+                iterator.remove()
+                targets.putIfAbsent(citadel.position, citadel to originalPosition)
+            } catch (_: CitadelResolutionUnavailableException) {
+                iterator.remove()
+            } catch (exception: Exception) {
+                iterator.remove()
+                plugin.logger.log(Level.SEVERE, "Could not resolve explosion protection at $originalPosition", exception)
+            }
         }
         if (targets.isEmpty()) return
 
@@ -120,14 +129,14 @@ class PaperExplosionService @JvmOverloads constructor(
             return
         }
         val context = ActionContext(null, source)
-        for (citadel in targets) {
+        for ((citadel, originalPosition) in targets.values) {
             try {
                 if (!citadel.isCurrent) continue
                 val position = citadel.position
                 val target = ExplosionPosition(position.world,
                     position.x.toDouble(), position.y.toDouble(), position.z.toDouble())
                 val damage = calculateDamage(source.power, source.position, target)
-                module.actions.execute(DamageAction(context, position, damage))
+                module.actions.execute(DamageAction(context, originalPosition, damage))
             } catch (exception: Exception) {
                 plugin.logger.log(Level.SEVERE, "Could not apply explosion damage at ${citadel.position}", exception)
             }

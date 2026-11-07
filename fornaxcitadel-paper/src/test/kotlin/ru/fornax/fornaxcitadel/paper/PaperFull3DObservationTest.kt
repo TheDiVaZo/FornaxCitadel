@@ -408,7 +408,7 @@ class PaperFull3DObservationTest {
     }
 
     private class Fixture(settings: Full3DObservationSettings = Full3DObservationSettings()) : AutoCloseable {
-        val paper = PaperTestFixture(initializeSystems = false, trackListenerLifecycle = true)
+        val paper = PaperTestFixture(initializeSystems = false, trackListenerLifecycle = true, resolveMaterials = false)
         val queries = mutableListOf<WXZCord>()
         private val observedStorage = object : CitadelStorage by paper.storage {
             override fun getIfChunkLoaded(location: WXZCord): ChunkCord? {

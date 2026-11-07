@@ -5,6 +5,8 @@ import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
@@ -53,7 +55,11 @@ class PaperBreakingService @JvmOverloads constructor(
                 messages.sendGameplay(player, "breaking.chunk-unavailable")
                 return false
             }
+            module.citadels.findProtecting(CitadelPosition(block.world.uid, block.x, block.y, block.z))
             true
+        } catch (_: CitadelResolutionUnavailableException) {
+            messages.sendGameplay(player, "breaking.chunk-unavailable")
+            false
         } catch (exception: Exception) {
             report(player, "Could not check a citadel breaking attempt", exception)
             false
@@ -69,18 +75,21 @@ class PaperBreakingService @JvmOverloads constructor(
                 messages.sendGameplay(player, "breaking.chunk-unavailable")
                 return true
             }
-            val citadel = manager.findCitadel(block.world.uid, block.x, block.y, block.z) ?: return false
+            val position = CitadelPosition(block.world.uid, block.x, block.y, block.z)
+            val citadel = module.citadels.findProtecting(position) ?: return false
             val destroy = creativeModeEnabled && player.gameMode == GameMode.CREATIVE
             val mode = if (destroy) DamageAction.Mode.DESTROY else DamageAction.Mode.DAMAGE
             val damage = if (destroy) Double.MAX_VALUE else damageModifiers.getDamage(citadel, player)
             val result = module.actions.execute(DamageAction(
-                ActionContext(player.uniqueId, BREAK_SOURCE), citadel.position, damage, mode
+                ActionContext(player.uniqueId, BREAK_SOURCE), position, damage, mode
             ))
             if (result != ActionResult.SUCCESS) {
                 messages.sendGameplay(player, "breaking.denied")
             } else {
                 messages.sendGameplay(player, if (!citadel.isCurrent) "breaking.removed" else "breaking.damaged")
             }
+        } catch (_: CitadelResolutionUnavailableException) {
+            messages.sendGameplay(player, "breaking.chunk-unavailable")
         } catch (exception: Exception) {
             report(player, "Could not process a citadel breaking attempt", exception)
         }

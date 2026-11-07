@@ -27,6 +27,7 @@ import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
+import ru.fornax.fornaxcitadel.paper.modules.placement.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.CompletionException
@@ -39,6 +40,9 @@ class FornaxCitadel : JavaPlugin() {
      * Configured item and block keys resolve on use, so providers may register later.
      */
     lateinit var materials: CombineMaterialRegistry
+        private set
+    /** Register block placement/protection rules on the main thread after enable. */
+    lateinit var materialPlacement: MaterialPlacementService
         private set
     lateinit var placement: PaperPlacementService
         private set
@@ -74,6 +78,8 @@ class FornaxCitadel : JavaPlugin() {
             // Do not replace this executor with a worker pool without redesigning chunk unload.
             val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor { it.run() })
             val manager = ComponentManager(storage, types).also { componentManager = it }
+            materials = CombineMaterialRegistry()
+            materialPlacement = MaterialPlacementService(server, materials, manager)
             citadelTypes = PaperCitadelTypes(settings.citadelTypes)
             val permissions = PaperPermissionValidator(server, citadelTypes)
             val module = CitadelModule(
@@ -85,13 +91,13 @@ class FornaxCitadel : JavaPlugin() {
                 },
                 actionFailureHandler = { failure ->
                     logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
-                }
+                },
+                resolver = materialPlacement
             )
             citadelTypes.register(module)
             services.add(PaperPermissionService(module.actions, permissions))
 
             val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)
-            materials = CombineMaterialRegistry()
             placement = PaperPlacementService(this, module, materials, settings.placement, messages).also(services::add)
             citadelTypes.keys.forEach { type ->
                 placement.registerMaterial(requireNotNull(citadelTypes.itemKey(type)), type)

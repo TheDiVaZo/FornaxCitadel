@@ -36,7 +36,9 @@ class TestRegistryAccess : RegistryAccess {
             Material.BLACKSTONE, Material.POLISHED_BLACKSTONE, Material.NETHER_BRICKS,
             Material.END_STONE, Material.IRON_BLOCK, Material.GOLD_BLOCK, Material.DIAMOND_BLOCK,
             Material.EMERALD_BLOCK, Material.NETHERITE_BLOCK,
-            Material.SAND, Material.CHEST, Material.BEDROCK, Material.OAK_PLANKS, Material.STONE_SLAB,
+            Material.SAND, Material.CHEST,
+            Material.BEDROCK, Material.OAK_PLANKS, Material.STONE_SLAB,
+            Material.OAK_DOOR, Material.IRON_DOOR, Material.RED_BED, Material.BLUE_BED,
             // Force the predicate to exercise its explicit piston exclusion.
             Material.PISTON, Material.STICKY_PISTON, Material.PISTON_HEAD, Material.MOVING_PISTON
         )

@@ -28,8 +28,10 @@ class PaperPlacementService @JvmOverloads constructor(
     private val messages: PaperMessages = PaperMessages.defaults()
 ) : LifecycleService {
     private val definitionsByMaterial = mutableMapOf<Key, Key>()
-    private val blockValidator = ReinforceableBlockValidator(plugin.server)
-    private val blockListValidator = PlacementBlockListValidator(plugin.server, materials, settings.listType, settings.blocks)
+    private val blockValidator = ReinforceableBlockValidator(plugin.server, module.citadels)
+    private val blockListValidator = PlacementBlockListValidator(
+        plugin.server, materials, settings.listType, settings.blocks, module.citadels
+    )
     private val listener = PaperPlacementListener(this)
     private var enabled = false
 
