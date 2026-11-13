@@ -101,24 +101,6 @@ placement:
   # Solid blocks only; pistons and piston parts are always rejected.
   block-list:
     # WHITELIST permits only listed materials; BLACKLIST permits everything except them.
-    type: WHITELIST
+    type: BLACKLIST
     # Uses material registry identities. Plugin materials use their own namespace, e.g. otherplugin:stone.
-    blocks:
-      - minecraft:stone
-      - minecraft:cobblestone
-      - minecraft:stone_bricks
-      - minecraft:deepslate
-      - minecraft:cobbled_deepslate
-      - minecraft:deepslate_bricks
-      - minecraft:bricks
-      - minecraft:obsidian
-      - minecraft:crying_obsidian
-      - minecraft:blackstone
-      - minecraft:polished_blackstone
-      - minecraft:nether_bricks
-      - minecraft:end_stone
-      - minecraft:iron_block
-      - minecraft:gold_block
-      - minecraft:diamond_block
-      - minecraft:emerald_block
-      - minecraft:netherite_block
+    blocks: []
