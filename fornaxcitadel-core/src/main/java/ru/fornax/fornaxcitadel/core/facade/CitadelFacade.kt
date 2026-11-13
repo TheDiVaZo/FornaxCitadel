@@ -3,6 +3,9 @@ package ru.fornax.fornaxcitadel.core.facade
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
+import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
 /**

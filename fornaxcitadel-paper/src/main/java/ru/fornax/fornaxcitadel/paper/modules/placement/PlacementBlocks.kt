@@ -4,7 +4,7 @@ import org.bukkit.Server
 import org.bukkit.block.Block
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
-import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 
 /** Validators never load a world or chunk just to inspect a placement target. */

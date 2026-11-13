@@ -30,7 +30,7 @@ import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.placement.BlockListType
-import ru.fornax.fornaxcitadel.paper.modules.placement.DefaultMaterialPlacementRule
+import ru.fornax.fornaxcitadel.paper.modules.resolver.DefaultMaterialPlacementRule
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
 import java.util.UUID

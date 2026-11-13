@@ -1,4 +1,4 @@
-package ru.fornax.fornaxcitadel.paper.modules.placement
+package ru.fornax.fornaxcitadel.paper.modules.resolver
 
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace

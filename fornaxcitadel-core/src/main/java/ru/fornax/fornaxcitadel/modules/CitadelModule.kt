@@ -5,10 +5,10 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
-import ru.fornax.fornaxcitadel.core.facade.CitadelResolver
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
-import ru.fornax.fornaxcitadel.core.facade.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
+import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.HealthService

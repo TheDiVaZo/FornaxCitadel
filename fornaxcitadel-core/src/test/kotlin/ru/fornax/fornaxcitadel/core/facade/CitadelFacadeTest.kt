@@ -10,6 +10,9 @@ import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.component.Component
 import ru.fornax.fornaxcitadel.core.component.TypeManager
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
+import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator

@@ -1,4 +1,4 @@
-package ru.fornax.fornaxcitadel.core.facade
+package ru.fornax.fornaxcitadel.core.resolver
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 

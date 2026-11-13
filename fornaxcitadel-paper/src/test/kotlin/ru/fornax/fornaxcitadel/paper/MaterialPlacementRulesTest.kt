@@ -4,9 +4,9 @@ import org.bukkit.Material
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.block.data.Bisected
-import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.paper.modules.placement.DefaultMaterialPlacementRule
+import ru.fornax.fornaxcitadel.paper.modules.resolver.DefaultMaterialPlacementRule
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

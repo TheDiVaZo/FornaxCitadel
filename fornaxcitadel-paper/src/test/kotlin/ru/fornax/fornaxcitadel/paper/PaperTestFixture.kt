@@ -32,7 +32,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
-import ru.fornax.fornaxcitadel.core.facade.DirectCitadelResolver
+import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.ScheduledTask
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
@@ -65,7 +65,7 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.MaterialPlacementService
+import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService

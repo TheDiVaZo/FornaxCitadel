@@ -12,7 +12,7 @@ import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.modules.CitadelModule

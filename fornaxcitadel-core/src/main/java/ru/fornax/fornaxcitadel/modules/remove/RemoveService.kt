@@ -4,8 +4,8 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
 /** Removes core data only. Minecraft block changes belong to a platform integration. */

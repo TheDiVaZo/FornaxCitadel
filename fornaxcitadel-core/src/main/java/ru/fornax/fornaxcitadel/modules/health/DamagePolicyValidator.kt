@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.modules.health
 
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
-import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 
 /** Enforces type damage rules or the separate explicit destruction policy. */

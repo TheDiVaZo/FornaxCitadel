@@ -1,4 +1,4 @@
-package ru.fornax.fornaxcitadel.paper.modules.placement
+package ru.fornax.fornaxcitadel.paper.modules.resolver
 
 import org.bukkit.Material
 import org.bukkit.Server
@@ -7,8 +7,8 @@ import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.CitadelResolutionUnavailableException
-import ru.fornax.fornaxcitadel.core.facade.CitadelResolver
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
