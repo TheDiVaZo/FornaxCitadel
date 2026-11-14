@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.core.facade
 
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ProcessorCoordinator
@@ -15,8 +16,10 @@ class ActionManager @JvmOverloads constructor(
     val componentManager: ComponentManager,
     val processorCoordinator: ProcessorCoordinator = ProcessorCoordinator(),
     val validatorCoordinator: ValidatorCoordinator = ValidatorCoordinator(),
-    val citadels: CitadelFacade = CitadelFacade(componentManager)
+    val citadels: CitadelFacade = CitadelFacade(componentManager),
+    val actionMetaRegistry: ActionMetaRegistry = ActionMetaRegistry(ActionMetaRegistry.ActionMeta.DEFAULT)
 ) {
+
     init {
         require(citadels.componentManager === componentManager) { "Actions and citadel facade must share their storage" }
     }
@@ -25,9 +28,10 @@ class ActionManager @JvmOverloads constructor(
     private val posted = ArrayDeque<ActionData>()
 
     /**
-     * Returns DENIED without executing the processor if validation rejects the action.
-     * Successful or neutral validation allows execution, returning the processor's result
-     * (or DENIED if none is registered). Exceptions propagate to the caller.
+     * Returns DENIED without executing the processor if any validator rejects the action.
+     * A Success authorizes execution; an aggregate Neutral uses [actionMetaRegistry].
+     * Allowed execution returns the processor's result (or DENIED if none is registered).
+     * Exceptions propagate to the caller.
      * Nested execution is rejected: observers can [post] work for [drainPosted] instead.
      */
     fun execute(action: ActionData): ActionResult {
@@ -36,7 +40,14 @@ class ActionManager @JvmOverloads constructor(
         try {
             return when (validatorCoordinator.validate(action)) {
                 ActionValidator.Result.Rejected -> ActionResult.DENIED
-                ActionValidator.Result.Success, ActionValidator.Result.Neutral -> processorCoordinator.execute(action)
+                ActionValidator.Result.Success -> processorCoordinator.execute(action)
+                ActionValidator.Result.Neutral -> {
+                    if (actionMetaRegistry.getMetaOrDefault(action.type).executeIfNeutralActionResult) {
+                        processorCoordinator.execute(action)
+                    } else {
+                        ActionResult.DENIED
+                    }
+                }
             }
         } finally {
             executing = false
