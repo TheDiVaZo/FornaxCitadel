@@ -26,6 +26,13 @@ player-damage:
     first-join-hours: 48
     play-time-hours: 12
 
+# Dismantling removes the owner's reinforcement and breaks the targeted block.
+dismantle:
+  # Chance to return one stored reinforcement item when dismantling a damaged citadel.
+  # Full health or no Health component always returns the item, even when this chance is 0.
+  # Applies to survival, creative and command placements alike.
+  refund-chance: 0.5
+
 # Entity power comes from ExplosionPrimeEvent; this value is its fallback.
 explosions:
   default-entity-power: 4.0

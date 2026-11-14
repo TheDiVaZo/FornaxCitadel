@@ -16,6 +16,7 @@ import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.NerfingNewcomersModifier
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
+import ru.fornax.fornaxcitadel.paper.modules.dismantle.PaperDismantleService
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
@@ -45,6 +46,8 @@ class FornaxCitadel : JavaPlugin() {
     lateinit var materialPlacement: MaterialPlacementService
         private set
     lateinit var placement: PaperPlacementService
+        private set
+    lateinit var dismantle: PaperDismantleService
         private set
     lateinit var citadelTypes: PaperCitadelTypes
         private set
@@ -108,7 +111,9 @@ class FornaxCitadel : JavaPlugin() {
                     ))
                 }
             }
-            services.add(PaperBreakingService(this, module, playerDamage, messages, settings.playerDamage.creativeModeEnabled))
+            dismantle = PaperDismantleService(this, module, materials, settings.dismantle).also(services::add)
+            services.add(PaperBreakingService(this, module, playerDamage, messages,
+                settings.playerDamage.creativeModeEnabled, dismantle::consumeBreakEvent))
             services.add(PaperExplosionService(this, module, settings.explosionPowers))
             services.add(PaperEnvironmentService(this, module))
 

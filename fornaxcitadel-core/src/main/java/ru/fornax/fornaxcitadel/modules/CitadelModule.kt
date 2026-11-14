@@ -11,6 +11,7 @@ import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry.ActionMeta
+import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceService
@@ -23,7 +24,7 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
  * call [enable] to attach action handlers and [disable] to detach them without deleting data.
  *
  * Register read-only authorization checks on [actions.validatorCoordinator]. Damage, explicit
- * destruction and administrative removal require a validator's Success; a rejection always wins.
+ * destruction, administrative removal and dismantling require a validator's Success; a rejection always wins.
  * Definitions configure initial components, not authorization. Source keys are attribution.
  *
  * Services and the component manager expose trusted low-level operations; external requests
@@ -45,6 +46,7 @@ class CitadelModule @JvmOverloads constructor(
     val actions = ActionManager(manager, citadels = citadels).apply {
         actionMetaRegistry.register(RemoveAction.KEY, ActionMeta(false))
         actionMetaRegistry.register(DamageAction.KEY, ActionMeta(false))
+        actionMetaRegistry.register(DismantleAction.KEY, ActionMeta(false))
     }
     val place = PlaceService(actions, definitions, lifecycle)
     val remove = RemoveService(actions, lifecycle)

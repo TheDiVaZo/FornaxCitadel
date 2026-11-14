@@ -91,7 +91,8 @@ class PaperPlacementService @JvmOverloads constructor(
             val result = module.actions.execute(PlaceAction(
                 ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY)),
                 CitadelPosition(block.world.uid, block.x, block.y, block.z),
-                definitionKey
+                definitionKey,
+                materialKey
             ))
             if (result != ActionResult.SUCCESS) {
                 messages.sendGameplay(player, "placement.denied")

@@ -15,6 +15,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
@@ -48,6 +49,7 @@ class CitadelCommand(
             val operation = args.firstOrNull()?.lowercase(Locale.ROOT)
             if (operation == null || operation == "help") {
                 sender.message("commands.help.info")
+                if (sender.hasPermission(DISMANTLE)) sender.message("commands.help.dismantle")
                 if (sender.hasPermission(ADMIN)) {
                     sender.message("commands.help.give")
                     sender.message("commands.help.admin")
@@ -59,7 +61,11 @@ class CitadelCommand(
                 sender.message("commands.unknown-command")
                 return true
             }
-            val permission = if (operation == "info") "fornaxcitadel.info" else ADMIN
+            val permission = when (operation) {
+                "info" -> "fornaxcitadel.info"
+                "dismantle" -> DISMANTLE
+                else -> ADMIN
+            }
             if (!sender.hasPermission(permission)) {
                 sender.message("commands.no-permission")
                 return true
@@ -71,7 +77,7 @@ class CitadelCommand(
                     save()
                     sender.message("commands.saved")
                 }
-                "place", "remove", "info" -> target(sender, operation, args)
+                "place", "remove", "dismantle", "info" -> target(sender, operation, args)
             }
         } catch (_: CitadelResolutionUnavailableException) {
             sender.message("commands.chunk-unavailable")
@@ -144,12 +150,16 @@ class CitadelCommand(
                     sender.message("commands.unknown-type", "type" to args[1])
                     return
                 }
-                val result = module.actions.execute(PlaceAction(context, position, type))
+                val result = module.actions.execute(PlaceAction(context, position, type, citadelTypes.itemKey(type)))
                 sender.message(if (result == ActionResult.SUCCESS) "commands.place.success" else "commands.place.denied")
             }
             "remove" -> {
                 val result = module.actions.execute(RemoveAction(context, position))
                 sender.message(if (result == ActionResult.SUCCESS) "commands.remove.success" else "commands.remove.denied")
+            }
+            "dismantle" -> {
+                val result = module.actions.execute(DismantleAction(context, position))
+                sender.message(if (result == ActionResult.SUCCESS) "commands.dismantle.success" else "commands.dismantle.denied")
             }
             "info" -> {
                 val citadel = module.citadels.findProtecting(position)
@@ -174,7 +184,10 @@ class CitadelCommand(
 
     override fun onTabComplete(sender: CommandSender, command: Command, alias: String, args: Array<out String>): List<String> {
         val candidates = when {
-            args.size == 1 -> if (sender.hasPermission(ADMIN)) OPERATIONS else listOf("info", "help")
+            args.size == 1 -> {
+                val operations = if (sender.hasPermission(ADMIN)) OPERATIONS else listOf("info", "dismantle", "help")
+                operations.filter { it != "dismantle" || sender.hasPermission(DISMANTLE) }
+            }
             !sender.hasPermission(ADMIN) -> emptyList()
             args.size == 2 && args[0].lowercase(Locale.ROOT) in listOf("give", "place") -> citadelTypes.names
             args.size == 3 && args[0].equals("give", ignoreCase = true) -> plugin.server.onlinePlayers.map { it.name }
@@ -195,7 +208,8 @@ class CitadelCommand(
 
     private companion object {
         const val ADMIN = "fornaxcitadel.admin"
+        const val DISMANTLE = "fornaxcitadel.dismantle"
         val COMMAND_SOURCE_KEY = Key("fornaxcitadel", "paper_command")
-        val OPERATIONS = listOf("give", "place", "remove", "info", "save", "help")
+        val OPERATIONS = listOf("give", "place", "remove", "dismantle", "info", "save", "help")
     }
 }

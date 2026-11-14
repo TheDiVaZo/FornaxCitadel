@@ -47,10 +47,12 @@ commands:
     save: '<red>/citadel save</red>'
     place: '<red>/citadel place \<тип></red>'
     remove: '<red>/citadel remove</red>'
+    dismantle: '<red>/citadel dismantle</red>'
     info: '<red>/citadel info</red>'
     give: '<red>/citadel give \<{types}> [игрок] [1–64]</red>'
   help:
     info: '<green>/citadel info — укрепление блока под прицелом</green>'
+    dismantle: '<green>/citadel dismantle — демонтировать своё укрепление вместе с блоком</green>'
     give: '<green>/citadel give \<тип> [игрок] [1–64]</green>'
     admin: '<green>/citadel place \<тип>, /citadel remove, /citadel save</green>'
     types: '<green>Типы: {types}</green>'
@@ -76,6 +78,9 @@ commands:
   remove:
     success: '<green>Укрепление снято. Блок сохранён.</green>'
     denied: '<red>Удаление отклонено.</red>'
+  dismantle:
+    success: '<green>Укрепление демонтировано вместе с блоком.</green>'
+    denied: '<red>Не удалось демонтировать укрепление.</red>'
   info:
     not-reinforced: '<green>Этот блок не укреплён.</green>'
     type: '<green>Тип: {type}</green>'

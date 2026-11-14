@@ -6,6 +6,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
@@ -29,6 +30,7 @@ class PaperPermissionValidator(
         val permission = when (action) {
             is PlaceAction -> "fornaxcitadel.place"
             is DamageAction -> "fornaxcitadel.damage"
+            is DismantleAction -> "fornaxcitadel.dismantle"
             is RemoveAction -> "fornaxcitadel.admin"
             else -> return ActionValidator.Result.Neutral
         }
@@ -47,6 +49,7 @@ class PaperPermissionValidator(
                 return ActionValidator.Result.Rejected
             }
         }
-        return if (action is DamageAction) ActionValidator.Result.Neutral else ActionValidator.Result.Success
+        return if (action is DamageAction || action is DismantleAction) ActionValidator.Result.Neutral
+        else ActionValidator.Result.Success
     }
 }

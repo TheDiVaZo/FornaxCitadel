@@ -2,13 +2,18 @@ package ru.fornax.fornaxcitadel.paper
 
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+import org.bukkit.Material
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import org.bukkit.configuration.file.YamlConfiguration
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
+import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
+import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
+import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -40,9 +45,66 @@ class CitadelCommandTest {
 
         val placed = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(PaperCitadelTypes.INVULNERABLE, placed.getComponent(CitadelKind::class.java)?.definitionKey)
+        assertEquals(fixture.installer.id, placed.getComponent(CitadelOwner::class.java)?.playerId)
+        assertEquals(fixture.citadelTypes.itemKey(PaperCitadelTypes.INVULNERABLE),
+            placed.getComponent(ReinforcementItem::class.java)?.materialKey)
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("remove"))
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(0, fixture.vanillaBlockChanges)
+    }
+
+    @Test
+    fun `an ordinary owner can dismantle through the command and receives configured chat feedback`() {
+        PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(0.0)).use { fixture ->
+            fixture.place()
+            fixture.installer.target = fixture.block()
+            val messages = PaperMessages.read(YamlConfiguration().apply {
+                set("commands.dismantle.success", "Dismantled")
+            })
+            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
+                fixture.materials, fixture.citadelTypes, messages) {}
+            assertFalse("fornaxcitadel.admin" in fixture.installer.permissions)
+            assertEquals(listOf("dismantle"), commands.onTabComplete(
+                fixture.installer.player, TestCommand, "citadel", arrayOf("dis")))
+
+            commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("dismantle"))
+
+            assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
+            assertEquals(Material.AIR, fixture.block().type)
+            assertEquals(Material.IRON_INGOT, fixture.droppedItems.single().second.type)
+            assertEquals(listOf("Dismantled"), fixture.installer.chatMessages.plainText())
+            assertTrue(fixture.installer.actionBarMessages.isEmpty())
+        }
+    }
+
+    @Test
+    fun `administrator status bypasses neither dismantle ownership nor its command permission`() {
+        PaperTestFixture(permissions = true).use { fixture ->
+            fixture.place()
+            fixture.stranger.target = fixture.block()
+            fixture.stranger.permissions.add("fornaxcitadel.admin")
+            val messages = PaperMessages.read(YamlConfiguration().apply {
+                set("commands.dismantle.denied", "Dismantle denied")
+                set("commands.no-permission", "No permission")
+            })
+            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
+                fixture.materials, fixture.citadelTypes, messages) {}
+
+            commands.onCommand(fixture.stranger.player, TestCommand, "citadel", arrayOf("dismantle"))
+
+            assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
+            assertEquals(Material.STONE, fixture.block().type)
+            assertEquals(listOf("Dismantle denied"), fixture.stranger.chatMessages.plainText())
+            val targetLookups = fixture.stranger.targetLookups
+            fixture.stranger.permissions.remove("fornaxcitadel.dismantle")
+            assertTrue(commands.onTabComplete(
+                fixture.stranger.player, TestCommand, "citadel", arrayOf("dis")).isEmpty())
+
+            commands.onCommand(fixture.stranger.player, TestCommand, "citadel", arrayOf("dismantle"))
+
+            assertEquals(targetLookups, fixture.stranger.targetLookups)
+            assertEquals(listOf("Dismantle denied", "No permission"), fixture.stranger.chatMessages.plainText())
+        }
     }
 
     @Test
@@ -64,10 +126,11 @@ class CitadelCommandTest {
         PaperTestFixture(permissions = true).use { fixture ->
             val messages = PaperMessages.read(YamlConfiguration().apply {
                 set("commands.help.info", "Inspect help")
+                set("commands.help.dismantle", "Dismantle help")
                 set("commands.help.give", "Give help")
                 set("commands.help.admin", "Admin help")
                 set("commands.help.types", "Available: {types}")
-                for (operation in listOf("info", "place", "remove", "save")) {
+                for (operation in listOf("info", "place", "remove", "dismantle", "save")) {
                     set("commands.usage.$operation", "Usage $operation")
                 }
                 set("commands.usage.give", "Usage give {types}")
@@ -76,19 +139,19 @@ class CitadelCommandTest {
                 fixture.materials, fixture.citadelTypes, messages) {}
 
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("help"))
-            assertEquals(listOf("Inspect help"), fixture.installer.chatMessages.plainText())
+            assertEquals(listOf("Inspect help", "Dismantle help"), fixture.installer.chatMessages.plainText())
 
             fixture.installer.permissions.addAll(listOf("fornaxcitadel.admin", "fornaxcitadel.info"))
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", emptyArray())
-            for (operation in listOf("info", "place", "remove", "save")) {
+            for (operation in listOf("info", "place", "remove", "dismantle", "save")) {
                 commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf(operation, "extra", "extra"))
             }
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("give"))
 
             assertEquals(listOf(
-                "Inspect help", "Inspect help", "Give help", "Admin help",
+                "Inspect help", "Dismantle help", "Inspect help", "Dismantle help", "Give help", "Admin help",
                 "Available: reinforced, maturing, invulnerable",
-                "Usage info", "Usage place", "Usage remove", "Usage save",
+                "Usage info", "Usage place", "Usage remove", "Usage dismantle", "Usage save",
                 "Usage give reinforced|maturing|invulnerable"
             ), fixture.installer.chatMessages.plainText())
             assertTrue(fixture.installer.actionBarMessages.isEmpty())
@@ -170,9 +233,10 @@ class CitadelCommandTest {
 
             commands.onCommand(console, TestCommand, "citadel", arrayOf("save"))
             commands.onCommand(console, TestCommand, "citadel", arrayOf("info"))
+            commands.onCommand(console, TestCommand, "citadel", arrayOf("dismantle"))
 
             assertEquals(1, saves)
-            assertEquals(listOf("Saved from console", "Player required"), received.plainText())
+            assertEquals(listOf("Saved from console", "Player required", "Player required"), received.plainText())
         }
     }
 

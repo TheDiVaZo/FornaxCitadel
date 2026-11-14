@@ -2,6 +2,7 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.configuration.ConfigurationSection
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
+import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
 import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
@@ -14,7 +15,8 @@ data class PaperSettings(
     val explosionPowers: ExplosionPowerSettings = ExplosionPowerSettings(),
     val citadelTypes: CitadelTypesSettings = CitadelTypesSettings(),
     val placement: PlacementSettings = PlacementSettings(),
-    val observation: PaperObservationSettings = PaperObservationSettings()
+    val observation: PaperObservationSettings = PaperObservationSettings(),
+    val dismantle: DismantleSettings = DismantleSettings()
 ) {
     init {
         require(postedActionLimit > 0) { "actions.max-per-tick must be positive" }
@@ -30,7 +32,8 @@ data class PaperSettings(
                 explosionPowers = ExplosionPowerSettings.read(config),
                 citadelTypes = CitadelTypesSettings.read(config),
                 placement = PlacementSettings.read(config),
-                observation = PaperObservationSettings.read(config)
+                observation = PaperObservationSettings.read(config),
+                dismantle = DismantleSettings.read(config)
             )
         }
     }

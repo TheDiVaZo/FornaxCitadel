@@ -18,6 +18,7 @@ import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
+import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.PlayerInventory
 import org.bukkit.inventory.meta.ItemMeta
@@ -47,9 +48,13 @@ import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
+import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
+import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingListener
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
+import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
+import ru.fornax.fornaxcitadel.paper.modules.dismantle.PaperDismantleService
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentListener
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
@@ -109,7 +114,9 @@ internal class PaperTestFixture(
     maxActionsPerTick: Int = 1024,
     messages: PaperMessages = PaperMessages.defaults(),
     creativeModeEnabled: Boolean = true,
-    resolveMaterials: Boolean = true
+    resolveMaterials: Boolean = true,
+    dismantleSettings: DismantleSettings = DismantleSettings(),
+    dismantleRandom: () -> Double = { 0.0 }
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
@@ -125,6 +132,12 @@ internal class PaperTestFixture(
     var freshChunkWrappers = false
     var vanillaBlockChanges = 0
     var blockLookups = 0
+    val playerBreaks = mutableListOf<Pair<Player, Block>>()
+    var breakBlockReturnsFalse = false
+    var breakBlockFailure: RuntimeException? = null
+    var beforeBreakEvent: (BlockBreakEvent) -> Unit = {}
+    var afterBreakEvent: (BlockBreakEvent) -> Unit = {}
+    val droppedItems = mutableListOf<Pair<Location, ItemStack>>()
     val scheduledTasks = mutableListOf<TestScheduledTask>()
     private var currentTick = 0L
     private val listenerHistory = mutableListOf<Pair<Listener, Plugin>>()
@@ -157,6 +170,10 @@ internal class PaperTestFixture(
                 else (args[0] as Location).let { block(it.blockX, it.blockY, it.blockZ) }
             }
             "getChunkAt" -> error("Tests must never auto-load a Bukkit chunk")
+            "dropItemNaturally" -> {
+                droppedItems.add((args[0] as Location).clone() to (args[1] as ItemStack).clone())
+                paperProxy<org.bukkit.entity.Item>("dropped item") { call, _ -> unsupported(call) }
+            }
             else -> unsupported(method)
         }
     }
@@ -235,7 +252,20 @@ internal class PaperTestFixture(
         }
     }
     val playerDamage = PlayerDamageModifierService()
-    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
+    // Vanilla item creation normally needs the running server's item factory; use the test stack at that boundary.
+    private val dismantleMaterials = object : MaterialRegistry by materials {
+        override fun getType(key: Key): MaterialAdapter? {
+            val adapter = materials.getType(key) ?: return null
+            if (key.namespace != "minecraft") return adapter
+            return object : MaterialAdapter by adapter {
+                override fun createItemStack(amount: Int): ItemStack =
+                    TestItemStack(checkNotNull(Material.matchMaterial(key.asString())), amount)
+            }
+        }
+    }
+    val dismantleService = PaperDismantleService(plugin, module, dismantleMaterials, dismantleSettings, dismantleRandom)
+    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled,
+        dismantleService::consumeBreakEvent)
     val explosionService = PaperExplosionService(plugin, module, explosionPowers)
     val environmentService = PaperEnvironmentService(plugin, module)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
@@ -251,6 +281,7 @@ internal class PaperTestFixture(
         damageValidationService.enable()
         if (initializeModule) module.enable()
         if (initializeSystems) {
+            dismantleService.enable()
             placementService.enable()
             breakingService.enable()
             explosionService.enable()
@@ -259,7 +290,23 @@ internal class PaperTestFixture(
         if (load) manager.loadChunk(worldId, 0, 0).join()
     }
 
-    fun player(id: UUID, name: String): TestPlayer = TestPlayer(id, name, world).also { players[id] = it }
+    fun player(id: UUID, name: String): TestPlayer = TestPlayer(id, name, world).also { player ->
+        player.breakBlockHandler = { block -> breakBlock(player.player, block) }
+        players[id] = player
+    }
+
+    private fun breakBlock(player: Player, block: Block): Boolean {
+        playerBreaks.add(player to block)
+        breakBlockFailure?.let { throw it }
+        if (breakBlockReturnsFalse) return false
+        val event = BlockBreakEvent(block, player)
+        beforeBreakEvent(event)
+        dispatch(breakingListener, event, plugin)
+        afterBreakEvent(event)
+        if (event.isCancelled) return false
+        block.type = Material.AIR
+        return true
+    }
 
     fun chunkWrapper(x: Int = 0, z: Int = 0): Chunk = paperProxy("chunk wrapper") { method, _ ->
         when (method.name) {
@@ -285,7 +332,9 @@ internal class PaperTestFixture(
                     "getBlockData" -> blockData[key] ?: paperProxy<Directional>("piston facing") { property, _ ->
                         if (property.name == "getFacing") BlockFace.SOUTH else unsupported(property)
                     }
-                    "isEmpty", "isLiquid" -> false
+                    "isEmpty" -> (blockMaterials[key] ?: Material.STONE) in
+                        listOf(Material.AIR, Material.CAVE_AIR, Material.VOID_AIR)
+                    "isLiquid" -> false
                     "getChunk" -> if (x shr 4 == 0 && z shr 4 == 0) chunk else chunkWrapper(x shr 4, z shr 4)
                     "getLocation" -> Location(world, x.toDouble(), y.toDouble(), z.toDouble())
                     "getRelative" -> if (args[0] is BlockFace) {
@@ -314,7 +363,8 @@ internal class PaperTestFixture(
     }
 
     fun place(type: Key = PaperCitadelTypes.REINFORCED) {
-        assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(context(installer), position, type)))
+        assertEquals(ActionResult.SUCCESS, module.actions.execute(
+            PlaceAction(context(installer), position, type, citadelTypes.itemKey(type))))
     }
 
     fun context(player: TestPlayer) = ActionContext(player.id, PlayerSource(player.player, Key("test", "player")))
@@ -354,6 +404,7 @@ internal class PaperTestFixture(
         environmentService.disable()
         explosionService.disable()
         breakingService.disable()
+        dismantleService.disable()
         placementService.disable()
         module.disable()
         damageValidationService.disable()
@@ -377,7 +428,8 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
     var held: ItemStack = TestItemStack(Material.AIR, 0)
     var target: Block? = null
     var targetLookups = 0
-    val permissions = mutableSetOf("fornaxcitadel.place", "fornaxcitadel.damage")
+    val permissions = mutableSetOf("fornaxcitadel.place", "fornaxcitadel.damage", "fornaxcitadel.dismantle")
+    var breakBlockHandler: (Block) -> Boolean = { error("No player break handler installed") }
     val messages = mutableListOf<Any?>()
     val chatMessages = mutableListOf<Any?>()
     val actionBarMessages = mutableListOf<Any?>()
@@ -408,6 +460,7 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
             "isChunkSent" -> (args.single() as Long) in sentChunks
             "isDead" -> false
             "hasPermission" -> args[0] in permissions
+            "breakBlock" -> breakBlockHandler(args[0] as Block)
             "sendMessage" -> {
                 chatMessages.add(args.lastOrNull())
                 messages.add(args.lastOrNull())

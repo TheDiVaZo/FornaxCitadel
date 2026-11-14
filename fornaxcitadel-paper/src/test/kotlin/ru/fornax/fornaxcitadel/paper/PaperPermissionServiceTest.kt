@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
@@ -40,6 +41,7 @@ class PaperPermissionServiceTest {
                 for (action in listOf(
                     PlaceAction(context, fixture.position, PaperCitadelTypes.INVULNERABLE),
                     RemoveAction(context, fixture.position),
+                    DismantleAction(context, fixture.position),
                     DamageAction(context, fixture.position, 1.0),
                     DamageAction(context, fixture.position, 0.0, DamageAction.Mode.DESTROY)
                 )) {
@@ -60,6 +62,8 @@ class PaperPermissionServiceTest {
                     "fornaxcitadel.place", ActionValidator.Result.Success),
                 Triple(RemoveAction(context, fixture.position),
                     "fornaxcitadel.admin", ActionValidator.Result.Success),
+                Triple(DismantleAction(context, fixture.position),
+                    "fornaxcitadel.dismantle", ActionValidator.Result.Neutral),
                 Triple(DamageAction(context, fixture.position, 1.0),
                     "fornaxcitadel.damage", ActionValidator.Result.Neutral),
                 Triple(DamageAction(context, fixture.position, 0.0, DamageAction.Mode.DESTROY),

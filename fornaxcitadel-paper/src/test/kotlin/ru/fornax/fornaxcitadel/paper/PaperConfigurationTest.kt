@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
+import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -44,6 +45,31 @@ class PaperConfigurationTest {
                 assertEquals(type.maturing.initialDamageMultiplier, maturing.initialDamageMultiplier)
             }
         }
+    }
+
+    @Test
+    fun `dismantle refund chance defaults to one half and accepts both probability endpoints`() {
+        assertEquals(DismantleSettings(0.5), shippedSettings().dismantle)
+        assertEquals(DismantleSettings(0.5), PaperSettings.read(YamlConfiguration()).dismantle)
+        for (chance in listOf(0, 0.25, 1)) {
+            val config = YamlConfiguration().apply { set("dismantle.refund-chance", chance) }
+            assertEquals(chance.toDouble(), PaperSettings.read(config).dismantle.refundChance)
+        }
+    }
+
+    @Test
+    fun `invalid dismantle probabilities and malformed settings are rejected before startup`() {
+        for (chance in listOf(-0.01, 1.01, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
+            assertFailsWith<IllegalArgumentException> { DismantleSettings(chance) }
+            val config = YamlConfiguration().apply { set("dismantle.refund-chance", chance) }
+            assertFailsWith<IllegalArgumentException> { PaperSettings.read(config) }
+        }
+        for (value in listOf("0.5", true, listOf(0.5))) {
+            val config = YamlConfiguration().apply { set("dismantle.refund-chance", value) }
+            assertFailsWith<IllegalArgumentException> { PaperSettings.read(config) }
+        }
+        val malformed = YamlConfiguration().apply { set("dismantle", 0.5) }
+        assertFailsWith<IllegalArgumentException> { PaperSettings.read(malformed) }
     }
 
     @Test

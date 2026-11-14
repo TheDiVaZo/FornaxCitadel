@@ -22,11 +22,11 @@ class PaperMessagesTest {
             "breaking.chunk-unavailable", "breaking.denied", "breaking.removed", "breaking.damaged", "breaking.error"
         )
         val commands = listOf(
-            "description", "usage.help", "usage.save", "usage.place", "usage.remove", "usage.info", "usage.give",
-            "help.info", "help.give", "help.admin", "help.types", "unknown-command", "no-permission", "error", "saved",
+            "description", "usage.help", "usage.save", "usage.place", "usage.remove", "usage.dismantle", "usage.info", "usage.give",
+            "help.info", "help.dismantle", "help.give", "help.admin", "help.types", "unknown-command", "no-permission", "error", "saved",
             "give.player-required", "give.invalid-amount", "give.missing-item", "give.unregistered-item",
             "give.success", "give.none", "give.inventory-full", "player-only", "invalid-target", "chunk-unavailable",
-            "unknown-type", "place.success", "place.denied", "remove.success", "remove.denied",
+            "unknown-type", "place.success", "place.denied", "remove.success", "remove.denied", "dismantle.success", "dismantle.denied",
             "info.not-reinforced", "info.type", "info.unknown-type", "info.health", "info.invulnerable"
         ).map { "commands.$it" }
         for (key in gameplay + commands) assertTrue(messages.plainText(key).isNotBlank(), key)
