@@ -131,7 +131,7 @@ class FornaxCitadel : JavaPlugin() {
                 logger.log(Level.SEVERE, "Citadel observation failed", failure)
             }
             observation.registerSystem(CrackHealthObservationSystem(this))
-            val observationSource = Full3DObservation(this, manager, module.lifecycle, chunks, settings.observation.full3D)
+            val observationSource = Full3DObservation(this, module.actions, chunks, settings.observation.full3D)
             services.add(PaperObservationService(this, observation, observationSource))
             services.forEach { it.enable() }
             commandBinding = command to commands

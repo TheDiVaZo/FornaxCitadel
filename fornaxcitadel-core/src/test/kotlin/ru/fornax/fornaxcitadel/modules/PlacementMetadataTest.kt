@@ -3,7 +3,6 @@ package ru.fornax.fornaxcitadel.modules
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
@@ -20,6 +19,7 @@ import ru.fornax.fornaxcitadel.core.storage.ComponentSnapshot
 import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -51,10 +51,11 @@ class PlacementMetadataTest {
             var observerCalls = 0
             var observedOwner: UUID? = null
             var observedItem: Key? = null
-            fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-                override fun onPlaced(position: CitadelPosition, runtimeId: Int) {
+            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+                override val actionClass = PlaceAction::class.java
+                override fun handle(action: PlaceAction) {
                     observerCalls++
-                    val handle = fixture.handle(position)
+                    val handle = fixture.handle(action.position)
                     observedOwner = handle.getComponent(CitadelOwner::class.java)?.playerId
                     observedItem = handle.getComponent(ReinforcementItem::class.java)?.materialKey
                 }
@@ -88,8 +89,9 @@ class PlacementMetadataTest {
             }) else emptyList()
             Fixture(initializers).use { fixture ->
                 var notifications = 0
-                fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-                    override fun onPlaced(position: CitadelPosition, runtimeId: Int) { notifications++ }
+                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+                    override val actionClass = PlaceAction::class.java
+                    override fun handle(action: PlaceAction) { notifications++ }
                 })
                 if (initializerFails) {
                     assertFailsWith<IllegalStateException> { fixture.place() }

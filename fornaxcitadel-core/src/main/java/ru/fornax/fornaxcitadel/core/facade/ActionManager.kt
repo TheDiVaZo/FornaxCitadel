@@ -4,6 +4,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.HandlerCoordinator
 import ru.fornax.fornaxcitadel.core.systems.action.ProcessorCoordinator
 import ru.fornax.fornaxcitadel.core.systems.action.ValidatorCoordinator
 import java.util.ArrayDeque
@@ -17,7 +18,8 @@ class ActionManager @JvmOverloads constructor(
     val processorCoordinator: ProcessorCoordinator = ProcessorCoordinator(),
     val validatorCoordinator: ValidatorCoordinator = ValidatorCoordinator(),
     val citadels: CitadelFacade = CitadelFacade(componentManager),
-    val actionMetaRegistry: ActionMetaRegistry = ActionMetaRegistry(ActionMetaRegistry.ActionMeta.DEFAULT)
+    val actionMetaRegistry: ActionMetaRegistry = ActionMetaRegistry(ActionMetaRegistry.ActionMeta.DEFAULT),
+    val handlerCoordinator: HandlerCoordinator = HandlerCoordinator()
 ) {
 
     init {
@@ -31,14 +33,20 @@ class ActionManager @JvmOverloads constructor(
      * Returns DENIED without executing the processor if any validator rejects the action.
      * A Success authorizes execution; an aggregate Neutral uses [actionMetaRegistry].
      * Allowed execution returns the processor's result (or DENIED if none is registered).
-     * Validators must leave gameplay state unchanged. Exceptions propagate to the caller.
-     * Nested execution is rejected: observers can [post] work for [drainPosted] instead.
+     * Validators must leave gameplay state unchanged. Validator and processor exceptions propagate.
+     * On SUCCESS, matching handlers run in registration order; registration changes apply afterward.
+     * Handler exceptions are logged without changing the result or skipping later handlers.
+     * Handlers observe completed actions; modifying citadels from a handler has undefined behavior
+     * and is not checked at runtime. Use [post] to request subsequent changes.
+     * Nested execution is rejected through the last handler.
      */
     fun execute(action: ActionData): ActionResult {
-        check(!executing) { "Nested action execution is not allowed; post the action instead" }
+        check(!executing && !handlerCoordinator.isHandling) {
+            "Nested action execution is not allowed; post the action instead"
+        }
         executing = true
         try {
-            return when (validatorCoordinator.validate(action)) {
+            val result = when (validatorCoordinator.validate(action)) {
                 ActionValidator.Result.Rejected -> ActionResult.DENIED
                 ActionValidator.Result.Success -> processorCoordinator.execute(action)
                 ActionValidator.Result.Neutral -> {
@@ -49,6 +57,8 @@ class ActionManager @JvmOverloads constructor(
                     }
                 }
             }
+            if (result == ActionResult.SUCCESS) handlerCoordinator.handle(action)
+            return result
         } finally {
             executing = false
         }
@@ -64,12 +74,12 @@ class ActionManager @JvmOverloads constructor(
      * Runs at most [limit] queued actions on the owning thread. The module's queue service
      * calls this on subsequent ticks while the module is enabled.
      * Returns the number attempted. Failures propagate; remaining actions stay queued.
-     * Callers needing each result should use execute directly outside observer callbacks.
+     * Callers needing each result should use execute directly outside handler callbacks.
      */
     @JvmOverloads
     fun drainPosted(limit: Int = 1024): Int {
         require(limit >= 0) { "Action limit must be non-negative" }
-        check(!executing) { "Cannot drain actions during another action" }
+        check(!executing && !handlerCoordinator.isHandling) { "Cannot drain actions during another action or handling" }
         var count = 0
         while (count < limit && posted.isNotEmpty()) {
             val action = posted.removeFirst()

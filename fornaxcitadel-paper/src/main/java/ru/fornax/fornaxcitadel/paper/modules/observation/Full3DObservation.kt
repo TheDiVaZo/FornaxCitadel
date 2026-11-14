@@ -13,15 +13,14 @@ import org.bukkit.event.player.PlayerRespawnEvent
 import org.bukkit.event.player.PlayerTeleportEvent
 import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.observation.Observation
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationPublisher
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSubscription
+import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.chunks.ChunkDataListener
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import java.util.UUID
@@ -32,17 +31,19 @@ import java.util.logging.Level
  * on each axis. Scans existing core entities by chunk and Y range; never loads Bukkit chunks.
  * Movement inside a cell does not change membership. Changes are coalesced until the next tick,
  * when the actual player location and final core state are read. Initial publication is synchronous.
+ * Successful placement actions discover new targets. ObservationService prunes removed handles;
+ * direct data changes require an explicit refresh to discover additions.
  *
  * Subscriptions share one listener and at most one pending refresh task. The last close releases
  * them. [close] clears all subscriptions and publications; this instance may subsequently be reused.
  */
 class Full3DObservation @JvmOverloads constructor(
     private val plugin: Plugin,
-    private val manager: ComponentManager,
-    private val lifecycle: CitadelLifecycleNotifications,
+    private val actions: ActionManager,
     private val chunks: PaperChunkService,
     private val settings: Full3DObservationSettings = Full3DObservationSettings()
 ) : Observation<Player>, Listener, AutoCloseable {
+    private val manager = actions.componentManager
     private val sessions = LinkedHashMap<UUID, Session>()
     private val dirty = LinkedHashMap<Session, Boolean>()
     private var generation: Any? = null
@@ -53,9 +54,11 @@ class Full3DObservation @JvmOverloads constructor(
             if (cell.world == world && cell.containsChunk(x, z)) request(session, force = true)
         }
     }
-    private val citadelListener = object : CitadelLifecycleListener {
-        override fun onPlaced(position: CitadelPosition, runtimeId: Int) = changed(position)
-        override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) = changed(position)
+    private val placementHandler = object : ActionHandler<PlaceAction> {
+        override val actionClass = PlaceAction::class.java
+        override fun handle(action: PlaceAction) {
+            actions.citadels.findProtecting(action.position)?.let { changed(it.position) }
+        }
     }
 
     override fun observe(viewer: Player, publisher: ObservationPublisher): ObservationSubscription {
@@ -127,7 +130,7 @@ class Full3DObservation @JvmOverloads constructor(
     private fun attach() {
         generation = Any()
         try {
-            lifecycle.addListener(citadelListener)
+            actions.handlerCoordinator.registerHandler(placementHandler)
             chunks.addDataListener(chunkListener)
             plugin.server.pluginManager.registerEvents(this, plugin)
         } catch (failure: Throwable) {
@@ -142,7 +145,7 @@ class Full3DObservation @JvmOverloads constructor(
         pending = null
         dirty.clear()
         HandlerList.unregisterAll(this)
-        lifecycle.removeListener(citadelListener)
+        actions.handlerCoordinator.unregisterHandler(placementHandler)
         chunks.removeDataListener(chunkListener)
         previous?.task?.cancel()
     }

@@ -1,10 +1,9 @@
 package ru.fornax.fornaxcitadel.modules.health
 
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
-import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -249,51 +248,27 @@ class HealthServiceTest {
     }
 
     @Test
-    fun `lethal damage removes the entire citadel once after health editing`() {
+    fun `direct lethal damage removes the entire citadel after health editing without notifying action handlers`() {
         val fixture = HealthFixture(createInitial = false)
         val component = Health(20.0, 20.0)
         val citadel = fixture.create(health = component)
-        var removals = 0
-        fixture.notifications.addListener(object : CitadelLifecycleListener {
-            override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) {
-                removals++
-                assertEquals(RemovalCause.DESTROYED, cause)
-                assertEquals(citadel.runtimeId, runtimeId)
-                assertNull(fixture.manager.findCitadel(position.world, position.x, position.y, position.z))
-            }
+        var handled = 0
+        fixture.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+            override val actionClass = ActionData::class.java
+            override fun handle(action: ActionData) { handled++ }
         })
 
         assertEquals(ActionResult.SUCCESS, fixture.service.damage(citadel, 5.0))
         assertEquals(15.0, component.health)
         assertEquals(ActionResult.SUCCESS, fixture.service.damage(citadel, 100.0))
         assertEquals(0.0, component.health)
-        assertEquals(1, removals)
+        assertFalse(citadel.isCurrent)
+        assertNull(fixture.manager.findCitadel(citadel.world, citadel.x, citadel.y, citadel.z))
+        assertEquals(0, handled)
         assertTrue(fixture.chunk.isEmpty)
         assertTrue(fixture.chunk.isDirty)
         assertEquals(ActionResult.DENIED, fixture.service.damage(citadel, 1.0))
-        assertEquals(1, removals)
-    }
-
-    @Test
-    fun `removal observers cannot damage another citadel before the nested mutation is rejected`() {
-        val fixture = HealthFixture(createInitial = false)
-        val destroyed = fixture.create(health = Health(20.0, 20.0))
-        val survivingHealth = Health(20.0, 20.0)
-        val survivor = fixture.create(1, survivingHealth)
-        var observed = false
-        fixture.notifications.addListener(object : CitadelLifecycleListener {
-            override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) {
-                observed = true
-                assertFailsWith<IllegalStateException> { fixture.service.damage(survivor, 100.0) }
-                assertEquals(20.0, survivingHealth.health)
-            }
-        })
-
-        assertEquals(ActionResult.SUCCESS, fixture.service.damage(destroyed, 20.0))
-        assertTrue(observed)
-        assertFalse(destroyed.isCurrent)
-        assertTrue(survivor.isCurrent)
-        assertEquals(20.0, survivingHealth.health)
+        assertEquals(0, handled)
     }
 
     @Test

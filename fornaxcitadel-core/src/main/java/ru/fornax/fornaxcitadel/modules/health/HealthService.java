@@ -2,7 +2,6 @@ package ru.fornax.fornaxcitadel.modules.health;
 
 import kotlin.Unit;
 import org.jetbrains.annotations.NotNull;
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause;
 import ru.fornax.fornaxcitadel.core.facade.ActionManager;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager;
@@ -19,6 +18,7 @@ import java.util.Objects;
 /**
  * Applies authorized, modified damage on the owning game thread. Read health directly from its component.
  * When assembled without CitadelModule, configure action metadata, prerequisite and authorization validators.
+ * Direct calls do not notify action handlers.
  */
 public final class HealthService implements LifecycleService {
     private final ActionManager actions;
@@ -98,7 +98,6 @@ public final class HealthService implements LifecycleService {
     public ActionResult damage(@NotNull CitadelHandle citadel, double damage, @NotNull ActionContext context) {
         Objects.requireNonNull(citadel, "citadel");
         Objects.requireNonNull(context, "context");
-        removeService.checkMutationAllowed();
         if (!Double.isFinite(damage) || damage < 0.0) {
             throw new IllegalArgumentException("Damage must be finite and non-negative: " + damage);
         }
@@ -121,7 +120,7 @@ public final class HealthService implements LifecycleService {
         }
         requireValidHealth(component);
         if (component.health == 0.0) {
-            return removeService.remove(citadel, RemovalCause.DESTROYED);
+            return removeService.remove(citadel);
         }
         double remainingHealth = Math.max(0.0, component.health - modifiedDamage);
         if (remainingHealth == component.health) return ActionResult.DENIED;
@@ -131,7 +130,7 @@ public final class HealthService implements LifecycleService {
         });
         if (!edited || citadel.getComponent(Health.class) != component) return ActionResult.DENIED;
         if (component.health == 0.0) {
-            return removeService.remove(citadel, RemovalCause.DESTROYED);
+            return removeService.remove(citadel);
         }
         return ActionResult.SUCCESS;
     }
@@ -142,7 +141,7 @@ public final class HealthService implements LifecycleService {
         CitadelHandle citadel = Objects.requireNonNull(
                 actions.getCitadels().findProtecting(action.getPosition()), "Validated damage target is unavailable");
         if (action.getMode() == DamageAction.Mode.DESTROY) {
-            return removeService.remove(citadel, RemovalCause.DESTROYED);
+            return removeService.remove(citadel);
         }
         return damage(citadel, action.getDamage(), action.getContext());
     }

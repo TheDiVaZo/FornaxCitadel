@@ -10,7 +10,6 @@ import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
@@ -168,7 +167,7 @@ class PaperExplosionService @JvmOverloads constructor(
         val z = location.blockZ
         if (!CitadelPosition.isSupported(x, y, z) || !manager.isChunkLoaded(world, x shr 4, z shr 4)) return
         val citadel = manager.findCitadel(world, x, y, z) ?: return
-        module.remove.remove(citadel, RemovalCause.WORLD_EDIT)
+        module.remove.remove(citadel)
     }
 
     private class PrimedPower(val power: Float) {

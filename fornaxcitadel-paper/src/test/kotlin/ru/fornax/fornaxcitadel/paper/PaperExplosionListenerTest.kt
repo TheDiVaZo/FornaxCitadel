@@ -14,11 +14,11 @@ import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockExplodeEvent
 import org.bukkit.event.entity.EntityExplodeEvent
 import org.bukkit.event.entity.ExplosionPrimeEvent
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
@@ -435,7 +435,7 @@ class PaperExplosionListenerTest {
     }
 
     @Test
-    fun `cancelled bed and anchor explosions reconcile removed sources with world edit cause`() {
+    fun `cancelled bed and anchor explosions reconcile removed sources without action callbacks`() {
         for ((material, part) in listOf(
             Material.RESPAWN_ANCHOR to null,
             Material.RED_BED to Bed.Part.FOOT,
@@ -447,10 +447,11 @@ class PaperExplosionListenerTest {
             if (partner != null) fixture.placeAt(partner)
             val ordinaryTarget = fixture.block(3, 64, 2)
             fixture.placeAt(ordinaryTarget)
-            val removed = mutableListOf<Pair<CitadelPosition, RemovalCause>>()
-            fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-                override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) {
-                    removed.add(position to cause)
+            val completed = mutableListOf<ActionData>()
+            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+                override val actionClass = ActionData::class.java
+                override fun handle(action: ActionData) {
+                    completed.add(action)
                 }
             })
             val event = fixture.blockExplosion(ordinaryTarget,
@@ -460,8 +461,7 @@ class PaperExplosionListenerTest {
 
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
             if (partner != null) assertNull(fixture.manager.findCitadel(fixture.worldId, partner.x, partner.y, partner.z))
-            assertEquals(if (partner == null) 1 else 2, removed.size)
-            assertTrue(removed.all { it.second == RemovalCause.WORLD_EDIT })
+            assertTrue(completed.isEmpty())
             val intact = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 3, 64, 2))
             assertEquals(100.0, intact.getComponent(Health::class.java)?.health)
             assertEquals(listOf(ordinaryTarget), event.blockList())

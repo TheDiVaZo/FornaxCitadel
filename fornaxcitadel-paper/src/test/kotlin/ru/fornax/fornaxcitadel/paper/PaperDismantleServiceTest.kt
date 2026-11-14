@@ -8,13 +8,12 @@ import org.bukkit.block.Block
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -64,17 +63,18 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `successful dismantle breaks once without damage reentry and publishes dismantled before refund`() {
+    fun `successful dismantle breaks once without damage reentry and handles completion after refund`() {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             fixture.place()
             val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
-            val causes = mutableListOf<RemovalCause>()
-            fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-                override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) {
+            val completed = mutableListOf<DismantleAction>()
+            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DismantleAction> {
+                override val actionClass = DismantleAction::class.java
+                override fun handle(action: DismantleAction) {
                     assertFalse(original.isCurrent)
                     assertEquals(Material.AIR, fixture.block().type)
-                    assertTrue(fixture.droppedItems.isEmpty())
-                    causes.add(cause)
+                    assertEquals(1, fixture.droppedItems.size)
+                    completed.add(action)
                 }
             })
             fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
@@ -94,7 +94,7 @@ class PaperDismantleServiceTest {
             }
 
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
-            assertEquals(listOf(RemovalCause.DISMANTLED), causes)
+            assertEquals(fixture.position, completed.single().position)
             assertEquals(1, fixture.playerBreaks.size)
             val (location, refund) = fixture.droppedItems.single()
             assertEquals(fixture.block().location.add(0.5, 0.5, 0.5), location)
@@ -103,6 +103,7 @@ class PaperDismantleServiceTest {
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
             assertEquals(1, fixture.playerBreaks.size)
             assertEquals(1, fixture.droppedItems.size)
+            assertEquals(1, completed.size)
         }
     }
 
@@ -112,10 +113,11 @@ class PaperDismantleServiceTest {
             PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
                 fixture.place()
                 val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
-                val removals = mutableListOf<RemovalCause>()
-                fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-                    override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) {
-                        removals.add(cause)
+                val completed = mutableListOf<DismantleAction>()
+                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DismantleAction> {
+                    override val actionClass = DismantleAction::class.java
+                    override fun handle(action: DismantleAction) {
+                        completed.add(action)
                     }
                 })
                 when (failure) {
@@ -132,7 +134,7 @@ class PaperDismantleServiceTest {
                 assertEquals(100.0, fixture.health())
                 assertEquals(Material.STONE, fixture.block().type)
                 assertTrue(fixture.droppedItems.isEmpty())
-                assertTrue(removals.isEmpty())
+                assertTrue(completed.isEmpty())
                 assertFalse(fixture.dismantleService.consumeBreakEvent(fixture.installer.player, fixture.block()))
                 fixture.beforeBreakEvent = {}
                 fixture.afterBreakEvent = {}
@@ -144,6 +146,7 @@ class PaperDismantleServiceTest {
                 assertEquals(99.0, fixture.health())
                 assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
                 assertEquals(1, fixture.droppedItems.size)
+                assertEquals(1, completed.size)
             }
         }
     }

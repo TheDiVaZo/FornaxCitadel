@@ -5,7 +5,6 @@ import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
@@ -74,7 +73,6 @@ class PaperDismantleService @JvmOverloads constructor(
      */
     fun dismantle(action: DismantleAction): ActionResult {
         if (!enabled || expectedBreak != null) return ActionResult.DENIED
-        module.remove.checkMutationAllowed()
         val player = (action.context.source as PlayerSource).player
         val world = checkNotNull(plugin.server.getWorld(action.citadelW)) {
             "Validated dismantle world is unavailable"
@@ -106,7 +104,7 @@ class PaperDismantleService @JvmOverloads constructor(
             expectedBreak = null
         }
         if (!broken) return ActionResult.DENIED
-        val result = module.remove.remove(citadel, RemovalCause.DISMANTLED)
+        val result = module.remove.remove(citadel)
         if (result == ActionResult.SUCCESS && refund != null &&
             (refundChance == 1.0 || random() < refundChance)) {
             world.dropItemNaturally(dropLocation, refund)

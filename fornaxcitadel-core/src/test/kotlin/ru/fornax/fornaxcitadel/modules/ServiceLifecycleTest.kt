@@ -4,7 +4,6 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
@@ -299,9 +298,8 @@ class ServiceLifecycleTest {
             validateRemoval()
         }
         private val definitions = CitadelDefinitionRegistry()
-        private val lifecycle = CitadelLifecycleNotifications()
-        private val place = PlaceService(actions, definitions, lifecycle)
-        private val remove = RemoveService(actions, lifecycle)
+        private val place = PlaceService(actions, definitions)
+        private val remove = RemoveService(actions)
         val health = HealthService(actions, remove)
         private val services: List<LifecycleService> = listOf(remove, health, place)
 

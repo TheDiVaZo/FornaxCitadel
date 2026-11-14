@@ -4,10 +4,8 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.component.Component
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
@@ -20,6 +18,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -141,17 +140,21 @@ class CitadelFacadeTest {
     fun `raw placement damage and removal resolve protection without rewriting actions`() {
         Fixture().use { fixture ->
             val initialized = mutableListOf<CitadelPosition>()
-            val placed = mutableListOf<CitadelPosition>()
+            val placed = mutableListOf<PlaceAction>()
             fixture.module.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
                 CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(100.0)
             )))
             fixture.module.actions.validateDamage(CUSTOM_TYPE)
-            fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-                override fun onPlaced(position: CitadelPosition, runtimeId: Int) { placed.add(position) }
+            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+                override val actionClass = PlaceAction::class.java
+                override fun handle(action: PlaceAction) { placed.add(action) }
             })
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(CONTEXT, TOP, CUSTOM_TYPE)))
+            val placement = PlaceAction(CONTEXT, TOP, CUSTOM_TYPE)
+            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(placement))
             assertEquals(listOf(BOTTOM), initialized)
-            assertEquals(listOf(BOTTOM), placed)
+            assertSame(placement, placed.single())
+            assertEquals(TOP, placed.single().position)
+            assertNotNull(fixture.exact(BOTTOM))
 
             val request = SpecializedDamage(TOP, 7.0)
             var seen = false
@@ -228,9 +231,9 @@ class CitadelFacadeTest {
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(DamageAction(CONTEXT, TOP, 5.0)))
             assertEquals(95.0, fixture.health(TOP))
             assertEquals(100.0, fixture.health(BOTTOM))
-            assertEquals(ActionResult.SUCCESS, fixture.module.remove.remove(top, RemovalCause.WORLD_EDIT))
+            assertEquals(ActionResult.SUCCESS, fixture.module.remove.remove(top))
             assertEquals(bottom.runtimeId, fixture.module.citadels.findProtecting(TOP)?.runtimeId)
-            assertEquals(ActionResult.DENIED, fixture.module.remove.remove(top, RemovalCause.WORLD_EDIT))
+            assertEquals(ActionResult.DENIED, fixture.module.remove.remove(top))
             assertTrue(bottom.isCurrent)
         }
     }

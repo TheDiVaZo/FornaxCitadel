@@ -4,12 +4,10 @@ import org.bukkit.GameMode
 import org.bukkit.Material
 import org.bukkit.event.block.BlockBreakEvent
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
-import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
@@ -45,11 +43,12 @@ class PaperCreativeBreakingTest {
                 fixture.playerDamage.register(PlayerDamageModifier { _, _, _ ->
                     error("Creative destruction must not calculate damage")
                 })
-                val removals = mutableListOf<Pair<Int, RemovalCause>>()
-                fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-                    override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) {
-                        assertEquals(fixture.position, position)
-                        removals.add(runtimeId to cause)
+                val completed = mutableListOf<DamageAction>()
+                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+                    override val actionClass = DamageAction::class.java
+                    override fun handle(action: DamageAction) {
+                        assertFalse(target.isCurrent)
+                        completed.add(action)
                     }
                 })
 
@@ -58,12 +57,13 @@ class PaperCreativeBreakingTest {
                 assertTrue(first.isCancelled, type.asString())
                 assertNull(fixture.target(), type.asString())
                 assertFalse(target.isCurrent)
-                assertEquals(listOf(target.runtimeId to RemovalCause.DESTROYED), removals)
+                assertEquals(fixture.position, completed.single().position)
+                assertEquals(DamageAction.Mode.DESTROY, completed.single().mode)
                 assertEquals(Material.STONE, fixture.block().type)
                 assertEquals(0, fixture.vanillaBlockChanges)
                 val next = fixture.breakAsCreative()
                 assertFalse(next.isCancelled)
-                assertEquals(1, removals.size)
+                assertEquals(1, completed.size)
 
                 fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
                 fixture.manager.loadChunk(fixture.worldId, 0, 0).join()

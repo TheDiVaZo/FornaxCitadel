@@ -2,13 +2,17 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.Chunk
 import org.bukkit.Location
+import org.bukkit.Material
 import org.bukkit.World
+import org.bukkit.block.BlockState
 import org.bukkit.entity.Player
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.observation.Observation
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
@@ -72,6 +76,37 @@ class PaperCrackHealthObservationSystemTest {
             fixture.paper.advanceTicks(1)
             assertEquals(0.99f, packets.last().progress)
             assertTrue(packets.last().progress < 1f)
+        }
+    }
+
+    @Test
+    fun `direct explosion source cleanup clears the display next tick without action callbacks`() {
+        Fixture().use { fixture ->
+            fixture.observe(fixture.paper.installer)
+            val completed = mutableListOf<ActionData>()
+            fixture.paper.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+                override val actionClass = ActionData::class.java
+                override fun handle(action: ActionData) { completed.add(action) }
+            })
+            fixture.paper.explosionService.enable()
+            val source = paperProxy<BlockState>("removed respawn anchor") { method, _ ->
+                when (method.name) {
+                    "getType" -> Material.RESPAWN_ANCHOR
+                    "getLocation" -> fixture.paper.block().location
+                    else -> unsupported(method)
+                }
+            }
+
+            fixture.paper.explosionService.reconcileRemovedSource(source)
+
+            assertFalse(fixture.target.isCurrent)
+            assertTrue(completed.isEmpty())
+            val packets = fixture.paper.installer.blockDamagePackets
+            assertEquals(listOf(0.5f), packets.map { it.progress })
+            fixture.paper.advanceTicks(1)
+            assertEquals(listOf(0.5f, 0f), packets.map { it.progress })
+            assertEquals(-fixture.target.runtimeId, packets.last().sourceId)
+            assertTrue(fixture.failures.isEmpty())
         }
     }
 

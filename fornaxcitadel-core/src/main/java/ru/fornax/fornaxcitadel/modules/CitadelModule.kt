@@ -2,7 +2,6 @@ package ru.fornax.fornaxcitadel.modules
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
@@ -21,7 +20,7 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 
 /**
  * Core lifecycle entry point. Construct and register definitions before loading chunks;
- * call [enable] to attach action handlers and [disable] to detach them without deleting data.
+ * call [enable] to attach processors and prerequisite validators and [disable] to detach them.
  *
  * Register read-only authorization checks on [actions.validatorCoordinator]. Damage, explicit
  * destruction, administrative removal and dismantling require a validator's Success; a rejection always wins.
@@ -30,8 +29,9 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
  * source keys are attribution.
  *
  * Services and the component manager expose trusted low-level operations; external requests
- * must enter through [actions]. All access is on the owning game thread. Observers may post
- * actions; [actionQueue] drains them on subsequent ticks while this module is enabled.
+ * must enter through [actions]. Successful actions notify [actions.handlerCoordinator]; direct
+ * service calls are silent. All access is on the owning game thread. Handlers may post actions;
+ * [actionQueue] drains them on subsequent ticks while this module is enabled.
  * This module changes component data only; it has no Minecraft/Paper dependencies.
  */
 class CitadelModule @JvmOverloads constructor(
@@ -43,15 +43,14 @@ class CitadelModule @JvmOverloads constructor(
 ) : LifecycleService {
 
     val definitions = CitadelDefinitionRegistry()
-    val lifecycle = CitadelLifecycleNotifications()
     val citadels = CitadelFacade(manager, resolver)
     val actions = ActionManager(manager, citadels = citadels).apply {
         actionMetaRegistry.register(RemoveAction.KEY, ActionMeta(false))
         actionMetaRegistry.register(DamageAction.KEY, ActionMeta(false))
         actionMetaRegistry.register(DismantleAction.KEY, ActionMeta(false))
     }
-    val place = PlaceService(actions, definitions, lifecycle)
-    val remove = RemoveService(actions, lifecycle)
+    val place = PlaceService(actions, definitions)
+    val remove = RemoveService(actions)
     val health = HealthService(actions, remove)
     val actionQueue = ActionQueueService(actions, scheduler, maxActionsPerTick, actionFailureHandler)
     private val actionValidator = CitadelActionValidator(citadels, definitions)

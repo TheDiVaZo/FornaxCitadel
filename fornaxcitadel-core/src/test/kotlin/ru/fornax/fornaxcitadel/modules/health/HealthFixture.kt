@@ -1,7 +1,6 @@
 package ru.fornax.fornaxcitadel.modules.health
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.TypeManager
@@ -32,11 +31,10 @@ internal class HealthFixture(
     val types = TypeManager()
     val storage = MemoryStorage(if (loaded) ChunkCord(WXZCord(WORLD, 0, 0)) else null)
     val manager = ComponentManager(storage, types)
-    val notifications = CitadelLifecycleNotifications()
     val actions = ActionManager(manager).apply {
         actionMetaRegistry.register(DamageAction.KEY, ActionMetaRegistry.ActionMeta(false))
     }
-    val service = HealthService(actions, RemoveService(actions, notifications), clock)
+    val service = HealthService(actions, RemoveService(actions), clock)
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)
     val citadel: CitadelHandle get() = reference()
 

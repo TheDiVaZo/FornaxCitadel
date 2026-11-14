@@ -1,7 +1,5 @@
 package ru.fornax.fornaxcitadel.modules.remove
 
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleNotifications
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
@@ -10,10 +8,10 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 /**
  * Removes core data after authorization. Minecraft block changes belong to a platform integration.
  * When assembled without CitadelModule, configure action metadata, prerequisite and authorization validators.
+ * Direct calls do not notify action handlers.
  */
 class RemoveService(
-    private val actions: ActionManager,
-    private val notifications: CitadelLifecycleNotifications
+    private val actions: ActionManager
 ) : LifecycleService {
     private val manager = actions.componentManager
     private val processor = RemoveProcessor(this)
@@ -26,30 +24,24 @@ class RemoveService(
         actions.processorCoordinator.unregisterProcessor(processor)
     }
 
-    fun checkMutationAllowed() = notifications.checkMutationAllowed()
-
     /** Executes a validated request with an available target. External requests must enter through actions. */
     fun request(action: RemoveAction): ActionResult {
-        notifications.checkMutationAllowed()
         val citadel = checkNotNull(actions.citadels.findProtecting(action.position)) {
             "Validated removal target is unavailable"
         }
-        return remove(citadel, RemovalCause.ADMIN)
+        return remove(citadel)
     }
 
     /** Trusted completion after checks; does not re-run cancelable action validation. */
-    fun remove(citadel: CitadelHandle, cause: RemovalCause): ActionResult {
-        notifications.checkMutationAllowed()
+    fun remove(citadel: CitadelHandle): ActionResult {
         if (!manager.removeCitadel(citadel)) return ActionResult.DENIED
-        notifications.notifyRemoved(citadel, cause)
         return ActionResult.SUCCESS
     }
 
     /** Trusted batch completion. Each handle is checked independently; stale handles are skipped. */
-    fun removeAll(citadels: Iterable<CitadelHandle>, cause: RemovalCause): Int {
-        notifications.checkMutationAllowed()
+    fun removeAll(citadels: Iterable<CitadelHandle>): Int {
         var removed = 0
-        for (citadel in citadels) if (remove(citadel, cause) == ActionResult.SUCCESS) removed++
+        for (citadel in citadels) if (remove(citadel) == ActionResult.SUCCESS) removed++
         return removed
     }
 }

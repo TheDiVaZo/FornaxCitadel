@@ -23,6 +23,7 @@ import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationPublisher
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSubscription
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -192,7 +193,7 @@ class PaperFull3DObservationTest {
     }
 
     @Test
-    fun `stationary viewers refresh for nearby placement removal and replacement only`() {
+    fun `stationary viewers discover nearby successful placements without rescanning on removal`() {
         Fixture(Full3DObservationSettings(0, 0)).use { fixture ->
             val publications = fixture.observe()
             val initialQueries = fixture.queries.size
@@ -205,17 +206,60 @@ class PaperFull3DObservationTest {
             fixture.paper.runScheduledTasks()
             assertEquals(setOf(position), publications.last())
 
-            fixture.paper.installer.permissions.add("fornaxcitadel.admin")
-            fixture.paper.permissionService.enable()
-            assertEquals(ActionResult.SUCCESS, fixture.paper.module.actions.execute(RemoveAction(
-                fixture.paper.context(fixture.paper.installer), position)))
-            fixture.paper.permissionService.disable()
+            val beforeRemoval = publications.size
+            val queriesBeforeRemoval = fixture.queries.size
+            fixture.remove(position)
             fixture.paper.runScheduledTasks()
-            assertTrue(publications.last().isEmpty())
+            assertEquals(beforeRemoval, publications.size)
+            assertEquals(queriesBeforeRemoval, fixture.queries.size)
 
             fixture.place(1, 64, 1)
             fixture.paper.runScheduledTasks()
+            assertEquals(beforeRemoval + 1, publications.size)
             assertEquals(setOf(position), publications.last())
+        }
+    }
+
+    @Test
+    fun `direct placement is silent until an explicit refresh discovers it`() {
+        Fixture(Full3DObservationSettings(0, 0)).use { fixture ->
+            val publications = fixture.observe()
+            fixture.placeDirect(fixture.paper.position)
+
+            fixture.paper.runScheduledTasks()
+
+            assertEquals(listOf(emptySet()), publications)
+            fixture.provider.refresh(fixture.paper.installer.player)
+            fixture.paper.runScheduledTasks()
+            assertEquals(setOf(fixture.paper.position), publications.last())
+        }
+    }
+
+    @Test
+    fun `placement through another linked section refreshes the actual reinforcement area`() {
+        PaperTestFixture(initializeSystems = false).use { paper ->
+            val scheduler = PaperScheduler(paper.plugin)
+            val backend = PersistContainerChunkStorage(paper.plugin, scheduler)
+            val chunks = PaperChunkService(paper.plugin, paper.manager, backend, 100)
+            val provider = Full3DObservation(paper.plugin, paper.module.actions, chunks,
+                Full3DObservationSettings(0, 0))
+            try {
+                val (lower, upper) = paper.door(y = 79)
+                val publications = mutableListOf<Set<CitadelPosition>>()
+                provider.observe(paper.installer.player, ObservationPublisher { handles ->
+                    publications.add(handles.map { it.position }.toSet())
+                })
+                assertEquals(listOf(emptySet()), publications)
+
+                assertEquals(ActionResult.SUCCESS, paper.module.actions.execute(PlaceAction(
+                    paper.context(paper.installer), upper.testPosition(), PaperCitadelTypes.REINFORCED)))
+                paper.runScheduledTasks()
+
+                assertEquals(listOf(emptySet(), setOf(lower.testPosition())), publications)
+            } finally {
+                provider.close()
+                scheduler.close()
+            }
         }
     }
 
@@ -381,7 +425,7 @@ class PaperFull3DObservationTest {
         private val manager = ComponentManager(storage, types)
         private val module = CitadelModule(manager, ManualScheduler())
         val chunks = PaperChunkService(paper.plugin, manager, backend, 100)
-        private val provider = Full3DObservation(paper.plugin, manager, module.lifecycle, chunks,
+        private val provider = Full3DObservation(paper.plugin, module.actions, chunks,
             Full3DObservationSettings(0, 0))
 
         init {
@@ -411,26 +455,57 @@ class PaperFull3DObservationTest {
     private class Fixture(settings: Full3DObservationSettings = Full3DObservationSettings()) : AutoCloseable {
         val paper = PaperTestFixture(initializeSystems = false, trackListenerLifecycle = true, resolveMaterials = false)
         val queries = mutableListOf<WXZCord>()
+        private var recordQueries = true
         private val observedStorage = object : CitadelStorage by paper.storage {
             override fun getIfChunkLoaded(location: WXZCord): ChunkCord? {
-                queries.add(location)
+                if (recordQueries) queries.add(location)
                 return paper.storage.getIfChunkLoaded(location)
             }
         }
         private val manager = ComponentManager(observedStorage, paper.types)
+        private val module = CitadelModule(manager, ManualScheduler())
         private val scheduler = PaperScheduler(paper.plugin)
         private val backend = PersistContainerChunkStorage(paper.plugin, scheduler)
         val chunks = PaperChunkService(paper.plugin, paper.manager, backend, 100)
-        val provider = Full3DObservation(paper.plugin, manager, paper.module.lifecycle, chunks, settings)
+        val provider = Full3DObservation(paper.plugin, module.actions, chunks, settings)
         private val subscriptions = mutableListOf<ObservationSubscription>()
+
+        init {
+            paper.citadelTypes.register(module)
+            module.enable()
+            module.actions.validatorCoordinator.registerValidator(object : ActionValidator<RemoveAction> {
+                override val actionClass = RemoveAction::class.java
+                override fun validate(action: RemoveAction) = ActionValidator.Result.Success
+            })
+        }
 
         fun place(x: Int, y: Int, z: Int, world: UUID = paper.worldId): CitadelPosition {
             paper.manager.loadChunk(world, x shr 4, z shr 4).join()
             val position = CitadelPosition(world, x, y, z)
-            // Seed core observation data and publish placement notifications without requiring Bukkit chunks.
-            assertEquals(ActionResult.SUCCESS, paper.module.place.place(PlaceAction(
-                paper.context(paper.installer), position, PaperCitadelTypes.REINFORCED)))
+            // Use the core action pipeline without requiring Bukkit chunks for observation fixtures.
+            withoutRecordingQueries {
+                assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(
+                    paper.context(paper.installer), position, PaperCitadelTypes.REINFORCED)))
+            }
             return position
+        }
+
+        fun remove(position: CitadelPosition) = withoutRecordingQueries {
+            assertEquals(ActionResult.SUCCESS, module.actions.execute(RemoveAction(ActionContext.SYSTEM, position)))
+        }
+
+        fun placeDirect(position: CitadelPosition) = withoutRecordingQueries {
+            assertEquals(ActionResult.SUCCESS, module.place.place(PlaceAction(
+                ActionContext.SYSTEM, position, PaperCitadelTypes.REINFORCED)))
+        }
+
+        private fun <T> withoutRecordingQueries(operation: () -> T): T {
+            recordQueries = false
+            try {
+                return operation()
+            } finally {
+                recordQueries = true
+            }
         }
 
         fun capture(target: MutableList<Set<CitadelPosition>>) = ObservationPublisher { citadels ->
@@ -461,6 +536,7 @@ class PaperFull3DObservationTest {
         override fun close() {
             subscriptions.forEach(ObservationSubscription::close)
             provider.close()
+            module.disable()
             chunks.disable()
             scheduler.close()
             paper.close()

@@ -3,10 +3,8 @@ package ru.fornax.fornaxcitadel.modules
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.citadel.CitadelLifecycleListener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
-import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
@@ -18,6 +16,7 @@ import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionSource
@@ -70,9 +69,10 @@ class CitadelModuleTest {
         var observedKind: Key? = null
         var observedHealth: Double? = null
         var observedStart: Long? = null
-        fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-            override fun onPlaced(position: CitadelPosition, runtimeId: Int) {
-                val handle = fixture.find(position) ?: return
+        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+            override val actionClass = PlaceAction::class.java
+            override fun handle(action: PlaceAction) {
+                val handle = fixture.find(action.position) ?: return
                 observedKind = handle.getComponent(CitadelKind::class.java)?.definitionKey
                 observedHealth = handle.getComponent(Health::class.java)?.health
                 observedStart = handle.getComponent(Maturing::class.java)?.startedAtMillis
@@ -138,7 +138,7 @@ class CitadelModuleTest {
         assertEquals(ActionResult.SUCCESS, fixture.remove(PLACER_CONTEXT))
 
         assertNull(fixture.find())
-        assertEquals(listOf(RemovalCause.ADMIN), fixture.removals.map { it.second })
+        assertEquals(listOf(POSITION), fixture.removals.map { it.position })
         assertEquals(listOf(false), fixture.removalSawExistingEntity)
 
         val protected = Fixture({ context, _ -> context.actorId == PLACER })
@@ -169,16 +169,21 @@ class CitadelModuleTest {
             }
         })
 
-        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 25.0))
+        val hit = DamageAction(STRANGER_CONTEXT, POSITION, 25.0)
+        val lethalHit = DamageAction(STRANGER_CONTEXT, POSITION, 75.0)
+        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(hit))
         assertEquals(75.0, fixture.health().health)
         assertTrue(fixture.removals.isEmpty())
-        assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 75.0))
+        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(lethalHit))
 
         assertNull(fixture.find())
         assertEquals(0, removalValidationCalls)
-        assertEquals(listOf(RemovalCause.DESTROYED), fixture.removals.map { it.second })
+        assertEquals(listOf(hit, lethalHit), fixture.damages)
+        assertSame(lethalHit, fixture.damages.last())
+        assertEquals(listOf(true, false), fixture.damageSawExistingEntity)
+        assertTrue(fixture.removals.isEmpty())
         assertEquals(ActionResult.DENIED, fixture.damage(STRANGER_CONTEXT, 1.0))
-        assertEquals(1, fixture.removals.size)
+        assertEquals(2, fixture.damages.size)
     }
 
     @Test
@@ -271,17 +276,19 @@ class CitadelModuleTest {
             assertNull(fixture.find())
             assertTrue(fixture.chunk().isEmpty)
             assertTrue(fixture.chunk().isDirty)
-            assertEquals(listOf(POSITION to RemovalCause.DESTROYED), fixture.removals)
-            assertEquals(listOf(false), fixture.removalSawExistingEntity)
+            assertEquals(POSITION, fixture.damages.single().position)
+            assertEquals(DamageAction.Mode.DESTROY, fixture.damages.single().mode)
+            assertTrue(fixture.removals.isEmpty())
+            assertEquals(listOf(false), fixture.damageSawExistingEntity)
             assertEquals(ActionResult.DENIED, fixture.destroy(PLACER_CONTEXT))
-            assertEquals(1, fixture.removals.size)
+            assertEquals(1, fixture.damages.size)
 
             fixture.manager.unloadChunk(WORLD, 0, 0).join()
             fixture.load()
 
             assertNull(fixture.find())
             assertTrue(fixture.chunk().isEmpty)
-            assertEquals(1, fixture.removals.size)
+            assertEquals(1, fixture.damages.size)
         }
     }
 
@@ -328,7 +335,9 @@ class CitadelModuleTest {
         authorized = true
         assertEquals(ActionResult.SUCCESS, fixture.destroy(PLACER_CONTEXT))
         assertEquals(2, validationCalls)
-        assertEquals(listOf(POSITION to RemovalCause.DESTROYED), fixture.removals)
+        assertEquals(POSITION, fixture.damages.single().position)
+        assertEquals(DamageAction.Mode.DESTROY, fixture.damages.single().mode)
+        assertTrue(fixture.removals.isEmpty())
     }
 
     @Test
@@ -530,7 +539,7 @@ class CitadelModuleTest {
         )
 
         assertNull(fixture.find())
-        assertEquals(listOf(RemovalCause.ADMIN), fixture.removals.map { it.second })
+        assertEquals(listOf(POSITION), fixture.removals.map { it.position })
     }
 
     @Test
@@ -545,19 +554,45 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `observer failures do not undo committed actions or skip subsequent observers`() {
+    fun `direct services change state without dispatching action handlers`() {
+        val fixture = Fixture()
+        fixture.register()
+        fixture.load()
+
+        assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(PLACER_CONTEXT, POSITION, DEFAULT_KIND)))
+        assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(PLACER_CONTEXT, SECOND_POSITION, DEFAULT_KIND)))
+        val first = fixture.handle()
+        val second = fixture.handle(SECOND_POSITION)
+        assertEquals(ActionResult.SUCCESS, fixture.module.health.damage(first, 25.0))
+        assertEquals(75.0, fixture.health().health)
+        assertEquals(ActionResult.SUCCESS, fixture.module.remove.remove(first))
+        assertEquals(1, fixture.module.remove.removeAll(listOf(first, second)))
+
+        assertFalse(first.isCurrent)
+        assertFalse(second.isCurrent)
+        assertTrue(fixture.chunk().isEmpty)
+        assertTrue(fixture.completed.isEmpty())
+    }
+
+    @Test
+    fun `handler failures do not undo committed actions or skip subsequent handlers`() {
         val fixture = Fixture({ context, _ -> context.actorId == PLACER })
         fixture.register()
         fixture.load()
         var laterPlaced = 0
         var laterRemoved = 0
-        fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-            override fun onPlaced(position: CitadelPosition, runtimeId: Int) = error("Broken placement observer")
-            override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) = error("Broken removal observer")
+        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+            override val actionClass = ActionData::class.java
+            override fun handle(action: ActionData) = error("Broken action handler")
         })
-        fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-            override fun onPlaced(position: CitadelPosition, runtimeId: Int) { laterPlaced++ }
-            override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) { laterRemoved++ }
+        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+            override val actionClass = ActionData::class.java
+            override fun handle(action: ActionData) {
+                when (action) {
+                    is PlaceAction -> laterPlaced++
+                    is RemoveAction -> laterRemoved++
+                }
+            }
         })
 
         assertEquals(ActionResult.SUCCESS, fixture.place())
@@ -570,21 +605,17 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `observers can post removal but cannot mutate or recursively execute before other observers finish`() {
+    fun `handlers can post removal but cannot execute or drain before other handlers finish`() {
         val fixture = Fixture({ context, _ -> context.actorId == PLACER })
         fixture.register()
         fixture.load()
-        var directRemovalFailure: IllegalStateException? = null
         var nestedExecutionFailure: IllegalStateException? = null
         var nestedDrainFailure: IllegalStateException? = null
         var laterObserverSawEntity = false
-        fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-            override fun onPlaced(position: CitadelPosition, runtimeId: Int) {
-                try {
-                    fixture.module.remove.remove(fixture.handle(position), RemovalCause.DESTROYED)
-                } catch (failure: IllegalStateException) {
-                    directRemovalFailure = failure
-                }
+        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+            override val actionClass = PlaceAction::class.java
+            override fun handle(action: PlaceAction) {
+                val position = action.position
                 try {
                     fixture.module.actions.execute(RemoveAction(PLACER_CONTEXT, position))
                 } catch (failure: IllegalStateException) {
@@ -598,15 +629,15 @@ class CitadelModuleTest {
                 fixture.module.actions.post(RemoveAction(PLACER_CONTEXT, position))
             }
         })
-        fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
-            override fun onPlaced(position: CitadelPosition, runtimeId: Int) {
-                laterObserverSawEntity = fixture.find(position) != null
+        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+            override val actionClass = PlaceAction::class.java
+            override fun handle(action: PlaceAction) {
+                laterObserverSawEntity = fixture.find(action.position) != null
             }
         })
 
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
-        assertNotNull(directRemovalFailure)
         assertNotNull(nestedExecutionFailure)
         assertNotNull(nestedDrainFailure)
         assertTrue(laterObserverSawEntity)
@@ -614,7 +645,7 @@ class CitadelModuleTest {
         assertTrue(fixture.removals.isEmpty())
         assertEquals(1, fixture.module.actions.drainPosted())
         assertNull(fixture.find())
-        assertEquals(listOf(RemovalCause.ADMIN), fixture.removals.map { it.second })
+        assertEquals(listOf(POSITION), fixture.removals.map { it.position })
         assertEquals(0, fixture.module.actions.drainPosted())
     }
 
@@ -736,12 +767,13 @@ class CitadelModuleTest {
         val replacement = fixture.handle()
         fixture.chunk().resetDirty()
 
-        assertEquals(ActionResult.DENIED, fixture.module.remove.remove(oldHandle, RemovalCause.DESTROYED))
+        assertEquals(ActionResult.DENIED, fixture.module.remove.remove(oldHandle))
 
         assertFalse(oldHandle.isCurrent)
         assertTrue(replacement.isCurrent)
         assertEquals(100.0, fixture.health().health)
-        assertEquals(1, fixture.removals.size)
+        assertEquals(1, fixture.damages.size)
+        assertTrue(fixture.removals.isEmpty())
         assertFalse(fixture.chunk().isDirty)
     }
 
@@ -760,19 +792,22 @@ class CitadelModuleTest {
             authorizeDestruction?.let { actions.validateDamage(mode = DamageAction.Mode.DESTROY, allowed = it) }
             enable()
         }
-        val placements = mutableListOf<CitadelPosition>()
-        val removals = mutableListOf<Pair<CitadelPosition, RemovalCause>>()
+        val completed = mutableListOf<ActionData>()
+        val placements get() = completed.filterIsInstance<PlaceAction>().map { it.position }
+        val removals get() = completed.filterIsInstance<RemoveAction>()
+        val damages get() = completed.filterIsInstance<DamageAction>()
         val removalSawExistingEntity = mutableListOf<Boolean>()
+        val damageSawExistingEntity = mutableListOf<Boolean>()
 
         init {
-            module.lifecycle.addListener(object : CitadelLifecycleListener {
-                override fun onPlaced(position: CitadelPosition, runtimeId: Int) {
-                    placements.add(position)
-                }
-
-                override fun onRemoved(position: CitadelPosition, runtimeId: Int, cause: RemovalCause) {
-                    removals.add(position to cause)
-                    removalSawExistingEntity.add(find(position) != null)
+            module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+                override val actionClass = ActionData::class.java
+                override fun handle(action: ActionData) {
+                    completed.add(action)
+                    when (action) {
+                        is RemoveAction -> removalSawExistingEntity.add(find(action.position) != null)
+                        is DamageAction -> damageSawExistingEntity.add(find(action.position) != null)
+                    }
                 }
             })
         }

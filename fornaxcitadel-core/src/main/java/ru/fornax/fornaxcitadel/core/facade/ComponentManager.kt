@@ -39,7 +39,7 @@ class ComponentManager(
     /**
      * Low-level creation used by the placement service after its validators and initializers.
      * All types are checked before insertion. A successful call consumes the draft and marks
-     * the loaded chunk dirty. This method does not publish gameplay lifecycle notifications.
+     * the loaded chunk dirty. This method does not notify action handlers.
      */
     fun createCitadel(draft: MutableCitadelDraft): ActionResult {
         val prepared = draft.componentsForCommit().map { (componentClass, component) ->
