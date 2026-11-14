@@ -233,7 +233,7 @@ class PaperChunkServiceTest {
         init {
             module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(100.0))))
             module.actions.validatorCoordinator.registerValidator(
-                PaperDamageValidator(module.citadels, paper.citadelTypes, paper.server, true))
+                PaperDamageValidator(module.citadels, paper.citadelTypes, true))
             module.enable()
         }
 

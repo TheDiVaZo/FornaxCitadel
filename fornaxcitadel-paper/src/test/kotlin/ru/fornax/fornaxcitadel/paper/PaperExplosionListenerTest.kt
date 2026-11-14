@@ -257,26 +257,29 @@ class PaperExplosionListenerTest {
     }
 
     @Test
-    fun `only typed environmental damage bypasses player permission and world checks still apply`() {
-        val fixture = PaperTestFixture(permissions = true)
+    fun `non-player damage skips player and platform permission checks but still requires core availability`() {
+        val fixture = PaperTestFixture(permissions = true, resolveMaterials = false)
         fixture.place()
         val source = ExplosionSource.fromEntity(explodingEntity(), fixture.block().location, 4.0f)
         val typed = DamageAction(ActionContext(null, source), fixture.position, 10.0)
-        val spoofed = DamageAction(ActionContext(null, NamedActionSource(Key("paper", "explosion"))), fixture.position, 10.0)
+        val named = DamageAction(ActionContext(null, NamedActionSource(Key("paper", "explosion"))), fixture.position, 10.0)
 
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(spoofed))
+        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(named))
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(typed))
-        assertEquals(90.0, fixture.health())
+        assertEquals(80.0, fixture.health())
         fixture.worldChunkLoaded = false
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
+        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(typed))
         fixture.worldChunkLoaded = true
         fixture.worldAvailable = false
+        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(typed))
+        assertEquals(60.0, fixture.health())
+        fixture.worldAvailable = true
+        fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
-        assertEquals(90.0, fixture.health())
     }
 
     @Test
-    fun `explosion context does not exempt placement or removal from player permissions`() {
+    fun `non-player explosion attribution does not trigger player permission validation`() {
         val fixture = PaperTestFixture(permissions = true)
         fixture.place()
         fixture.installer.permissions.clear()
@@ -287,12 +290,12 @@ class PaperExplosionListenerTest {
         val placement = PlaceAction(context, target, PaperCitadelTypes.REINFORCED)
         val validator = PaperPermissionValidator(fixture.server, fixture.citadelTypes)
 
-        assertEquals(ActionValidator.Result.Rejected, validator.validate(removal))
-        assertEquals(ActionValidator.Result.Rejected, validator.validate(placement))
+        assertEquals(ActionValidator.Result.Neutral, validator.validate(removal))
+        assertEquals(ActionValidator.Result.Neutral, validator.validate(placement))
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(removal))
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(placement))
+        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(placement))
         assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-        assertNull(fixture.manager.findCitadel(fixture.worldId, 3, 64, 2))
+        assertNotNull(fixture.manager.findCitadel(fixture.worldId, 3, 64, 2))
     }
 
     @Test

@@ -9,10 +9,10 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
-import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 
-/** Platform permissions are checked for every request, including commands and posted actions. */
+/** Checks captured players when requests execute; other sources are left to other validators. */
 class PaperPermissionValidator(
     private val server: Server,
     private val citadelTypes: PaperCitadelTypes
@@ -20,24 +20,20 @@ class PaperPermissionValidator(
     override val actionClass = ActionData::class.java
 
     fun canAdminister(context: ActionContext): Boolean {
-        val player = context.actorId?.let(server::getPlayer) ?: return false
+        val player = (context.source as? PlayerSource)?.player ?: return false
         return player.isOnline && player.hasPermission("fornaxcitadel.admin")
     }
 
     override fun validate(action: ActionData): ActionValidator.Result {
+        val player = (action.context.source as? PlayerSource)?.player ?: return ActionValidator.Result.Neutral
         val permission = when (action) {
             is PlaceAction -> "fornaxcitadel.place"
-            // Only ordinary damage from a typed explosion uses environmental permission rules.
-            is DamageAction -> if (action.mode == DamageAction.Mode.DAMAGE && action.context.source is ExplosionSource)
-                null else "fornaxcitadel.damage"
+            is DamageAction -> "fornaxcitadel.damage"
             is RemoveAction -> "fornaxcitadel.admin"
             else -> return ActionValidator.Result.Neutral
         }
-        if (permission != null) {
-            val player = action.context.actorId?.let(server::getPlayer) ?: return ActionValidator.Result.Rejected
-            if (!player.isOnline || player.gameMode == GameMode.SPECTATOR || !player.hasPermission(permission)) {
-                return ActionValidator.Result.Rejected
-            }
+        if (!player.isOnline || player.gameMode == GameMode.SPECTATOR || !player.hasPermission(permission)) {
+            return ActionValidator.Result.Rejected
         }
         if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) {
             return ActionValidator.Result.Rejected

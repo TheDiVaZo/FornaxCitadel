@@ -93,7 +93,7 @@ class FornaxCitadel : JavaPlugin() {
             citadelTypes.register(module)
             services.add(PaperPermissionService(module.actions, permissions))
             services.add(PaperDamageValidationService(module.actions,
-                PaperDamageValidator(module.citadels, citadelTypes, server, settings.playerDamage.creativeModeEnabled)))
+                PaperDamageValidator(module.citadels, citadelTypes, settings.playerDamage.creativeModeEnabled)))
 
             val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)
             placement = PaperPlacementService(this, module, materials, settings.placement, messages).also(services::add)

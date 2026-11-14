@@ -9,12 +9,12 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.paper.PaperMessages
+import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
@@ -81,7 +81,7 @@ class PaperBreakingService @JvmOverloads constructor(
             val mode = if (destroy) DamageAction.Mode.DESTROY else DamageAction.Mode.DAMAGE
             val damage = if (destroy) Double.MAX_VALUE else damageModifiers.getDamage(citadel, player)
             val result = module.actions.execute(DamageAction(
-                ActionContext(player.uniqueId, BREAK_SOURCE), position, damage, mode
+                ActionContext(player.uniqueId, PlayerSource(player, BREAK_SOURCE_KEY)), position, damage, mode
             ))
             if (result != ActionResult.SUCCESS) {
                 messages.sendGameplay(player, "breaking.denied")
@@ -102,6 +102,6 @@ class PaperBreakingService @JvmOverloads constructor(
     }
 
     private companion object {
-        val BREAK_SOURCE = NamedActionSource(Key("paper", "player_break"))
+        val BREAK_SOURCE_KEY = Key("paper", "player_break")
     }
 }

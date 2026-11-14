@@ -12,6 +12,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
@@ -157,7 +158,6 @@ class PaperCreativeBreakingTest {
             "adventure" to { it.stranger.gameMode = GameMode.ADVENTURE },
             "spectator" to { it.stranger.gameMode = GameMode.SPECTATOR },
             "offline" to { it.stranger.online = false },
-            "missing player" to { it.players.remove(it.stranger.id) },
             "permission revoked" to { it.stranger.permissions.remove("fornaxcitadel.damage") }
         )
         for ((reason, change) in revoke) {
@@ -182,6 +182,28 @@ class PaperCreativeBreakingTest {
     }
 
     @Test
+    fun `queued destruction retains the original player reference when the same UUID reconnects`() {
+        for (permissions in listOf(false, true)) {
+            PaperTestFixture(permissions = permissions, moduleSchedulerFactory = ::PaperScheduler).use { fixture ->
+                fixture.prepareInvulnerable()
+                fixture.module.actions.post(fixture.destroyAction())
+                fixture.stranger.online = false
+                val replacement = fixture.player(fixture.stranger.id, "reconnected").apply {
+                    gameMode = GameMode.CREATIVE
+                }
+
+                fixture.runScheduledTasks()
+
+                assertNotNull(fixture.target())
+                fixture.module.actions.post(DamageAction(fixture.context(replacement), fixture.position,
+                    0.0, DamageAction.Mode.DESTROY))
+                fixture.runScheduledTasks()
+                assertNull(fixture.target())
+            }
+        }
+    }
+
+    @Test
     fun `direct destruction without a creative actor is denied even without platform validation`() {
         PaperTestFixture().use { fixture ->
             fixture.prepareInvulnerable()
@@ -193,6 +215,10 @@ class PaperCreativeBreakingTest {
                 DamageAction(ActionContext.SYSTEM, fixture.position, Double.MAX_VALUE, DamageAction.Mode.DESTROY)
             ))
             fixture.stranger.gameMode = GameMode.CREATIVE
+            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+                DamageAction(ActionContext(fixture.stranger.id, NamedActionSource(Key("test", "untyped"))),
+                    fixture.position, 0.0, DamageAction.Mode.DESTROY)
+            ))
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
                 DamageAction(fixture.context(fixture.stranger), fixture.position, Double.MAX_VALUE)
             ))

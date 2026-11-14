@@ -40,12 +40,12 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingListener
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
@@ -228,7 +228,7 @@ internal class PaperTestFixture(
         resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager))
     val permissionService = PaperPermissionService(module.actions, permissionValidator)
     val damageValidationService = PaperDamageValidationService(module.actions,
-        PaperDamageValidator(module.citadels, citadelTypes, server, creativeModeEnabled))
+        PaperDamageValidator(module.citadels, citadelTypes, creativeModeEnabled))
     val placementService = PaperPlacementService(plugin, module, materials, placementSettings, messages).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
@@ -317,7 +317,7 @@ internal class PaperTestFixture(
         assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(context(installer), position, type)))
     }
 
-    fun context(player: TestPlayer) = ActionContext(player.id, NamedActionSource(Key("test", "player")))
+    fun context(player: TestPlayer) = ActionContext(player.id, PlayerSource(player.player, Key("test", "player")))
     fun health(): Double = assertNotNull(manager.findCitadel(worldId, position.x, position.y, position.z))
         .getComponent(Health::class.java)!!.health
 

@@ -1,12 +1,12 @@
 package ru.fornax.fornaxcitadel.paper.modules.health
 
 import org.bukkit.GameMode
-import org.bukkit.Server
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 
@@ -14,7 +14,6 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 class PaperDamageValidator(
     private val citadels: CitadelFacade,
     private val citadelTypes: PaperCitadelTypes,
-    private val server: Server,
     private val creativeModeEnabled: Boolean
 ) : ActionValidator<DamageAction> {
     override val actionClass = DamageAction::class.java
@@ -28,7 +27,7 @@ class PaperDamageValidator(
 
         if (action.mode == DamageAction.Mode.DESTROY) {
             if (!creativeModeEnabled) return ActionValidator.Result.Rejected
-            val player = action.context.actorId?.let(server::getPlayer) ?: return ActionValidator.Result.Rejected
+            val player = (action.context.source as? PlayerSource)?.player ?: return ActionValidator.Result.Rejected
             return if (player.isOnline && player.gameMode == GameMode.CREATIVE &&
                 player.hasPermission("fornaxcitadel.damage")) ActionValidator.Result.Success
             else ActionValidator.Result.Rejected

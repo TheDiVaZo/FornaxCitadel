@@ -12,13 +12,13 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
@@ -136,7 +136,7 @@ class CitadelCommand(
             sender.message("commands.chunk-unavailable")
             return
         }
-        val context = ActionContext(player.uniqueId, COMMAND_SOURCE)
+        val context = ActionContext(player.uniqueId, PlayerSource(player, COMMAND_SOURCE_KEY))
         when (operation) {
             "place" -> {
                 val type = citadelTypes.find(args[1])
@@ -195,7 +195,7 @@ class CitadelCommand(
 
     private companion object {
         const val ADMIN = "fornaxcitadel.admin"
-        val COMMAND_SOURCE = NamedActionSource(Key("fornaxcitadel", "paper_command"))
+        val COMMAND_SOURCE_KEY = Key("fornaxcitadel", "paper_command")
         val OPERATIONS = listOf("give", "place", "remove", "info", "save", "help")
     }
 }

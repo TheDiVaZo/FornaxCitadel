@@ -9,12 +9,12 @@ import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.PaperMessages
+import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
@@ -89,7 +89,7 @@ class PaperPlacementService @JvmOverloads constructor(
 
         try {
             val result = module.actions.execute(PlaceAction(
-                ActionContext(player.uniqueId, ITEM_SOURCE),
+                ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY)),
                 CitadelPosition(block.world.uid, block.x, block.y, block.z),
                 definitionKey
             ))
@@ -114,6 +114,6 @@ class PaperPlacementService @JvmOverloads constructor(
     }
 
     private companion object {
-        val ITEM_SOURCE = NamedActionSource(Key("paper", "reinforcement_item"))
+        val ITEM_SOURCE_KEY = Key("paper", "reinforcement_item")
     }
 }
