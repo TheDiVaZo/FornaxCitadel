@@ -160,6 +160,144 @@ class ValidatorCoordinatorTest {
         assertEquals(listOf("added"), calls)
     }
 
+    @Test
+    fun `pending changes use effective membership and preserve FIFO order for the next validation`() {
+        val coordinator = ValidatorCoordinator()
+        val calls = mutableListOf<String>()
+        val moved = validator(ActionData::class.java) { calls.add("moved"); Result.Neutral }
+        val tail = validator(ActionData::class.java) { calls.add("tail"); Result.Neutral }
+        val added = validator(ActionData::class.java) { calls.add("added"); Result.Success }
+        val temporary = validator(ActionData::class.java) { error("An added then removed validator must stay absent") }
+        lateinit var first: ActionValidator<ActionData>
+        first = validator(ActionData::class.java) {
+            calls.add("first")
+            assertTrue(coordinator.unregisterValidator(first))
+            assertFalse(coordinator.unregisterValidator(first))
+            coordinator.registerValidator(tail)
+            assertTrue(coordinator.unregisterValidator(moved))
+            assertFalse(coordinator.unregisterValidator(moved))
+            coordinator.registerValidator(moved)
+            coordinator.registerValidator(moved)
+            coordinator.registerValidator(added)
+            coordinator.registerValidator(added)
+            coordinator.registerValidator(temporary)
+            coordinator.registerValidator(temporary)
+            assertTrue(coordinator.unregisterValidator(temporary))
+            assertFalse(coordinator.unregisterValidator(temporary))
+            Result.Neutral
+        }
+        coordinator.registerValidator(first)
+        coordinator.registerValidator(moved)
+        coordinator.registerValidator(tail)
+
+        assertSame(Result.Neutral, coordinator.validate(action))
+        assertEquals(listOf("first", "moved", "tail"), calls)
+        calls.clear()
+        assertSame(Result.Success, coordinator.validate(action))
+        assertEquals(listOf("tail", "moved", "added"), calls)
+        assertFalse(coordinator.unregisterValidator(temporary))
+    }
+
+    @Test
+    fun `pending registrations and removals use identity for validators that compare equal`() {
+        val coordinator = ValidatorCoordinator()
+        val registered = EqualValidator()
+        val other = EqualValidator()
+        lateinit var first: ActionValidator<ActionData>
+        first = validator(ActionData::class.java) {
+            assertTrue(coordinator.unregisterValidator(first))
+            assertFalse(coordinator.unregisterValidator(other))
+            coordinator.registerValidator(other)
+            coordinator.registerValidator(other)
+            assertTrue(coordinator.unregisterValidator(registered))
+            assertFalse(coordinator.unregisterValidator(registered))
+            assertTrue(coordinator.unregisterValidator(other))
+            assertFalse(coordinator.unregisterValidator(other))
+            Result.Neutral
+        }
+        coordinator.registerValidator(first)
+        coordinator.registerValidator(registered)
+
+        assertSame(Result.Rejected, coordinator.validate(action))
+        assertSame(Result.Neutral, coordinator.validate(action))
+    }
+
+    @Test
+    fun `early rejection and callback exceptions still flush pending registrations`() {
+        for (failure in listOf(null, IllegalArgumentException("Validation failed"))) {
+            val coordinator = ValidatorCoordinator()
+            val calls = mutableListOf<String>()
+            val later = validator(ActionData::class.java) { calls.add("later"); Result.Neutral }
+            val added = validator(ActionData::class.java) { calls.add("added"); Result.Success }
+            lateinit var first: ActionValidator<ActionData>
+            first = validator(ActionData::class.java) {
+                calls.add("first")
+                assertTrue(coordinator.unregisterValidator(first))
+                assertTrue(coordinator.unregisterValidator(later))
+                coordinator.registerValidator(added)
+                if (failure != null) throw failure
+                Result.Rejected
+            }
+            coordinator.registerValidator(first)
+            coordinator.registerValidator(later)
+
+            if (failure == null) assertSame(Result.Rejected, coordinator.validate(action))
+            else assertSame(failure, assertFailsWith<IllegalArgumentException> { coordinator.validate(action) })
+            assertEquals(listOf("first"), calls)
+            calls.clear()
+            assertSame(Result.Success, coordinator.validate(action))
+            assertEquals(listOf("added"), calls)
+        }
+    }
+
+    @Test
+    fun `caught nested validation leaves the outer traversal and pending changes intact`() {
+        val coordinator = ValidatorCoordinator()
+        val calls = mutableListOf<String>()
+        val later = validator(ActionData::class.java) { calls.add("later"); Result.Neutral }
+        val added = validator(ActionData::class.java) { calls.add("added"); Result.Success }
+        val last = validator(ActionData::class.java) { calls.add("last"); Result.Neutral }
+        lateinit var first: ActionValidator<ActionData>
+        first = validator(ActionData::class.java) {
+            calls.add("first")
+            assertTrue(coordinator.unregisterValidator(first))
+            assertTrue(coordinator.unregisterValidator(later))
+            coordinator.registerValidator(added)
+            assertFailsWith<IllegalStateException> { coordinator.validate(action) }
+            assertFalse(coordinator.unregisterValidator(later))
+            coordinator.registerValidator(last)
+            assertFailsWith<IllegalStateException> { coordinator.validate(action) }
+            Result.Neutral
+        }
+        coordinator.registerValidator(first)
+        coordinator.registerValidator(later)
+
+        assertSame(Result.Neutral, coordinator.validate(action))
+        assertEquals(listOf("first", "later"), calls)
+        calls.clear()
+        assertSame(Result.Success, coordinator.validate(action))
+        assertEquals(listOf("added", "last"), calls)
+    }
+
+    @Test
+    fun `uncaught nested validation flushes outer changes and releases the traversal guard`() {
+        val coordinator = ValidatorCoordinator()
+        var replacementCalls = 0
+        val replacement = validator(ActionData::class.java) { replacementCalls++; Result.Success }
+        lateinit var first: ActionValidator<ActionData>
+        first = validator(ActionData::class.java) {
+            assertTrue(coordinator.unregisterValidator(first))
+            coordinator.registerValidator(replacement)
+            coordinator.validate(action)
+        }
+        coordinator.registerValidator(first)
+
+        assertFailsWith<IllegalStateException> { coordinator.validate(action) }
+        assertEquals(0, replacementCalls)
+        assertSame(Result.Success, coordinator.validate(action))
+        assertEquals(1, replacementCalls)
+    }
+
     private fun <T : ActionData> validator(
         actionClass: Class<T>,
         validate: (T) -> Result
