@@ -1,18 +1,23 @@
 package ru.fornax.fornaxcitadel.core.systems.action
 
+/**
+ * Checks an action on the owning game thread without changing gameplay state, permissions or
+ * its resolved target. Authorization runs once before processing, including for posted actions.
+ * A validator that only enforces a constraint should return [Result.Neutral] when it passes.
+ */
 interface ActionValidator<T : ActionData> {
     val actionClass: Class<T>
 
     fun validate(action: T): Result
 
     sealed interface Result {
-        /** The action passed this validator's checks. */
+        /** Explicitly authorizes the action unless another validator rejects it. */
         data object Success : Result
 
-        /** This validator found no applicable conditions to check. */
+        /** Abstains from authorization, including when a constraint passed or no rule applies. */
         data object Neutral : Result
 
-        /** This validator rejected the action. */
+        /** Rejects the action regardless of any other validator's result or action metadata. */
         data object Rejected : Result
     }
 }

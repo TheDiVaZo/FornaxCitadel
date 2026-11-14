@@ -9,7 +9,7 @@ internal class ExplosionSourceValidator : ActionValidator<DamageAction> {
 
     override fun validate(action: DamageAction): ActionValidator.Result {
         val source = action.context.source as? ExplosionSource ?: return ActionValidator.Result.Neutral
-        return if (source.position.worldId == action.citadelW) ActionValidator.Result.Success
+        return if (source.position.worldId == action.citadelW) ActionValidator.Result.Neutral
         else ActionValidator.Result.Rejected
     }
 }

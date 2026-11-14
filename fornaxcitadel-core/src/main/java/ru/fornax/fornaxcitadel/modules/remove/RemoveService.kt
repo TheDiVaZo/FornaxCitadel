@@ -8,11 +8,13 @@ import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
-/** Removes core data only. Minecraft block changes belong to a platform integration. */
-class RemoveService @JvmOverloads constructor(
+/**
+ * Removes core data after authorization. Minecraft block changes belong to a platform integration.
+ * When assembled without CitadelModule, configure action metadata and authorization validators separately.
+ */
+class RemoveService(
     private val actions: ActionManager,
-    private val notifications: CitadelLifecycleNotifications,
-    private val requestPolicy: RemovalPolicy = RemovalPolicy.DENY
+    private val notifications: CitadelLifecycleNotifications
 ) : LifecycleService {
     private val manager = actions.componentManager
     private val processor = RemoveProcessor(this)
@@ -27,6 +29,7 @@ class RemoveService @JvmOverloads constructor(
 
     fun checkMutationAllowed() = notifications.checkMutationAllowed()
 
+    /** Executes an already-authorized administrative request. External requests must enter through actions. */
     fun request(action: RemoveAction): ActionResult {
         notifications.checkMutationAllowed()
         val citadel = try {
@@ -34,7 +37,6 @@ class RemoveService @JvmOverloads constructor(
         } catch (_: CitadelResolutionUnavailableException) {
             return ActionResult.DENIED
         } ?: return ActionResult.DENIED
-        if (!requestPolicy.mayRemove(action.context, citadel)) return ActionResult.DENIED
         return remove(citadel, RemovalCause.ADMIN)
     }
 

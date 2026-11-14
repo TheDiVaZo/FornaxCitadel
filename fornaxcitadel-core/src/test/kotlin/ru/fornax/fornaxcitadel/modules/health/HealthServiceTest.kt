@@ -8,6 +8,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.validateDamage
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,7 +26,7 @@ class HealthServiceTest {
         val fixture = HealthFixture(createInitial = false)
         val health = Health(20.0, 10.0)
         val citadel = fixture.create(health = health)
-        fixture.service.registerPolicy(HealthFixture.TYPE, DamagePolicy.ALLOW)
+        fixture.actions.validateDamage(HealthFixture.TYPE)
         fixture.service.enable()
         fixture.chunk.resetDirty()
 
@@ -38,11 +39,12 @@ class HealthServiceTest {
     }
 
     @Test
-    fun `authorized destruction bypasses numeric modifiers and ordinary damage policy`() {
-        val fixture = HealthFixture(createInitial = false, destructionPolicy = DamagePolicy.ALLOW)
+    fun `authorized destruction bypasses numeric modifiers and ordinary damage validators`() {
+        val fixture = HealthFixture(createInitial = false)
+        fixture.actions.validateDamage(mode = DamageAction.Mode.DESTROY)
         val health = Health(40.0, 40.0)
         val citadel = fixture.create(health = health, startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
-        fixture.service.registerPolicy(HealthFixture.TYPE, DamagePolicy.DENY)
+        fixture.actions.validateDamage(HealthFixture.TYPE) { _, _ -> false }
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("DESTROY must bypass modifiers") })
         fixture.service.enable()
 
@@ -66,7 +68,7 @@ class HealthServiceTest {
             observed.add(actualContext to amount)
             amount
         })
-        fixture.service.registerPolicy(HealthFixture.TYPE, DamagePolicy.ALLOW)
+        fixture.actions.validateDamage(HealthFixture.TYPE)
         fixture.service.enable()
 
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(context, external.position, 5.0)))
@@ -218,7 +220,7 @@ class HealthServiceTest {
         val fixture = HealthFixture(createInitial = false)
         val health = Health(20.0, 20.0)
         val citadel = fixture.create(health = health)
-        fixture.service.registerPolicy(HealthFixture.TYPE, DamagePolicy.DENY)
+        fixture.actions.validateDamage(HealthFixture.TYPE) { _, _ -> false }
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("Denied actions must not calculate damage") })
         fixture.service.enable()
         fixture.chunk.resetDirty()

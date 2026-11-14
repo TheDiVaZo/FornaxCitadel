@@ -28,7 +28,6 @@ import org.bukkit.plugin.PluginManager
 import org.bukkit.plugin.RegisteredListener
 import org.bukkit.scheduler.BukkitScheduler
 import org.bukkit.scheduler.BukkitTask
-import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
@@ -45,11 +44,8 @@ import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
-import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingListener
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
@@ -59,6 +55,9 @@ import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
+import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidationService
+import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
+import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
@@ -85,7 +84,6 @@ internal class PaperTestFixture(
     load: Boolean = true,
     permissions: Boolean = false,
     registerTypes: Boolean = true,
-    damagePolicy: DamagePolicy? = null,
     initializeSystems: Boolean = true,
     private val trackListenerLifecycle: Boolean = false,
     explosionPowers: ExplosionPowerSettings = ExplosionPowerSettings(),
@@ -226,11 +224,11 @@ internal class PaperTestFixture(
     private val permissionValidator = PaperPermissionValidator(server, citadelTypes)
     val materials = CombineMaterialRegistry()
     val materialPlacement = MaterialPlacementService(server, materials, manager)
-    val module = CitadelModule(manager, moduleScheduler,
-        RemovalPolicy { context, _ -> permissionValidator.canAdminister(context) }, maxActionsPerTick,
-        destructionPolicy = DamagePolicy { context, _ ->
-            creativeModeEnabled && permissionValidator.canDestroyInCreative(context)
-        }, resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager))
+    val module = CitadelModule(manager, moduleScheduler, maxActionsPerTick,
+        resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager))
+    val permissionService = PaperPermissionService(module.actions, permissionValidator)
+    val damageValidationService = PaperDamageValidationService(module.actions,
+        PaperDamageValidator(module.citadels, citadelTypes, server, creativeModeEnabled))
     val placementService = PaperPlacementService(plugin, module, materials, placementSettings, messages).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
@@ -248,18 +246,9 @@ internal class PaperTestFixture(
     val stranger = player(UUID(5L, 6L), "stranger")
 
     init {
-        if (registerTypes) {
-            if (damagePolicy == null) {
-                citadelTypes.register(module)
-            } else {
-                val reinforced = citadelSettings.types.getValue("reinforced")
-                val initializers = listOfNotNull(reinforced.health?.let { HealthInitializer(it.max) })
-                module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, initializers), damagePolicy)
-                val remaining = citadelSettings.types.filterKeys { it != "reinforced" }
-                if (remaining.isNotEmpty()) PaperCitadelTypes(CitadelTypesSettings(remaining)).register(module)
-            }
-        }
-        if (permissions) module.actions.validatorCoordinator.registerValidator(permissionValidator)
+        if (registerTypes) citadelTypes.register(module)
+        if (permissions) permissionService.enable()
+        damageValidationService.enable()
         if (initializeModule) module.enable()
         if (initializeSystems) {
             placementService.enable()
@@ -367,6 +356,8 @@ internal class PaperTestFixture(
         breakingService.disable()
         placementService.disable()
         module.disable()
+        damageValidationService.disable()
+        permissionService.disable()
         (moduleScheduler as? AutoCloseable)?.close()
         HandlerList.unregisterAll(plugin)
     }

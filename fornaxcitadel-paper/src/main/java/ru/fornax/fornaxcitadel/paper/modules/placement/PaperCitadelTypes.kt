@@ -4,7 +4,6 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import java.util.Locale
@@ -23,23 +22,20 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
     /** Installation material identity is independent of the citadel definition's identity. */
     fun itemKey(key: Key): Key? = name(key)?.let { configured.getValue(it).item }
 
-    fun isInvulnerable(key: Key): Boolean = name(key)?.let { configured.getValue(it).damagePolicy } ==
-        CitadelDamagePolicy.DENY
+    fun damagePolicy(key: Key): CitadelDamagePolicy? = name(key)?.let { configured.getValue(it).damagePolicy }
+
+    fun isInvulnerable(key: Key): Boolean = damagePolicy(key) == CitadelDamagePolicy.DENY
     fun requiresAdmin(key: Key): Boolean = isInvulnerable(key)
 
     fun register(module: CitadelModule) {
         for ((name, settings) in configured) {
-            val policy = when (settings.damagePolicy) {
-                CitadelDamagePolicy.ALLOW -> DamagePolicy.ALLOW
-                CitadelDamagePolicy.DENY -> DamagePolicy.DENY
-            }
             val initializers = buildList<CitadelInitializer> {
                 settings.health?.let { add(HealthInitializer(it.max)) }
                 settings.maturing?.let {
                     add(MaturingInitializer(Math.multiplyExact(it.durationSeconds, 1000), it.initialDamageMultiplier))
                 }
             }
-            module.registerDefinition(CitadelDefinition(byName.getValue(name), initializers), policy)
+            module.registerDefinition(CitadelDefinition(byName.getValue(name), initializers))
         }
     }
 

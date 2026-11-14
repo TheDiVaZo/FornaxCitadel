@@ -24,13 +24,6 @@ class PaperPermissionValidator(
         return player.isOnline && player.hasPermission("fornaxcitadel.admin")
     }
 
-    /** Resolves the actor when the action executes, including requests queued on earlier ticks. */
-    fun canDestroyInCreative(context: ActionContext): Boolean {
-        val player = context.actorId?.let(server::getPlayer) ?: return false
-        return player.isOnline && player.gameMode == GameMode.CREATIVE &&
-            player.hasPermission("fornaxcitadel.damage")
-    }
-
     override fun validate(action: ActionData): ActionValidator.Result {
         val permission = when (action) {
             is PlaceAction -> "fornaxcitadel.place"
@@ -58,6 +51,6 @@ class PaperPermissionValidator(
                 return ActionValidator.Result.Rejected
             }
         }
-        return ActionValidator.Result.Success
+        return if (action is DamageAction) ActionValidator.Result.Neutral else ActionValidator.Result.Success
     }
 }

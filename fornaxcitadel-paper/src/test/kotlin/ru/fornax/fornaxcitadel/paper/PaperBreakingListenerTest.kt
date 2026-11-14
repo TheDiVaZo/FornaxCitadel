@@ -6,7 +6,6 @@ import org.bukkit.event.block.BlockDamageEvent
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
@@ -66,7 +65,11 @@ class PaperBreakingListenerTest {
 
     @Test
     fun `explicit removal of damage protected reinforcement preserves the physical block`() {
-        val fixture = PaperTestFixture(permissions = true, damagePolicy = DamagePolicy.DENY)
+        val fixture = PaperTestFixture(permissions = true)
+        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            override val actionClass = DamageAction::class.java
+            override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
+        })
         fixture.place()
         val damage = BlockDamageEvent(fixture.installer.player, fixture.block(), BlockFace.UP, fixture.installer.held, false)
 

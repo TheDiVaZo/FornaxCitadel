@@ -24,12 +24,12 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.validateDamage
+import ru.fornax.fornaxcitadel.modules.validateRemoval
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
-import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import java.io.DataInput
 import java.io.DataOutput
@@ -144,7 +144,8 @@ class CitadelFacadeTest {
             val placed = mutableListOf<CitadelPosition>()
             fixture.module.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
                 CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(100.0)
-            )), DamagePolicy.ALLOW)
+            )))
+            fixture.module.actions.validateDamage(CUSTOM_TYPE)
             fixture.module.lifecycle.addListener(object : CitadelLifecycleListener {
                 override fun onPlaced(position: CitadelPosition, runtimeId: Int) { placed.add(position) }
             })
@@ -186,7 +187,7 @@ class CitadelFacadeTest {
     }
 
     @Test
-    fun `damage policy applies to resolved reinforcement and is rechecked after validators`() {
+    fun `damage validators apply to resolved reinforcement when queued actions execute`() {
         Fixture().use { fixture ->
             fixture.createExact(BOTTOM, BLOCKED_TYPE)
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(DamageAction(CONTEXT, TOP, 9.0)))
@@ -197,14 +198,9 @@ class CitadelFacadeTest {
             fixture.createExact(BOTTOM)
             val blocked = BOTTOM.copy(x = 3)
             fixture.createExact(blocked, BLOCKED_TYPE)
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
-                override val actionClass = DamageAction::class.java
-                override fun validate(action: DamageAction): ActionValidator.Result {
-                    fixture.target = blocked
-                    return ActionValidator.Result.Neutral
-                }
-            })
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(DamageAction(CONTEXT, TOP, 9.0)))
+            fixture.module.actions.post(DamageAction(CONTEXT, TOP, 9.0))
+            fixture.target = blocked
+            assertEquals(1, fixture.module.actions.drainPosted())
             assertEquals(100.0, fixture.health(BOTTOM))
             assertEquals(100.0, fixture.health(blocked))
         }
@@ -264,12 +260,15 @@ class CitadelFacadeTest {
                 return direct.getReinforcementProtecting(related)
             }
         }
-        val module = CitadelModule(manager, scheduler, RemovalPolicy { _, _ -> true },
-            destructionPolicy = DamagePolicy.ALLOW, resolver = if (useRules) resolver else direct)
+        val module = CitadelModule(manager, scheduler, resolver = if (useRules) resolver else direct)
 
         init {
-            module.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(100.0))), DamagePolicy.ALLOW)
-            module.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(100.0))), DamagePolicy.DENY)
+            module.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(100.0))))
+            module.actions.validateDamage(TYPE)
+            module.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(100.0))))
+            module.actions.validateDamage(BLOCKED_TYPE) { _, _ -> false }
+            module.actions.validateDamage(mode = DamageAction.Mode.DESTROY)
+            module.actions.validateRemoval()
             module.enable()
             manager.loadChunk(WORLD, 0, 0).join()
         }

@@ -31,7 +31,7 @@ class ActionManager @JvmOverloads constructor(
      * Returns DENIED without executing the processor if any validator rejects the action.
      * A Success authorizes execution; an aggregate Neutral uses [actionMetaRegistry].
      * Allowed execution returns the processor's result (or DENIED if none is registered).
-     * Exceptions propagate to the caller.
+     * Validators must leave gameplay state unchanged. Exceptions propagate to the caller.
      * Nested execution is rejected: observers can [post] work for [drainPosted] instead.
      */
     fun execute(action: ActionData): ActionResult {

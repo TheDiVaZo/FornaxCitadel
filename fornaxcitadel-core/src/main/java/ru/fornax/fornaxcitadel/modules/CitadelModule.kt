@@ -10,20 +10,21 @@ import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry.ActionMeta
+import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceService
 import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
-import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
+import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 
 /**
  * Core lifecycle entry point. Construct and register definitions before loading chunks;
  * call [enable] to attach action handlers and [disable] to detach them without deleting data.
  *
- * Register external protection checks on [actions.validatorCoordinator]. A rejection always
- * wins. Explicit administrative removal is denied unless [removalPolicy]
- * authorizes it. Explicit destruction requires [destructionPolicy]. Source keys are attribution.
+ * Register read-only authorization checks on [actions.validatorCoordinator]. Damage, explicit
+ * destruction and administrative removal require a validator's Success; a rejection always wins.
+ * Definitions configure initial components, not authorization. Source keys are attribution.
  *
  * Services and the component manager expose trusted low-level operations; external requests
  * must enter through [actions]. All access is on the owning game thread. Observers may post
@@ -33,37 +34,21 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 class CitadelModule @JvmOverloads constructor(
     manager: ComponentManager,
     scheduler: Scheduler,
-    removalPolicy: RemovalPolicy = RemovalPolicy.DENY,
     maxActionsPerTick: Int = 1024,
-    destructionPolicy: DamagePolicy = DamagePolicy.DENY,
     resolver: CitadelResolver = DirectCitadelResolver(manager),
     actionFailureHandler: (Exception) -> Unit = ActionQueueService.DEFAULT_FAILURE_HANDLER
 ) : LifecycleService {
-    constructor(
-        manager: ComponentManager,
-        scheduler: Scheduler,
-        removalPolicy: RemovalPolicy,
-        maxActionsPerTick: Int,
-        destructionPolicy: DamagePolicy,
-        actionFailureHandler: (Exception) -> Unit
-    ) : this(manager, scheduler, removalPolicy, maxActionsPerTick, destructionPolicy,
-        DirectCitadelResolver(manager), actionFailureHandler)
-
-    constructor(
-        manager: ComponentManager,
-        scheduler: Scheduler,
-        removalPolicy: RemovalPolicy,
-        maxActionsPerTick: Int,
-        actionFailureHandler: (Exception) -> Unit
-    ) : this(manager, scheduler, removalPolicy, maxActionsPerTick, DamagePolicy.DENY, actionFailureHandler)
 
     val definitions = CitadelDefinitionRegistry()
     val lifecycle = CitadelLifecycleNotifications()
     val citadels = CitadelFacade(manager, resolver)
-    val actions = ActionManager(manager, citadels = citadels)
+    val actions = ActionManager(manager, citadels = citadels).apply {
+        actionMetaRegistry.register(RemoveAction.KEY, ActionMeta(false))
+        actionMetaRegistry.register(DamageAction.KEY, ActionMeta(false))
+    }
     val place = PlaceService(actions, definitions, lifecycle)
-    val remove = RemoveService(actions, lifecycle, removalPolicy)
-    val health = HealthService(actions, remove, destructionPolicy)
+    val remove = RemoveService(actions, lifecycle)
+    val health = HealthService(actions, remove)
     val actionQueue = ActionQueueService(actions, scheduler, maxActionsPerTick, actionFailureHandler)
     private val services: List<LifecycleService> = listOf(remove, health, place, actionQueue)
 
@@ -96,16 +81,11 @@ class CitadelModule @JvmOverloads constructor(
     }
 
     /**
-     * Registers a type with its damage rules. The definition's initializers prepare all
-     * components, including health and optional maturation. Existing definitions cannot be replaced.
+     * Registers initial components for a type, including health and optional maturation.
+     * Register authorization separately through validators. Existing definitions cannot be replaced.
      */
-    fun registerDefinition(
-        definition: CitadelDefinition,
-        damagePolicy: DamagePolicy
-    ) {
+    fun registerDefinition(definition: CitadelDefinition) {
         require(definitions.find(definition.key) == null) { "Citadel definition already registered: ${definition.key}" }
-        require(health.findPolicy(definition.key) == null) { "Damage policy already registered: ${definition.key}" }
         definitions.register(definition)
-        health.registerPolicy(definition.key, damagePolicy)
     }
 }

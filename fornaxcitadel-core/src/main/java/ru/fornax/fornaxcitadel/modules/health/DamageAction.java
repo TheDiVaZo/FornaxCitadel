@@ -14,7 +14,7 @@ public class DamageAction extends ActionData {
     public static final Key KEY = Key.key("health:damage");
 
     /**
-     * DESTROY requests policy-authorized removal independently of Health.
+     * DESTROY requests validator-authorized removal independently of Health.
      * Damage remains finite and non-negative and is available to validators, but is not subtracted.
      */
     public enum Mode { DAMAGE, DESTROY }

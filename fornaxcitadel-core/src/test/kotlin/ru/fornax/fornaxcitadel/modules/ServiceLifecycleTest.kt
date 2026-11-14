@@ -15,12 +15,12 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthService
@@ -28,7 +28,6 @@ import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceService
-import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import java.time.Clock
@@ -116,30 +115,31 @@ class ServiceLifecycleTest {
     }
 
     @Test
-    fun `health toggles only its own damage validator and restores type protection`() {
+    fun `health lifecycle leaves external validators registered`() {
         val fixture = Fixture()
-        fixture.prepare(DamagePolicy.DENY)
+        fixture.prepare()
         fixture.enable()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         val damage = DamageAction(ActionContext.SYSTEM, POSITION, 20.0)
         val external = object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
-            override fun validate(action: DamageAction) = ActionValidator.Result.Success
+            override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
         }
         fixture.actions.validatorCoordinator.registerValidator(external)
         assertEquals(ActionResult.DENIED, fixture.actions.execute(damage))
 
         fixture.health.disable()
         fixture.health.disable()
-        assertSame(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(damage))
+        assertNull(fixture.actions.processorCoordinator.getProcessor(DamageAction.KEY))
+        assertSame(ActionValidator.Result.Rejected, fixture.actions.validatorCoordinator.validate(damage))
         fixture.health.enable()
         fixture.health.enable()
         assertEquals(ActionResult.DENIED, fixture.actions.execute(damage))
         assertEquals(10.0, fixture.currentHealth())
         fixture.disable()
-        assertSame(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(damage))
+        assertSame(ActionValidator.Result.Rejected, fixture.actions.validatorCoordinator.validate(damage))
         assertTrue(fixture.actions.validatorCoordinator.unregisterValidator(external))
-        assertSame(ActionValidator.Result.Neutral, fixture.actions.validatorCoordinator.validate(damage))
+        assertSame(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(damage))
     }
 
     @Test
@@ -163,7 +163,7 @@ class ServiceLifecycleTest {
         val fixture = RootFixture()
         val module = fixture.module
         val definition = CitadelDefinition(TYPE, initializers())
-        module.registerDefinition(definition, DamagePolicy.ALLOW)
+        module.registerDefinition(definition)
         fixture.load()
         assertEquals(ActionResult.DENIED, module.actions.execute(placeAction()))
         assertTrue(fixture.scheduler.tasks.isEmpty())
@@ -215,7 +215,7 @@ class ServiceLifecycleTest {
     fun `root queue dispatches actions through existing validators using configured limit`() {
         val fixture = RootFixture(maxActionsPerTick = 1)
         val module = fixture.module
-        module.registerDefinition(CitadelDefinition(TYPE, initializers()), DamagePolicy.ALLOW)
+        module.registerDefinition(CitadelDefinition(TYPE, initializers()))
         fixture.load()
         module.enable()
         assertEquals(ActionResult.SUCCESS, module.actions.execute(placeAction()))
@@ -224,7 +224,7 @@ class ServiceLifecycleTest {
         module.actions.post(DamageAction(ActionContext.SYSTEM, POSITION, 2.0))
 
         fixture.scheduler.tick()
-        assertTrue(citadel.isCurrent) // The default removal policy still denies the queued request.
+        assertTrue(citadel.isCurrent) // No validator approves the queued removal request.
         assertEquals(10.0, citadel.getComponent(Health::class.java)?.health)
         fixture.scheduler.tick()
         assertEquals(8.0, citadel.getComponent(Health::class.java)?.health)
@@ -283,20 +283,24 @@ class ServiceLifecycleTest {
         val types = TypeManager()
         val storage = MemoryStorage()
         private val manager = ComponentManager(storage, types)
-        val actions = ActionManager(manager)
+        val actions = ActionManager(manager).apply {
+            actionMetaRegistry.register(DamageAction.KEY, ActionMetaRegistry.ActionMeta(false))
+            actionMetaRegistry.register(RemoveAction.KEY, ActionMetaRegistry.ActionMeta(false))
+            validateRemoval()
+        }
         private val definitions = CitadelDefinitionRegistry()
         private val lifecycle = CitadelLifecycleNotifications()
         private val place = PlaceService(actions, definitions, lifecycle)
-        private val remove = RemoveService(actions, lifecycle, RemovalPolicy { _, _ -> true })
+        private val remove = RemoveService(actions, lifecycle)
         val health = HealthService(actions, remove)
         private val services: List<LifecycleService> = listOf(remove, health, place)
 
         fun enable() = services.forEach { it.enable() }
         fun disable() = services.asReversed().forEach { it.disable() }
 
-        fun prepare(policy: DamagePolicy = DamagePolicy.ALLOW) {
+        fun prepare() {
             definitions.register(CitadelDefinition(TYPE, initializers()))
-            health.registerPolicy(TYPE, policy)
+            actions.validateDamage(TYPE)
             storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0))
         }
 
@@ -312,7 +316,7 @@ class ServiceLifecycleTest {
         val scheduler = ManualScheduler()
         val failures = mutableListOf<Exception>()
         val module = CitadelModule(manager, scheduler, maxActionsPerTick = maxActionsPerTick,
-            actionFailureHandler = failures::add)
+            actionFailureHandler = failures::add).apply { actions.validateDamage(TYPE) }
 
         fun load() { storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0)) }
     }

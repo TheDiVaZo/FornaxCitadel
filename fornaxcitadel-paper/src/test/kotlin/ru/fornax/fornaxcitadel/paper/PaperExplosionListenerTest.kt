@@ -24,7 +24,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
@@ -317,12 +316,17 @@ class PaperExplosionListenerTest {
     }
 
     @Test
-    fun `damage policy can select explosion origins directly from the context`() {
+    fun `damage validator can select explosion origins directly from the context`() {
         val observed = mutableListOf<ExplosionSource.Entity>()
-        val fixture = PaperTestFixture(permissions = true, damagePolicy = DamagePolicy { context, _ ->
-            val source = context.source as? ExplosionSource.Entity
-            if (source != null) observed.add(source)
-            source?.entityType == EntityType.CREEPER
+        val fixture = PaperTestFixture(permissions = true)
+        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            override val actionClass = DamageAction::class.java
+            override fun validate(action: DamageAction): ActionValidator.Result {
+                val source = action.context.source as? ExplosionSource.Entity
+                if (source != null) observed.add(source)
+                return if (source?.entityType == EntityType.CREEPER) ActionValidator.Result.Success
+                else ActionValidator.Result.Rejected
+            }
         })
         fixture.place()
 
@@ -334,10 +338,9 @@ class PaperExplosionListenerTest {
         dispatch(fixture.explosionListener, fixture.entityExplosion(fixture.block()), fixture.plugin)
 
         assertEquals(60.0, fixture.health())
-        // The policy validates the request and is checked again for the actual resolved target.
         val expected = ExplosionSource.Entity(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0),
             4.0f, UUID(10L, 20L), EntityType.CREEPER)
-        assertEquals(listOf(expected, expected), observed)
+        assertEquals(listOf(expected), observed)
     }
 
     @Test

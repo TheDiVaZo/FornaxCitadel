@@ -2,8 +2,6 @@ package ru.fornax.fornaxcitadel.modules.health;
 
 import kotlin.Unit;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import ru.fornax.fornaxcitadel.core.citadel.CitadelKind;
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause;
 import ru.fornax.fornaxcitadel.core.facade.ActionManager;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
@@ -12,43 +10,33 @@ import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService;
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
-import ru.fornax.fornaxcitadel.core.util.Key;
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService;
 
 import java.time.Clock;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
-/** Applies authorized, modified damage on the owning game thread. Read health directly from its component. */
+/**
+ * Applies authorized, modified damage on the owning game thread. Read health directly from its component.
+ * When assembled without CitadelModule, configure action metadata and authorization validators separately.
+ */
 public final class HealthService implements LifecycleService {
     private final ActionManager actions;
     private final ComponentManager componentManager;
     private final RemoveService removeService;
-    private final DamagePolicy destructionPolicy;
     private List<DamageModifier> modifiers = List.of();
-    private final Map<Key, DamagePolicy> policies = new HashMap<>();
     private final DamageProcessor processor = new DamageProcessor(this);
-    private final DamagePolicyValidator damageValidator;
 
     public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService) {
-        this(actions, removeService, DamagePolicy.DENY);
+        this(actions, removeService, Clock.systemUTC());
     }
 
     public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
-                         @NotNull DamagePolicy destructionPolicy) {
-        this(actions, removeService, destructionPolicy, Clock.systemUTC());
-    }
-
-    public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
-                         @NotNull DamagePolicy destructionPolicy, @NotNull Clock clock) {
+                         @NotNull Clock clock) {
         this.actions = Objects.requireNonNull(actions, "actions");
         this.componentManager = actions.getComponentManager();
         this.removeService = Objects.requireNonNull(removeService, "removeService");
-        this.destructionPolicy = Objects.requireNonNull(destructionPolicy, "destructionPolicy");
-        this.damageValidator = new DamagePolicyValidator(actions.getCitadels(), this);
         componentManager.registerComponent(Health.KEY, Health.class);
         componentManager.registerComponent(Maturing.KEY, Maturing.class);
         registerModifier(new MaturingDamageModifier(Objects.requireNonNull(clock, "clock")));
@@ -57,42 +45,11 @@ public final class HealthService implements LifecycleService {
     @Override
     public void enable() {
         actions.getProcessorCoordinator().registerProcessor(processor);
-        actions.getValidatorCoordinator().registerValidator(damageValidator);
     }
 
     @Override
     public void disable() {
-        actions.getValidatorCoordinator().unregisterValidator(damageValidator);
         actions.getProcessorCoordinator().unregisterProcessor(processor);
-    }
-
-    public void registerPolicy(@NotNull Key definitionKey, @NotNull DamagePolicy policy) {
-        Objects.requireNonNull(definitionKey, "definitionKey");
-        Objects.requireNonNull(policy, "policy");
-        DamagePolicy existing = policies.putIfAbsent(definitionKey, policy);
-        if (existing != null && existing != policy) {
-            throw new IllegalArgumentException("Damage policy is already registered for " + definitionKey);
-        }
-    }
-
-    @Nullable
-    public DamagePolicy findPolicy(@NotNull Key definitionKey) {
-        return policies.get(Objects.requireNonNull(definitionKey, "definitionKey"));
-    }
-
-    public boolean allowsDamage(@NotNull ActionContext context, @NotNull CitadelHandle citadel) {
-        Objects.requireNonNull(context, "context");
-        Objects.requireNonNull(citadel, "citadel");
-        CitadelKind kind = citadel.getComponent(CitadelKind.class);
-        DamagePolicy policy = kind == null ? null : policies.get(kind.getDefinitionKey());
-        return policy != null && policy.allowsDamage(context, citadel);
-    }
-
-    /** Checks explicit destruction authorization independently of type damage rules and health. */
-    public boolean allowsDestruction(@NotNull ActionContext context, @NotNull CitadelHandle citadel) {
-        Objects.requireNonNull(context, "context");
-        Objects.requireNonNull(citadel, "citadel");
-        return componentManager.isCurrent(citadel) && destructionPolicy.allowsDamage(context, citadel);
     }
 
     /**
@@ -180,6 +137,7 @@ public final class HealthService implements LifecycleService {
         return ActionResult.SUCCESS;
     }
 
+    /** Executes an already-authorized action; validators must leave gameplay state unchanged. */
     @NotNull
     protected ActionResult onDamage(@NotNull DamageAction action) {
         CitadelHandle citadel;
@@ -190,12 +148,8 @@ public final class HealthService implements LifecycleService {
         }
         if (citadel == null) return ActionResult.DENIED;
         if (action.getMode() == DamageAction.Mode.DESTROY) {
-            // Other validators may have changed live authorization since policy validation.
-            if (!allowsDestruction(action.getContext(), citadel)) return ActionResult.DENIED;
             return removeService.remove(citadel, RemovalCause.DESTROYED);
         }
-        // A later validator may have changed the resolved reinforcement or its policy.
-        if (!allowsDamage(action.getContext(), citadel)) return ActionResult.DENIED;
         return damage(citadel, action.getDamage(), action.getContext());
     }
 

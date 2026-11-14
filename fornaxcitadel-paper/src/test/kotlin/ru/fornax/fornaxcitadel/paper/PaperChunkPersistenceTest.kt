@@ -15,7 +15,6 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
@@ -23,6 +22,7 @@ import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkListener
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
+import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
@@ -252,9 +252,10 @@ class PaperChunkPersistenceTest {
 
         init {
             module.registerDefinition(
-                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(100.0))),
-                DamagePolicy.ALLOW
+                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(100.0)))
             )
+            module.actions.validatorCoordinator.registerValidator(
+                PaperDamageValidator(module.citadels, paper.citadelTypes, paper.server, true))
             module.enable()
         }
     }

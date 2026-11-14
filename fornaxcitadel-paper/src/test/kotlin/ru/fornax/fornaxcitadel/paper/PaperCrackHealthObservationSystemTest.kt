@@ -14,7 +14,6 @@ import ru.fornax.fornaxcitadel.core.systems.observation.Observation
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSubscription
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
@@ -98,11 +97,10 @@ class PaperCrackHealthObservationSystemTest {
     fun `every health bearing type is displayed with an independent negative source id`() {
         Fixture().use { fixture ->
             val protectedType = Key("test", "protected_health")
-            fixture.paper.module.registerDefinition(CitadelDefinition(protectedType, listOf(initialHealth(75.0))),
-                DamagePolicy.DENY)
+            fixture.paper.module.registerDefinition(CitadelDefinition(protectedType, listOf(initialHealth(75.0))))
             val protected = fixture.create(2, type = protectedType)
             val emptyType = Key("test", "without_health")
-            fixture.paper.module.registerDefinition(CitadelDefinition(emptyType, emptyList()), DamagePolicy.ALLOW)
+            fixture.paper.module.registerDefinition(CitadelDefinition(emptyType, emptyList()))
             val withoutHealth = fixture.create(3, type = emptyType)
 
             fixture.observe(fixture.paper.installer, listOf(fixture.target, protected, withoutHealth))
@@ -301,7 +299,7 @@ class PaperCrackHealthObservationSystemTest {
         val target: CitadelHandle
 
         init {
-            paper.module.registerDefinition(CitadelDefinition(TYPE, listOf(initialHealth(50.0))), DamagePolicy.ALLOW)
+            paper.module.registerDefinition(CitadelDefinition(TYPE, listOf(initialHealth(50.0))))
             target = create(paper.position.x)
             observations.registerSystem(system)
             observations.enable()

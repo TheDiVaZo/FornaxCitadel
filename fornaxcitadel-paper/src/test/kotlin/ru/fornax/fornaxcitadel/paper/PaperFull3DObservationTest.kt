@@ -27,7 +27,6 @@ import ru.fornax.fornaxcitadel.core.systems.observation.ObservationPublisher
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSubscription
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
@@ -207,8 +206,10 @@ class PaperFull3DObservationTest {
             assertEquals(setOf(position), publications.last())
 
             fixture.paper.installer.permissions.add("fornaxcitadel.admin")
+            fixture.paper.permissionService.enable()
             assertEquals(ActionResult.SUCCESS, fixture.paper.module.actions.execute(RemoveAction(
                 fixture.paper.context(fixture.paper.installer), position)))
+            fixture.paper.permissionService.disable()
             fixture.paper.runScheduledTasks()
             assertTrue(publications.last().isEmpty())
 
@@ -385,7 +386,7 @@ class PaperFull3DObservationTest {
 
         init {
             val type = Key("test", "observed")
-            module.registerDefinition(CitadelDefinition(type, emptyList()), DamagePolicy.ALLOW)
+            module.registerDefinition(CitadelDefinition(type, emptyList()))
             module.enable()
             chunks.enable()
             assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(

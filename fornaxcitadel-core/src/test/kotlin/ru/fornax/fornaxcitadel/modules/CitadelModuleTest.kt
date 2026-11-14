@@ -9,6 +9,7 @@ import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -25,13 +26,11 @@ import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamageModifier
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
-import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import java.time.Clock
 import java.time.Instant
@@ -49,6 +48,19 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CitadelModuleTest {
+    @Test
+    fun `registering another definition with the same key preserves the original`() {
+        val fixture = Fixture()
+        val original = CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(100.0)))
+        fixture.module.registerDefinition(original)
+
+        assertFailsWith<IllegalArgumentException> {
+            fixture.module.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(1.0))))
+        }
+
+        assertSame(original, fixture.module.definitions.find(DEFAULT_KIND))
+    }
+
     @Test
     fun `placement publishes a complete citadel and occupied placement leaves it unchanged`() {
         val fixture = Fixture()
@@ -117,9 +129,9 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `custom removal policy dismantles immediately only after global validation allows the action`() {
-        val fixture = Fixture(RemovalPolicy { context, _ -> context.actorId == PLACER })
-        fixture.register(policy = DamagePolicy.DENY)
+    fun `custom removal validator dismantles immediately only after global validation allows the action`() {
+        val fixture = Fixture({ context, _ -> context.actorId == PLACER })
+        fixture.register(authorizeDamage = { _, _ -> false })
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
@@ -129,8 +141,8 @@ class CitadelModuleTest {
         assertEquals(listOf(RemovalCause.ADMIN), fixture.removals.map { it.second })
         assertEquals(listOf(false), fixture.removalSawExistingEntity)
 
-        val protected = Fixture(RemovalPolicy { context, _ -> context.actorId == PLACER })
-        protected.register(policy = DamagePolicy.DENY)
+        val protected = Fixture({ context, _ -> context.actorId == PLACER })
+        protected.register(authorizeDamage = { _, _ -> false })
         protected.load()
         assertEquals(ActionResult.SUCCESS, protected.place())
         protected.chunk().resetDirty()
@@ -172,7 +184,7 @@ class CitadelModuleTest {
     @Test
     fun `invulnerable type rejects damage from players and specialized sources even with health`() {
         val fixture = Fixture()
-        fixture.register(policy = DamagePolicy.DENY)
+        fixture.register(authorizeDamage = { _, _ -> false })
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
@@ -192,7 +204,7 @@ class CitadelModuleTest {
     @Test
     fun `invulnerable definition needs no artificial health component`() {
         val fixture = Fixture()
-        fixture.register(maxHealth = null, policy = DamagePolicy.DENY)
+        fixture.register(maxHealth = null, authorizeDamage = { _, _ -> false })
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
@@ -231,14 +243,14 @@ class CitadelModuleTest {
     fun `authorized destruction removes protected healthy and healthless citadels without damage modifiers`() {
         for (withHealth in listOf(false, true)) {
             var modifierCalls = 0
-            val fixture = Fixture(destructionPolicy = DamagePolicy { context, citadel ->
+            val fixture = Fixture(authorizeDestruction = { context, citadel ->
                 context.actorId == PLACER && citadel.position == POSITION
             })
             fixture.module.health.registerModifier(DamageModifier { _, _, _ ->
                 modifierCalls++
                 error("Destruction must not calculate damage")
             })
-            fixture.register(maxHealth = if (withHealth) 100.0 else null, policy = DamagePolicy.DENY)
+            fixture.register(maxHealth = if (withHealth) 100.0 else null, authorizeDamage = { _, _ -> false })
             fixture.load()
             assertEquals(ActionResult.SUCCESS, fixture.place())
             if (withHealth) assertTrue(fixture.handle().editComponent(Health::class.java) { it.health = 73.0 })
@@ -276,8 +288,8 @@ class CitadelModuleTest {
     @Test
     fun `generic and damage validators can reject authorized destruction`() {
         for (rejectedType in listOf(ActionData::class.java, DamageAction::class.java)) {
-            val fixture = Fixture(destructionPolicy = DamagePolicy.ALLOW)
-            fixture.register(policy = DamagePolicy.DENY)
+            val fixture = Fixture(authorizeDestruction = { _, _ -> true })
+            fixture.register(authorizeDamage = { _, _ -> false })
             fixture.load()
             assertEquals(ActionResult.SUCCESS, fixture.place())
             fixture.chunk().resetDirty()
@@ -292,66 +304,37 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `destruction rechecks live authorization after later validators`() {
+    fun `queued destruction uses authorization at execution and validates once`() {
         var authorized = true
-        var policyCalls = 0
-        val fixture = Fixture(destructionPolicy = DamagePolicy { _, _ ->
-            policyCalls++
+        var validationCalls = 0
+        val fixture = Fixture(authorizeDestruction = { _, _ ->
+            validationCalls++
             authorized
         })
         fixture.register()
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
-            override val actionClass = DamageAction::class.java
-            override fun validate(action: DamageAction): ActionValidator.Result {
-                authorized = false
-                return ActionValidator.Result.Success
-            }
-        })
+        fixture.module.actions.post(DamageAction(PLACER_CONTEXT, POSITION, 0.0, DamageAction.Mode.DESTROY))
+        assertEquals(0, validationCalls)
+        authorized = false
 
-        assertEquals(ActionResult.DENIED, fixture.destroy(PLACER_CONTEXT))
+        assertEquals(1, fixture.module.actions.drainPosted())
 
-        assertEquals(2, policyCalls)
+        assertEquals(1, validationCalls)
         assertEquals(100.0, fixture.health().health)
         assertFalse(fixture.chunk().isDirty)
         assertTrue(fixture.removals.isEmpty())
-    }
-
-    @Test
-    fun `destruction cannot remove a replacement created during execution policy evaluation`() {
-        var policyCalls = 0
-        lateinit var fixture: Fixture
-        fixture = Fixture(destructionPolicy = DamagePolicy { _, citadel ->
-            policyCalls++
-            if (policyCalls == 2) {
-                assertTrue(fixture.manager.removeCitadel(citadel))
-                val replacement = MutableCitadelDraft(POSITION).apply {
-                    addComponent(CitadelKind::class.java, CitadelKind(DEFAULT_KIND))
-                }
-                assertEquals(ActionResult.SUCCESS, fixture.manager.createCitadel(replacement))
-            }
-            true
-        })
-        fixture.register(maxHealth = null, policy = DamagePolicy.DENY)
-        fixture.load()
-        assertEquals(ActionResult.SUCCESS, fixture.place())
-        val original = fixture.handle()
-
-        assertEquals(ActionResult.DENIED, fixture.destroy(PLACER_CONTEXT))
-
-        assertEquals(2, policyCalls)
-        assertFalse(original.isCurrent)
-        assertTrue(fixture.handle().isCurrent)
-        assertTrue(original.runtimeId != fixture.handle().runtimeId)
-        assertTrue(fixture.removals.isEmpty())
+        authorized = true
+        assertEquals(ActionResult.SUCCESS, fixture.destroy(PLACER_CONTEXT))
+        assertEquals(2, validationCalls)
+        assertEquals(listOf(POSITION to RemovalCause.DESTROYED), fixture.removals)
     }
 
     @Test
     fun `destruction denies missing and unloaded targets without loading chunks`() {
-        var policyCalls = 0
-        val fixture = Fixture(destructionPolicy = DamagePolicy { _, _ -> policyCalls++; true })
+        var validationCalls = 0
+        val fixture = Fixture(authorizeDestruction = { _, _ -> validationCalls++; true })
         fixture.register()
 
         assertEquals(ActionResult.DENIED, fixture.destroy(PLACER_CONTEXT))
@@ -365,7 +348,7 @@ class CitadelModuleTest {
         assertEquals(ActionResult.DENIED, fixture.destroy(PLACER_CONTEXT))
 
         assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
-        assertEquals(0, policyCalls)
+        assertEquals(0, validationCalls)
         assertTrue(fixture.removals.isEmpty())
         fixture.load()
         assertEquals(100.0, fixture.health().health)
@@ -373,7 +356,7 @@ class CitadelModuleTest {
 
     @Test
     fun `legacy damage constructors retain ordinary damage and never use destruction authorization`() {
-        val fixture = Fixture(destructionPolicy = DamagePolicy { _, _ ->
+        val fixture = Fixture(authorizeDestruction = { _, _ ->
             error("Ordinary damage must not use destruction authorization")
         })
         fixture.register()
@@ -394,9 +377,9 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `custom type policies and common validators apply to every damage action`() {
+    fun `type validators and common validators apply to every damage action`() {
         val fixture = Fixture()
-        fixture.register(policy = DamagePolicy { context, citadel ->
+        fixture.register(authorizeDamage = { context, citadel ->
             context.actorId == PLACER && citadel.position == POSITION
         })
         fixture.load()
@@ -426,13 +409,13 @@ class CitadelModuleTest {
     }
 
     @Test
-    fun `posted damage retains its actor and typed source for policies and validators`() {
+    fun `posted damage retains its actor and typed source for authorization and other validators`() {
         val fixture = Fixture()
         val source = ProjectileSource(UUID(9L, 10L), 4.0)
         val context = ActionContext(PLACER, source)
-        val policyContexts = mutableListOf<ActionContext>()
-        fixture.register(policy = DamagePolicy { candidate, citadel ->
-            policyContexts.add(candidate)
+        val authorizationContexts = mutableListOf<ActionContext>()
+        fixture.register(authorizeDamage = { candidate, citadel ->
+            authorizationContexts.add(candidate)
             val projectile = candidate.source as? ProjectileSource
             candidate.actorId == PLACER && projectile != null && projectile.projectileId == source.projectileId &&
                 projectile.power == 4.0 && citadel.position == POSITION
@@ -451,26 +434,26 @@ class CitadelModuleTest {
         fixture.module.actions.post(DamageAction(ActionContext(PLACER, NamedActionSource(source.key)), POSITION, 10.0))
 
         assertEquals(100.0, fixture.health().health)
-        assertTrue(policyContexts.isEmpty())
+        assertTrue(authorizationContexts.isEmpty())
         assertEquals(1, fixture.module.actions.drainPosted(1))
         assertEquals(90.0, fixture.health().health)
-        // The policy sees the same context during validation and the final target check.
-        assertEquals(2, policyContexts.size)
-        policyContexts.forEach { assertSame(context, it) }
+        // Authorization sees the original context once during validation.
+        assertEquals(1, authorizationContexts.size)
+        authorizationContexts.forEach { assertSame(context, it) }
         assertSame(source, validatedContexts.single().source)
         assertEquals(PLACER, validatedContexts.single().actorId)
         fixture.chunk().resetDirty()
 
-        // Reusing a key cannot supply the typed information required by the policy.
+        // Reusing a key cannot supply the typed information required by the validator.
         assertEquals(1, fixture.module.actions.drainPosted())
         assertEquals(90.0, fixture.health().health)
         assertFalse(fixture.chunk().isDirty)
-        assertEquals(3, policyContexts.size)
+        assertEquals(2, authorizationContexts.size)
         assertEquals(1, validatedContexts.size)
     }
 
     @Test
-    fun `a type with health but no registered damage policy rejects damage`() {
+    fun `a type with health but no approving damage validator rejects damage`() {
         val fixture = Fixture()
         fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(100.0))))
         fixture.load()
@@ -532,7 +515,7 @@ class CitadelModuleTest {
 
     @Test
     fun `administrative removal requires explicit authorization and source names grant no privilege`() {
-        val fixture = Fixture(RemovalPolicy { context, _ -> context.actorId == ADMIN })
+        val fixture = Fixture({ context, _ -> context.actorId == ADMIN })
         fixture.register()
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
@@ -563,7 +546,7 @@ class CitadelModuleTest {
 
     @Test
     fun `observer failures do not undo committed actions or skip subsequent observers`() {
-        val fixture = Fixture(RemovalPolicy { context, _ -> context.actorId == PLACER })
+        val fixture = Fixture({ context, _ -> context.actorId == PLACER })
         fixture.register()
         fixture.load()
         var laterPlaced = 0
@@ -588,7 +571,7 @@ class CitadelModuleTest {
 
     @Test
     fun `observers can post removal but cannot mutate or recursively execute before other observers finish`() {
-        val fixture = Fixture(RemovalPolicy { context, _ -> context.actorId == PLACER })
+        val fixture = Fixture({ context, _ -> context.actorId == PLACER })
         fixture.register()
         fixture.load()
         var directRemovalFailure: IllegalStateException? = null
@@ -763,8 +746,8 @@ class CitadelModuleTest {
     }
 
     private class Fixture(
-        removalPolicy: RemovalPolicy = RemovalPolicy.DENY,
-        destructionPolicy: DamagePolicy = DamagePolicy.DENY
+        authorizeRemoval: ((ActionContext, CitadelHandle) -> Boolean)? = null,
+        authorizeDestruction: ((ActionContext, CitadelHandle) -> Boolean)? = null
     ) {
         val types = TypeManager()
         val mapper = ChunkCordSnapshotMapper(types)
@@ -772,7 +755,11 @@ class CitadelModuleTest {
         val scheduler = ManualScheduler()
         val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
-        val module = CitadelModule(manager, scheduler, removalPolicy, destructionPolicy = destructionPolicy).apply { enable() }
+        val module = CitadelModule(manager, scheduler).apply {
+            authorizeRemoval?.let { actions.validateRemoval(it) }
+            authorizeDestruction?.let { actions.validateDamage(mode = DamageAction.Mode.DESTROY, allowed = it) }
+            enable()
+        }
         val placements = mutableListOf<CitadelPosition>()
         val removals = mutableListOf<Pair<CitadelPosition, RemovalCause>>()
         val removalSawExistingEntity = mutableListOf<Boolean>()
@@ -793,11 +780,12 @@ class CitadelModuleTest {
         fun register(
             key: Key = DEFAULT_KIND,
             maxHealth: Double? = 100.0,
-            policy: DamagePolicy = DamagePolicy.ALLOW,
+            authorizeDamage: (ActionContext, CitadelHandle) -> Boolean = { _, _ -> true },
             initializers: List<CitadelInitializer> = emptyList()
         ) {
             val prepared = initializers + listOfNotNull(maxHealth?.let(::HealthInitializer))
-            module.registerDefinition(CitadelDefinition(key, prepared), policy)
+            module.registerDefinition(CitadelDefinition(key, prepared))
+            module.actions.validateDamage(key, allowed = authorizeDamage)
         }
 
         fun load() { manager.loadChunk(WORLD, 0, 0).join() }

@@ -12,6 +12,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import java.time.Clock
@@ -26,15 +27,16 @@ internal class HealthFixture(
     startedAtMillis: Long? = 1_000L,
     createInitial: Boolean = true,
     loaded: Boolean = true,
-    val clock: MutableHealthClock = MutableHealthClock(1_000L),
-    destructionPolicy: DamagePolicy = DamagePolicy.DENY
+    val clock: MutableHealthClock = MutableHealthClock(1_000L)
 ) {
     val types = TypeManager()
     val storage = MemoryStorage(if (loaded) ChunkCord(WXZCord(WORLD, 0, 0)) else null)
     val manager = ComponentManager(storage, types)
     val notifications = CitadelLifecycleNotifications()
-    val actions = ActionManager(manager)
-    val service = HealthService(actions, RemoveService(actions, notifications), destructionPolicy, clock)
+    val actions = ActionManager(manager).apply {
+        actionMetaRegistry.register(DamageAction.KEY, ActionMetaRegistry.ActionMeta(false))
+    }
+    val service = HealthService(actions, RemoveService(actions, notifications), clock)
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)
     val citadel: CitadelHandle get() = reference()
 

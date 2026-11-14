@@ -24,7 +24,7 @@ class PaperPermissionServiceTest {
             val source = ExplosionSource.Block(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0),
                 4.0f, Material.TNT)
             val environmental = ActionContext(null, source)
-            assertSame(ActionValidator.Result.Success, validator.validate(
+            assertSame(ActionValidator.Result.Neutral, validator.validate(
                 DamageAction(environmental, fixture.position, 1.0)
             ))
             assertSame(ActionValidator.Result.Rejected, validator.validate(

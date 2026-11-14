@@ -11,8 +11,6 @@ import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.health.DamagePolicy
-import ru.fornax.fornaxcitadel.modules.remove.RemovalPolicy
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
@@ -21,6 +19,8 @@ import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
+import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidationService
+import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.observation.Full3DObservation
 import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationService
@@ -84,11 +84,7 @@ class FornaxCitadel : JavaPlugin() {
             val permissions = PaperPermissionValidator(server, citadelTypes)
             val module = CitadelModule(
                 manager, scheduler,
-                removalPolicy = RemovalPolicy { context, _ -> permissions.canAdminister(context) },
                 maxActionsPerTick = settings.postedActionLimit,
-                destructionPolicy = DamagePolicy { context, _ ->
-                    settings.playerDamage.creativeModeEnabled && permissions.canDestroyInCreative(context)
-                },
                 actionFailureHandler = { failure ->
                     logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
                 },
@@ -96,6 +92,8 @@ class FornaxCitadel : JavaPlugin() {
             )
             citadelTypes.register(module)
             services.add(PaperPermissionService(module.actions, permissions))
+            services.add(PaperDamageValidationService(module.actions,
+                PaperDamageValidator(module.citadels, citadelTypes, server, settings.playerDamage.creativeModeEnabled)))
 
             val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)
             placement = PaperPlacementService(this, module, materials, settings.placement, messages).also(services::add)
