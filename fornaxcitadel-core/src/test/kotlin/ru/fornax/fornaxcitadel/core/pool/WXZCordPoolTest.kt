@@ -5,8 +5,10 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class WXZCordPoolTest {
     @Test
@@ -32,6 +34,41 @@ class WXZCordPoolTest {
         assertEquals(secondWorld, second.world)
         assertSame(first, pool.get(firstWorld, 10, -20))
         assertSame(second, pool.get(secondWorld, 10, -20))
+    }
+
+    @Test
+    fun `removing coordinates recreates only that entry and leaves other worlds and positions intact`() {
+        val pool = WXZCordPool()
+        val world = UUID(1L, 2L)
+        val otherWorld = UUID(3L, 4L)
+        val original = pool.get(world, 10, -20)
+        val neighbour = pool.get(world, 11, -20)
+        val other = pool.get(otherWorld, 10, -20)
+
+        assertTrue(pool.remove(original))
+
+        val replacement = pool.get(world, 10, -20)
+        assertEquals(original, replacement)
+        assertNotSame(original, replacement)
+        assertSame(neighbour, pool.get(world, 11, -20))
+        assertSame(other, pool.get(otherWorld, 10, -20))
+    }
+
+    @Test
+    fun `removal requires the cached instance and cannot evict a later replacement`() {
+        val pool = WXZCordPool()
+        val world = UUID(1L, 2L)
+        val original = pool.get(world, 10, -20)
+
+        assertFalse(pool.remove(WXZCord(UUID(1L, 2L), 10, -20)))
+        assertSame(original, pool.get(world, 10, -20))
+        assertTrue(pool.remove(original))
+        assertFalse(pool.remove(original))
+
+        val replacement = pool.get(world, 10, -20)
+        assertNotSame(original, replacement)
+        assertFalse(pool.remove(original))
+        assertSame(replacement, pool.get(world, 10, -20))
     }
 
     @Test
@@ -66,6 +103,8 @@ class WXZCordPoolTest {
         for (coordinate in invalidCoordinates) {
             assertFailsWith<IllegalArgumentException> { pool.get(world, coordinate, 0) }
             assertFailsWith<IllegalArgumentException> { pool.get(world, 0, coordinate) }
+            assertFailsWith<IllegalArgumentException> { pool.remove(WXZCord(world, coordinate, 0)) }
+            assertFailsWith<IllegalArgumentException> { pool.remove(WXZCord(world, 0, coordinate)) }
         }
 
         assertSame(origin, pool.get(world, 0, 0))

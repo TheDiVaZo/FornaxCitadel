@@ -10,6 +10,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelEntity
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
+import ru.fornax.fornaxcitadel.core.storage.nonCancellingView
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.UUID
@@ -305,9 +306,15 @@ class ComponentManager(
         return citadelStorage.loadChunk(pool.get(world, chunkX, chunkZ)).thenApply<Void> { null }
     }
 
-    /** Saves dirty data and unloads the chunk. Previously obtained component references expire. */
+    /**
+     * Saves dirty data and unloads the chunk. Previously obtained component references expire.
+     * Successful completion evicts the cached coordinates; a failed unload does not evict them.
+     * Cancelling the returned future does not cancel unloading or coordinate eviction.
+     */
     fun unloadChunk(world: UUID, chunkX: Int, chunkZ: Int): CompletableFuture<Void> {
-        return citadelStorage.unloadChunk(pool.get(world, chunkX, chunkZ))
+        val location = pool.get(world, chunkX, chunkZ)
+        val cleanup = citadelStorage.unloadChunk(location).thenRun { pool.remove(location) }
+        return cleanup.nonCancellingView()
     }
 
     /** Saves dirty chunks. Does not discover direct mutations that were not marked dirty. */
