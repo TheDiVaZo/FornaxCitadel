@@ -74,6 +74,8 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
+import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
+import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionValidationService
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.UUID
@@ -238,11 +240,12 @@ internal class PaperTestFixture(
     val manager = ComponentManager(storage, types)
     private val moduleScheduler = moduleSchedulerFactory(plugin)
     val citadelTypes = PaperCitadelTypes(citadelSettings)
-    private val permissionValidator = PaperPermissionValidator(server, citadelTypes)
+    private val permissionValidator = PaperPermissionValidator(citadelTypes)
     val materials = CombineMaterialRegistry()
     val materialPlacement = MaterialPlacementService(server, materials, manager)
     val module = CitadelModule(manager, moduleScheduler, maxActionsPerTick,
         resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager))
+    val actionValidationService = PaperActionValidationService(module.actions, PaperActionStateValidator(server))
     val permissionService = PaperPermissionService(module.actions, permissionValidator)
     val damageValidationService = PaperDamageValidationService(module.actions,
         PaperDamageValidator(module.citadels, citadelTypes, creativeModeEnabled))
@@ -277,6 +280,7 @@ internal class PaperTestFixture(
 
     init {
         if (registerTypes) citadelTypes.register(module)
+        actionValidationService.enable()
         if (permissions) permissionService.enable()
         damageValidationService.enable()
         if (initializeModule) module.enable()
@@ -409,6 +413,7 @@ internal class PaperTestFixture(
         module.disable()
         damageValidationService.disable()
         permissionService.disable()
+        actionValidationService.disable()
         (moduleScheduler as? AutoCloseable)?.close()
         HandlerList.unregisterAll(plugin)
     }

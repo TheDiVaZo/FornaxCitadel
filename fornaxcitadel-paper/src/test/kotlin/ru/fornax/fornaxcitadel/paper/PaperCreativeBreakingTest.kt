@@ -73,7 +73,7 @@ class PaperCreativeBreakingTest {
     }
 
     @Test
-    fun `creative destruction requires damage permission even for administrators without the permission service`() {
+    fun `creative destruction delegates damage permission checks to the permission service`() {
         for (permissions in listOf(false, true)) {
             PaperTestFixture(permissions = permissions).use { fixture ->
                 fixture.prepareInvulnerable()
@@ -81,7 +81,10 @@ class PaperCreativeBreakingTest {
                 fixture.stranger.permissions.remove("fornaxcitadel.damage")
 
                 assertTrue(fixture.breakAsCreative().isCancelled)
-                assertNotNull(fixture.target())
+                if (permissions) assertNotNull(fixture.target()) else {
+                    assertNull(fixture.target())
+                    fixture.place(PaperCitadelTypes.INVULNERABLE)
+                }
 
                 fixture.stranger.permissions.add("fornaxcitadel.damage")
                 assertTrue(fixture.breakAsCreative().isCancelled)

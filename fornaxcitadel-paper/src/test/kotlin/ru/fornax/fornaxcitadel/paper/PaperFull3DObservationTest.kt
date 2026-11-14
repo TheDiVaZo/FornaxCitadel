@@ -427,7 +427,8 @@ class PaperFull3DObservationTest {
         fun place(x: Int, y: Int, z: Int, world: UUID = paper.worldId): CitadelPosition {
             paper.manager.loadChunk(world, x shr 4, z shr 4).join()
             val position = CitadelPosition(world, x, y, z)
-            assertEquals(ActionResult.SUCCESS, paper.module.actions.execute(PlaceAction(
+            // Seed core observation data and publish placement notifications without requiring Bukkit chunks.
+            assertEquals(ActionResult.SUCCESS, paper.module.place.place(PlaceAction(
                 paper.context(paper.installer), position, PaperCitadelTypes.REINFORCED)))
             return position
         }

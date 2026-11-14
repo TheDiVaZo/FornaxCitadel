@@ -9,7 +9,10 @@ import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
-/** Trusted operation after authorization. Initializers must only modify their draft. */
+/**
+ * Trusted operation after prerequisite validation and authorization. Initializers must only modify their draft.
+ * When assembled without CitadelModule, register prerequisite and authorization validators separately.
+ */
 class PlaceService(
     private val actions: ActionManager,
     private val definitions: CitadelDefinitionRegistry,
@@ -34,7 +37,7 @@ class PlaceService(
 
     fun place(action: PlaceAction): ActionResult {
         notifications.checkMutationAllowed()
-        val definition = definitions.find(action.definitionKey) ?: return ActionResult.DENIED
+        val definition = definitions.require(action.definitionKey)
         val placed = actions.citadels.createCitadel(action.position) { draft ->
             draft.addComponent(CitadelKind::class.java, CitadelKind(definition.key))
             action.context.actorId?.let { draft.addComponent(CitadelOwner::class.java, CitadelOwner(it)) }

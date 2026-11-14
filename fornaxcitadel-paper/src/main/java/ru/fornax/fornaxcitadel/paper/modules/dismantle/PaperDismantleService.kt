@@ -1,6 +1,5 @@
 package ru.fornax.fornaxcitadel.paper.modules.dismantle
 
-import org.bukkit.GameMode
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
@@ -9,7 +8,6 @@ import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
 import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
@@ -29,7 +27,6 @@ class PaperDismantleService @JvmOverloads constructor(
     private val settings: DismantleSettings = DismantleSettings(),
     private val random: () -> Double = { Random.nextDouble() }
 ) : LifecycleService {
-    private val manager = module.actions.componentManager
     private val validator = OwnerDismantleValidator(module.citadels)
     private val processor = object : ActionProcessor<DismantleAction>() {
         override val actionClass = DismantleAction::class.java
@@ -71,28 +68,21 @@ class PaperDismantleService @JvmOverloads constructor(
         return true
     }
 
-    /** Trusted execution after validation. External requests must enter through module.actions. */
+    /**
+     * Executes an action whose source and target have already passed core and platform validation.
+     * Direct callers must uphold those prerequisites; external requests must enter through module.actions.
+     */
     fun dismantle(action: DismantleAction): ActionResult {
         if (!enabled || expectedBreak != null) return ActionResult.DENIED
         module.remove.checkMutationAllowed()
-        val player = (action.context.source as? PlayerSource)?.player ?: return ActionResult.DENIED
-        if (!player.isOnline || player.gameMode == GameMode.SPECTATOR || player.world.uid != action.citadelW) {
-            return ActionResult.DENIED
-        }
-        if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) return ActionResult.DENIED
-        val world = plugin.server.getWorld(action.citadelW) ?: return ActionResult.DENIED
-        if (action.citadelY !in world.minHeight until world.maxHeight ||
-            !world.isChunkLoaded(action.citadelX shr 4, action.citadelZ shr 4) ||
-            !manager.isChunkLoaded(action.citadelW, action.citadelX shr 4, action.citadelZ shr 4)) {
-            return ActionResult.DENIED
+        val player = (action.context.source as PlayerSource).player
+        val world = checkNotNull(plugin.server.getWorld(action.citadelW)) {
+            "Validated dismantle world is unavailable"
         }
         val block = world.getBlockAt(action.citadelX, action.citadelY, action.citadelZ)
-        if (block.isEmpty) return ActionResult.DENIED
-        val citadel = try {
-            module.citadels.findProtecting(action.position)
-        } catch (_: CitadelResolutionUnavailableException) {
-            return ActionResult.DENIED
-        } ?: return ActionResult.DENIED
+        val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
+            "Validated dismantle target is unavailable"
+        }
         val health = citadel.getComponent(Health::class.java)
         val refundChance = if (health == null || health.health == health.maxHealth) 1.0 else settings.refundChance
         val itemKey = citadel.getComponent(ReinforcementItem::class.java)?.materialKey

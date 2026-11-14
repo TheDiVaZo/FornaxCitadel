@@ -29,6 +29,8 @@ import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
+import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
+import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionValidationService
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.CompletionException
@@ -84,7 +86,7 @@ class FornaxCitadel : JavaPlugin() {
             materials = CombineMaterialRegistry()
             materialPlacement = MaterialPlacementService(server, materials, manager)
             citadelTypes = PaperCitadelTypes(settings.citadelTypes)
-            val permissions = PaperPermissionValidator(server, citadelTypes)
+            val permissions = PaperPermissionValidator(citadelTypes)
             val module = CitadelModule(
                 manager, scheduler,
                 maxActionsPerTick = settings.postedActionLimit,
@@ -94,6 +96,7 @@ class FornaxCitadel : JavaPlugin() {
                 resolver = materialPlacement
             )
             citadelTypes.register(module)
+            services.add(PaperActionValidationService(module.actions, PaperActionStateValidator(server)))
             services.add(PaperPermissionService(module.actions, permissions))
             services.add(PaperDamageValidationService(module.actions,
                 PaperDamageValidator(module.citadels, citadelTypes, settings.playerDamage.creativeModeEnabled)))

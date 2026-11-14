@@ -308,7 +308,8 @@ class PaperCrackHealthObservationSystemTest {
         fun create(x: Int, z: Int = paper.position.z, type: Key = TYPE): CitadelHandle {
             val position = CitadelPosition(paper.worldId, x, paper.position.y, z)
             paper.manager.loadChunk(position.world, x shr 4, z shr 4).join()
-            assertEquals(ActionResult.SUCCESS, paper.module.actions.execute(PlaceAction(ActionContext.SYSTEM, position, type)))
+            // Observation fixtures seed core data independently of Bukkit chunk availability.
+            assertEquals(ActionResult.SUCCESS, paper.module.place.place(PlaceAction(ActionContext.SYSTEM, position, type)))
             return assertNotNull(paper.manager.findCitadel(position.world, x, position.y, z))
         }
 

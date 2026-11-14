@@ -28,8 +28,7 @@ class PaperDamageValidator(
         if (action.mode == DamageAction.Mode.DESTROY) {
             if (!creativeModeEnabled) return ActionValidator.Result.Rejected
             val player = (action.context.source as? PlayerSource)?.player ?: return ActionValidator.Result.Rejected
-            return if (player.isOnline && player.gameMode == GameMode.CREATIVE &&
-                player.hasPermission("fornaxcitadel.damage")) ActionValidator.Result.Success
+            return if (player.gameMode == GameMode.CREATIVE) ActionValidator.Result.Success
             else ActionValidator.Result.Rejected
         }
 

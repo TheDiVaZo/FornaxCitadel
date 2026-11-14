@@ -5,12 +5,11 @@ import ru.fornax.fornaxcitadel.core.citadel.RemovalCause
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
 /**
  * Removes core data after authorization. Minecraft block changes belong to a platform integration.
- * When assembled without CitadelModule, configure action metadata and authorization validators separately.
+ * When assembled without CitadelModule, configure action metadata, prerequisite and authorization validators.
  */
 class RemoveService(
     private val actions: ActionManager,
@@ -29,14 +28,12 @@ class RemoveService(
 
     fun checkMutationAllowed() = notifications.checkMutationAllowed()
 
-    /** Executes an already-authorized administrative request. External requests must enter through actions. */
+    /** Executes a validated request with an available target. External requests must enter through actions. */
     fun request(action: RemoveAction): ActionResult {
         notifications.checkMutationAllowed()
-        val citadel = try {
-            actions.citadels.findProtecting(action.position)
-        } catch (_: CitadelResolutionUnavailableException) {
-            return ActionResult.DENIED
-        } ?: return ActionResult.DENIED
+        val citadel = checkNotNull(actions.citadels.findProtecting(action.position)) {
+            "Validated removal target is unavailable"
+        }
         return remove(citadel, RemovalCause.ADMIN)
     }
 

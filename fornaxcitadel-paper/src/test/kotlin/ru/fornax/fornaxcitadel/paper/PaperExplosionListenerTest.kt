@@ -257,7 +257,7 @@ class PaperExplosionListenerTest {
     }
 
     @Test
-    fun `non-player damage skips player and platform permission checks but still requires core availability`() {
+    fun `non-player damage skips player permissions but still requires platform and core availability`() {
         val fixture = PaperTestFixture(permissions = true, resolveMaterials = false)
         fixture.place()
         val source = ExplosionSource.fromEntity(explodingEntity(), fixture.block().location, 4.0f)
@@ -268,11 +268,11 @@ class PaperExplosionListenerTest {
         assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(typed))
         assertEquals(80.0, fixture.health())
         fixture.worldChunkLoaded = false
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(typed))
+        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
         fixture.worldChunkLoaded = true
         fixture.worldAvailable = false
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(typed))
-        assertEquals(60.0, fixture.health())
+        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
+        assertEquals(80.0, fixture.health())
         fixture.worldAvailable = true
         fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
         assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
@@ -288,7 +288,7 @@ class PaperExplosionListenerTest {
         val target = fixture.position.copy(x = 3)
         val removal = RemoveAction(context, fixture.position)
         val placement = PlaceAction(context, target, PaperCitadelTypes.REINFORCED)
-        val validator = PaperPermissionValidator(fixture.server, fixture.citadelTypes)
+        val validator = PaperPermissionValidator(fixture.citadelTypes)
 
         assertEquals(ActionValidator.Result.Neutral, validator.validate(removal))
         assertEquals(ActionValidator.Result.Neutral, validator.validate(placement))

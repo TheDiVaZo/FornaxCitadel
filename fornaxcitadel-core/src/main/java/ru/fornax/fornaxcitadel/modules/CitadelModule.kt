@@ -25,7 +25,9 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveService
  *
  * Register read-only authorization checks on [actions.validatorCoordinator]. Damage, explicit
  * destruction, administrative removal and dismantling require a validator's Success; a rejection always wins.
- * Definitions configure initial components, not authorization. Source keys are attribution.
+ * This module validates target availability and placement prerequisites before execution.
+ * These prerequisite checks never grant authorization. Definitions configure initial components;
+ * source keys are attribution.
  *
  * Services and the component manager expose trusted low-level operations; external requests
  * must enter through [actions]. All access is on the owning game thread. Observers may post
@@ -52,10 +54,12 @@ class CitadelModule @JvmOverloads constructor(
     val remove = RemoveService(actions, lifecycle)
     val health = HealthService(actions, remove)
     val actionQueue = ActionQueueService(actions, scheduler, maxActionsPerTick, actionFailureHandler)
+    private val actionValidator = CitadelActionValidator(citadels, definitions)
     private val services: List<LifecycleService> = listOf(remove, health, place, actionQueue)
 
     override fun enable() {
         try {
+            actions.validatorCoordinator.registerValidator(actionValidator)
             services.forEach { it.enable() }
         } catch (failure: Throwable) {
             try {
@@ -78,6 +82,7 @@ class CitadelModule @JvmOverloads constructor(
                 else if (previous !== cleanupFailure) previous.addSuppressed(cleanupFailure)
             }
         }
+        actions.validatorCoordinator.unregisterValidator(actionValidator)
         actions.clearPosted()
         failure?.let { throw it }
     }

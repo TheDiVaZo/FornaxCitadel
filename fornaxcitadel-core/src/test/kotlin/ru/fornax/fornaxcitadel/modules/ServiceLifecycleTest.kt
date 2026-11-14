@@ -241,6 +241,8 @@ class ServiceLifecycleTest {
     @Test
     fun `root forwards queue failures to the configured handler`() {
         val fixture = RootFixture()
+        fixture.module.registerDefinition(CitadelDefinition(TYPE, initializers()))
+        fixture.load()
         val failure = IllegalStateException("External validation failed")
         fixture.module.enable()
         fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<PlaceAction> {

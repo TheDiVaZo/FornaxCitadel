@@ -7,7 +7,6 @@ import ru.fornax.fornaxcitadel.core.facade.ActionManager;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager;
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService;
-import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService;
@@ -19,7 +18,7 @@ import java.util.Objects;
 
 /**
  * Applies authorized, modified damage on the owning game thread. Read health directly from its component.
- * When assembled without CitadelModule, configure action metadata and authorization validators separately.
+ * When assembled without CitadelModule, configure action metadata, prerequisite and authorization validators.
  */
 public final class HealthService implements LifecycleService {
     private final ActionManager actions;
@@ -137,16 +136,11 @@ public final class HealthService implements LifecycleService {
         return ActionResult.SUCCESS;
     }
 
-    /** Executes an already-authorized action; validators must leave gameplay state unchanged. */
+    /** Executes a validated action with an available target; validators must leave gameplay state unchanged. */
     @NotNull
     protected ActionResult onDamage(@NotNull DamageAction action) {
-        CitadelHandle citadel;
-        try {
-            citadel = actions.getCitadels().findProtecting(action.getPosition());
-        } catch (CitadelResolutionUnavailableException unavailable) {
-            return ActionResult.DENIED;
-        }
-        if (citadel == null) return ActionResult.DENIED;
+        CitadelHandle citadel = Objects.requireNonNull(
+                actions.getCitadels().findProtecting(action.getPosition()), "Validated damage target is unavailable");
         if (action.getMode() == DamageAction.Mode.DESTROY) {
             return removeService.remove(citadel, RemovalCause.DESTROYED);
         }

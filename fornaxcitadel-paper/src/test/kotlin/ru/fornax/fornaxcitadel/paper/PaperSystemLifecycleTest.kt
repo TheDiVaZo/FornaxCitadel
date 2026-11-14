@@ -71,8 +71,9 @@ class PaperSystemLifecycleTest {
             }
             val validators = fixture.module.actions.validatorCoordinator
             validators.registerValidator(external)
-            val action = PlaceAction(fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.REINFORCED)
-            fixture.material(Material.PISTON)
+            val validationPosition = fixture.position.copy(x = 3)
+            val action = PlaceAction(fixture.context(fixture.installer), validationPosition, PaperCitadelTypes.REINFORCED)
+            fixture.material(Material.PISTON, validationPosition)
             assertEquals(ActionValidator.Result.Rejected, validators.validate(action))
 
             fixture.placementService.disable()
@@ -93,7 +94,7 @@ class PaperSystemLifecycleTest {
             fixture.placementService.enable()
 
             assertEquals(ActionValidator.Result.Rejected, validators.validate(action))
-            fixture.material(Material.STONE)
+            fixture.material(Material.STONE, validationPosition)
             assertEquals(ActionValidator.Result.Success, validators.validate(action))
             assertEquals(3, externalCalls)
             assertSame(health, handle.getComponent(Health::class.java))

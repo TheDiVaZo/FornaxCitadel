@@ -27,7 +27,7 @@ class PaperPermissionServiceTest {
     @Test
     fun `non-player sources are ignored for every action even with actor attribution and an absent world`() {
         PaperTestFixture(initializeSystems = false).use { fixture ->
-            val validator = PaperPermissionValidator(fixture.server, fixture.citadelTypes)
+            val validator = PaperPermissionValidator(fixture.citadelTypes)
             val source = ExplosionSource.Block(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0),
                 4.0f, Material.TNT)
             val contexts = listOf(ActionContext.SYSTEM, ActionContext(fixture.installer.id, source),
@@ -54,7 +54,7 @@ class PaperPermissionServiceTest {
     @Test
     fun `player permissions use the captured player instead of actor attribution or UUID lookup`() {
         PaperTestFixture(initializeSystems = false).use { fixture ->
-            val validator = PaperPermissionValidator(fixture.server, fixture.citadelTypes)
+            val validator = PaperPermissionValidator(fixture.citadelTypes)
             fixture.installer.permissions.add("fornaxcitadel.admin")
             val context = ActionContext(fixture.stranger.id, PlayerSource(fixture.installer.player))
             val checks: List<Triple<ActionData, String, ActionValidator.Result>> = listOf(
@@ -79,25 +79,20 @@ class PaperPermissionServiceTest {
                 fixture.installer.permissions.add(permission)
             }
 
+            // State checks belong to the common validator; this validator only answers permission questions.
             fixture.installer.online = false
-            assertFalse(validator.canAdminister(context))
-            checks.forEach { (action, _, _) -> assertSame(ActionValidator.Result.Rejected, validator.validate(action)) }
-            fixture.installer.online = true
             fixture.installer.gameMode = GameMode.SPECTATOR
-            checks.forEach { (action, _, _) -> assertSame(ActionValidator.Result.Rejected, validator.validate(action)) }
-            fixture.installer.gameMode = GameMode.SURVIVAL
             fixture.worldAvailable = false
-            checks.forEach { (action, _, _) -> assertSame(ActionValidator.Result.Rejected, validator.validate(action)) }
-            fixture.worldAvailable = true
             fixture.worldChunkLoaded = false
-            checks.forEach { (action, _, _) -> assertSame(ActionValidator.Result.Rejected, validator.validate(action)) }
+            assertTrue(validator.canAdminister(context))
+            checks.forEach { (action, _, accepted) -> assertSame(accepted, validator.validate(action)) }
         }
     }
 
     @Test
     fun `permission lifecycle owns the supplied validator and leaves external checks registered`() {
         PaperTestFixture(initializeSystems = false).use { fixture ->
-            val validator = PaperPermissionValidator(fixture.server, fixture.citadelTypes)
+            val validator = PaperPermissionValidator(fixture.citadelTypes)
             val service = PaperPermissionService(fixture.module.actions, validator)
             val coordinator = fixture.module.actions.validatorCoordinator
             val action = PlaceAction(fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.REINFORCED)
