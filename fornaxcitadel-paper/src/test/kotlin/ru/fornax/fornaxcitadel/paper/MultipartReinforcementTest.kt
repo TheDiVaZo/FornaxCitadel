@@ -100,7 +100,7 @@ class MultipartReinforcementTest {
     }
 
     @Test
-    fun `linked damage uses target policy and creative breaking still cancels the removal attempt`() {
+    fun `linked damage uses target policy and creative breaks the clicked part after removing protection`() {
         fixture().use { fixture ->
             val (lower, upper) = fixture.door()
             val handle = fixture.placeExact(lower, PaperCitadelTypes.INVULNERABLE)
@@ -113,6 +113,8 @@ class MultipartReinforcementTest {
             dispatch(fixture.breakingListener, first, fixture.plugin)
             assertTrue(first.isCancelled)
             assertFalse(handle.isCurrent)
+            assertEquals(fixture.stranger.player to upper, fixture.playerBreaks.single())
+            assertEquals(Material.AIR, upper.type)
             val next = BlockBreakEvent(upper, fixture.stranger.player)
             dispatch(fixture.breakingListener, next, fixture.plugin)
             assertFalse(next.isCancelled)

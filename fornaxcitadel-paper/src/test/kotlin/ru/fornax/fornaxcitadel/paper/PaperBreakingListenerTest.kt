@@ -1,8 +1,10 @@
 package ru.fornax.fornaxcitadel.paper
 
+import org.bukkit.Material
 import org.bukkit.block.BlockFace
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockDamageEvent
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -116,9 +118,10 @@ class PaperBreakingListenerTest {
     }
 
     @Test
-    fun `outsider damages health per completed break and lethal hit only removes reinforcement`() {
+    fun `outsider damages health per completed break and lethal hit breaks the block once after removal`() {
         val fixture = PaperTestFixture(permissions = true)
-        fixture.playerDamage.register(PlayerDamageModifier { _, _, _ -> 25.0 })
+        var modifierCalls = 0
+        fixture.playerDamage.register(PlayerDamageModifier { _, _, _ -> modifierCalls++; 25.0 })
         fixture.place()
         val damage = BlockDamageEvent(fixture.stranger.player, fixture.block(), BlockFace.UP, fixture.stranger.held, false)
         dispatch(fixture.breakingListener, damage, fixture.plugin)
@@ -130,11 +133,90 @@ class PaperBreakingListenerTest {
             assertTrue(breaking.isCancelled)
             assertEquals(100.0 - (attempt + 1) * 25.0, fixture.health())
         }
+        assertTrue(fixture.playerBreaks.isEmpty())
+        assertEquals(Material.STONE, fixture.block().type)
         val lethal = BlockBreakEvent(fixture.block(), fixture.stranger.player)
+        var nestedEvents = 0
+        fixture.beforeBreakEvent = {
+            assertTrue(lethal.isCancelled)
+            assertNull(fixture.module.citadels.findProtecting(fixture.position))
+        }
+        fixture.afterBreakEvent = {
+            nestedEvents++
+            assertFalse(it.isCancelled)
+        }
         dispatch(fixture.breakingListener, lethal, fixture.plugin)
         assertTrue(lethal.isCancelled)
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-        assertEquals(0, fixture.vanillaBlockChanges)
+        assertEquals(Material.AIR, fixture.block().type)
+        assertEquals(1, fixture.vanillaBlockChanges)
+        assertEquals(fixture.stranger.player to fixture.block(), fixture.playerBreaks.single())
+        assertEquals(1, nestedEvents)
+        assertEquals(4, modifierCalls)
+        assertTrue(fixture.droppedItems.isEmpty())
+    }
+
+    @Test
+    fun `cancelled failed and throwing physical breaks keep reinforcement removed and allow later hits`() {
+        for (failure in listOf("cancel before", "cancel after", "false", "throw")) {
+            PaperTestFixture(permissions = true).use { fixture ->
+                fixture.place()
+                fixture.playerDamage.register(PlayerDamageModifier { _, _, _ -> 100.0 })
+                val performBreak = fixture.stranger.breakBlockHandler
+                var attempts = 0
+                fixture.stranger.breakBlockHandler = { block ->
+                    attempts++
+                    when (failure) {
+                        "false" -> false
+                        "throw" -> error("Physical break failed")
+                        else -> performBreak(block)
+                    }
+                }
+                if (failure == "cancel before") fixture.beforeBreakEvent = { it.isCancelled = true }
+                if (failure == "cancel after") fixture.afterBreakEvent = { it.isCancelled = true }
+
+                val lethal = BlockBreakEvent(fixture.block(), fixture.stranger.player)
+                dispatch(fixture.breakingListener, lethal, fixture.plugin)
+
+                assertTrue(lethal.isCancelled, failure)
+                assertNull(fixture.module.citadels.findProtecting(fixture.position), failure)
+                assertEquals(Material.STONE, fixture.block().type, failure)
+                assertEquals(0, fixture.vanillaBlockChanges, failure)
+                assertEquals(1, attempts, failure)
+                fixture.beforeBreakEvent = {}
+                fixture.afterBreakEvent = {}
+                fixture.stranger.breakBlockHandler = performBreak
+                fixture.place()
+
+                val retry = BlockBreakEvent(fixture.block(), fixture.stranger.player)
+                dispatch(fixture.breakingListener, retry, fixture.plugin)
+
+                assertTrue(retry.isCancelled, failure)
+                assertNull(fixture.module.citadels.findProtecting(fixture.position), failure)
+                assertEquals(Material.AIR, fixture.block().type, failure)
+                assertEquals(1, fixture.vanillaBlockChanges, failure)
+            }
+        }
+    }
+
+    @Test
+    fun `block already removed by an action handler is not broken again`() {
+        PaperTestFixture(permissions = true).use { fixture ->
+            fixture.place()
+            fixture.playerDamage.register(PlayerDamageModifier { _, _, _ -> 100.0 })
+            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+                override val actionClass = DamageAction::class.java
+                override fun handle(action: DamageAction) { fixture.material(Material.AIR) }
+            })
+
+            val lethal = BlockBreakEvent(fixture.block(), fixture.stranger.player)
+            dispatch(fixture.breakingListener, lethal, fixture.plugin)
+
+            assertTrue(lethal.isCancelled)
+            assertNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertEquals(Material.AIR, fixture.block().type)
+            assertTrue(fixture.playerBreaks.isEmpty())
+        }
     }
 
     @Test

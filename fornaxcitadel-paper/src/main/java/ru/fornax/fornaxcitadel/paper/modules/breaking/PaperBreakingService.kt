@@ -66,7 +66,7 @@ class PaperBreakingService @JvmOverloads constructor(
         }
     }
 
-    /** Returns true when vanilla destruction must be cancelled, including after removing reinforcement. */
+    /** Cancels the original reinforced break; after removal, Player.breakBlock performs destruction separately. */
     fun breakBlock(player: Player, block: Block): Boolean {
         if (!enabled) return false
         if (!block.supportsCitadelData()) return false
@@ -85,8 +85,11 @@ class PaperBreakingService @JvmOverloads constructor(
             ))
             if (result != ActionResult.SUCCESS) {
                 messages.sendGameplay(player, "breaking.denied")
+            } else if (citadel.isCurrent) {
+                messages.sendGameplay(player, "breaking.damaged")
             } else {
-                messages.sendGameplay(player, if (!citadel.isCurrent) "breaking.removed" else "breaking.damaged")
+                if (!block.isEmpty) player.breakBlock(block)
+                messages.sendGameplay(player, "breaking.removed")
             }
         } catch (_: CitadelResolutionUnavailableException) {
             messages.sendGameplay(player, "breaking.chunk-unavailable")

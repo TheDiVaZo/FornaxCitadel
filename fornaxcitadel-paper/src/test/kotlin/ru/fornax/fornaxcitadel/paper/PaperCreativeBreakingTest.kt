@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
 
 class PaperCreativeBreakingTest {
     @Test
-    fun `creative removes every reinforcement in one hit without admin or damage modifiers and preserves the block`() {
+    fun `creative removes every reinforcement and breaks the block in one hit without admin or damage modifiers`() {
         val protectedHealth = Key("test", "protected_health")
         for (type in listOf(PaperCitadelTypes.REINFORCED, PaperCitadelTypes.MATURING,
             PaperCitadelTypes.INVULNERABLE, protectedHealth)) {
@@ -59,8 +59,9 @@ class PaperCreativeBreakingTest {
                 assertFalse(target.isCurrent)
                 assertEquals(fixture.position, completed.single().position)
                 assertEquals(DamageAction.Mode.DESTROY, completed.single().mode)
-                assertEquals(Material.STONE, fixture.block().type)
-                assertEquals(0, fixture.vanillaBlockChanges)
+                assertEquals(Material.AIR, fixture.block().type)
+                assertEquals(1, fixture.vanillaBlockChanges)
+                assertEquals(fixture.stranger.player to fixture.block(), fixture.playerBreaks.single())
                 val next = fixture.breakAsCreative()
                 assertFalse(next.isCancelled)
                 assertEquals(1, completed.size)
@@ -83,13 +84,16 @@ class PaperCreativeBreakingTest {
                 assertTrue(fixture.breakAsCreative().isCancelled)
                 if (permissions) assertNotNull(fixture.target()) else {
                     assertNull(fixture.target())
+                    fixture.material(Material.STONE)
                     fixture.place(PaperCitadelTypes.INVULNERABLE)
                 }
 
                 fixture.stranger.permissions.add("fornaxcitadel.damage")
                 assertTrue(fixture.breakAsCreative().isCancelled)
                 assertNull(fixture.target())
-                assertEquals(0, fixture.vanillaBlockChanges)
+                assertEquals(Material.AIR, fixture.block().type)
+                assertEquals(if (permissions) 1 else 2, fixture.playerBreaks.size)
+                assertEquals(if (permissions) 1 else 2, fixture.vanillaBlockChanges)
             }
         }
     }
@@ -112,6 +116,14 @@ class PaperCreativeBreakingTest {
                 assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.destroyAction()))
                 assertNotNull(fixture.target())
                 assertEquals(0, fixture.vanillaBlockChanges)
+                if (type == PaperCitadelTypes.REINFORCED) {
+                    assertTrue(assertNotNull(fixture.target()).editComponent(Health::class.java) { it.health = 1.0 })
+                    assertTrue(fixture.breakAsCreative().isCancelled)
+                    assertNull(fixture.target())
+                    assertEquals(Material.AIR, fixture.block().type)
+                    assertEquals(1, fixture.playerBreaks.size)
+                    assertEquals(2, modifierCalls)
+                }
             }
         }
     }

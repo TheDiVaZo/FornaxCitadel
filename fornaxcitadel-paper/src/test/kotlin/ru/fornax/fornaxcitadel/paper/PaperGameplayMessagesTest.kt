@@ -58,7 +58,7 @@ class PaperGameplayMessagesTest {
     }
 
     @Test
-    fun `damage and removal routing preserve health and vanilla block protection`() {
+    fun `damage and removal routing preserve health and break the block after removal`() {
         for (channel in CHANNELS) {
             val messages = messages("breaking.damaged" to channel, "breaking.removed" to channel)
             PaperTestFixture(permissions = true, messages = messages).use { fixture ->
@@ -76,7 +76,8 @@ class PaperGameplayMessagesTest {
 
                 assertTrue(lethal.isCancelled)
                 assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-                assertEquals(0, fixture.vanillaBlockChanges)
+                assertEquals(1, fixture.vanillaBlockChanges)
+                assertEquals(fixture.stranger.player to fixture.block(), fixture.playerBreaks.single())
                 assertDelivery(fixture.stranger, channel, "breaking.removed")
                 assertFalse(fixture.breakBlock().isCancelled)
                 assertDelivery(fixture.stranger, "NONE", "")

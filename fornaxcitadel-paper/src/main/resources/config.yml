@@ -17,7 +17,7 @@ observation:
 
 # Ordinary player hits start at 1 damage before applying player-specific modifiers.
 player-damage:
-  # Creative hits remove any reinforcement, including invulnerable types, and keep the block.
+  # Creative hits remove any reinforcement, including invulnerable types, and break the block.
   # Permissions and protection validators still apply. False uses ordinary damage rules.
   creative-mode: true
   newcomers:
