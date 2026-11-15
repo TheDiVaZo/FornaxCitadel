@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
+import ru.fornax.fornaxcitadel.core.citadel.ReinforcementLevel
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
@@ -53,6 +54,7 @@ class ServiceLifecycleTest {
         assertNotNull(fixture.types.getType(CitadelKind::class.java))
         assertNotNull(fixture.types.getType(CitadelOwner::class.java))
         assertNotNull(fixture.types.getType(ReinforcementItem::class.java))
+        assertNotNull(fixture.types.getType(ReinforcementLevel::class.java))
         assertNotNull(fixture.types.getType(Health::class.java))
         assertNotNull(fixture.types.getType(Maturing::class.java))
         assertEquals(ActionResult.DENIED, fixture.place())
@@ -82,6 +84,7 @@ class ServiceLifecycleTest {
             fixture.types.getType(CitadelKind::class.java),
             fixture.types.getType(CitadelOwner::class.java),
             fixture.types.getType(ReinforcementItem::class.java),
+            fixture.types.getType(ReinforcementLevel::class.java),
             fixture.types.getType(Health::class.java),
             fixture.types.getType(Maturing::class.java)
         )
@@ -114,6 +117,7 @@ class ServiceLifecycleTest {
             fixture.types.getType(CitadelKind::class.java),
             fixture.types.getType(CitadelOwner::class.java),
             fixture.types.getType(ReinforcementItem::class.java),
+            fixture.types.getType(ReinforcementLevel::class.java),
             fixture.types.getType(Health::class.java),
             fixture.types.getType(Maturing::class.java)
         ))

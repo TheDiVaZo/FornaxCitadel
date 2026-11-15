@@ -61,6 +61,7 @@ explosions:
 # Item keys default to the minecraft namespace when omitted.
 # External providers register their own namespace (e.g. otherplugin:reinforcement).
 # Materials are resolved on use; providers may register after FornaxCitadel enables.
+# Every type requires a positive integer lvl, stored at placement independently of later config changes.
 # damage-policy defaults to allow; deny blocks ordinary damage from every source.
 # Authorized creative destruction and administrative removal can still remove these types.
 # Maximum health is fixed; maturing amplifies ordinary damage from every source.
@@ -68,18 +69,22 @@ explosions:
 citadel-types:
   reinforced_light:
     item: minecraft:copper_ingot
+    lvl: 1
     health:
       max: 10.0
   reinforced:
     item: minecraft:iron_ingot
+    lvl: 2
     health:
       max: 20.0
   reinforced_heavy:
     item: minecraft:diamond
+    lvl: 3
     health:
       max: 30.0
   maturing_fast:
     item: minecraft:amethyst_shard
+    lvl: 2
     health:
       max: 20.0
     maturing:
@@ -87,6 +92,7 @@ citadel-types:
       initial-damage-multiplier: 2.0
   maturing:
     item: minecraft:emerald
+    lvl: 4
     health:
       max: 40.0
     maturing:
@@ -94,6 +100,7 @@ citadel-types:
       initial-damage-multiplier: 4.0
   maturing_strong:
     item: minecraft:netherite_ingot
+    lvl: 5
     health:
       max: 80.0
     maturing:
@@ -101,6 +108,7 @@ citadel-types:
       initial-damage-multiplier: 4.0
   invulnerable:
     item: minecraft:nether_star
+    lvl: 999
     # Invulnerable types require administrator permission to install.
     damage-policy: deny
 

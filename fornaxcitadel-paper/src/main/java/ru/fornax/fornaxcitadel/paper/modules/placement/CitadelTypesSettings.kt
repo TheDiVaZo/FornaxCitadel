@@ -19,19 +19,20 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 
     companion object {
         val DEFAULT_TYPES: Map<String, CitadelTypeSettings> = linkedMapOf(
-            "reinforced_light" to CitadelTypeSettings(Key("minecraft", "copper_ingot"),
+            "reinforced_light" to CitadelTypeSettings(Key("minecraft", "copper_ingot"), lvl = 1,
                 health = HealthSettings(10.0)),
-            "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"),
+            "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), lvl = 2,
                 health = HealthSettings(20.0)),
-            "reinforced_heavy" to CitadelTypeSettings(Key("minecraft", "diamond"),
+            "reinforced_heavy" to CitadelTypeSettings(Key("minecraft", "diamond"), lvl = 3,
                 health = HealthSettings(30.0)),
-            "maturing_fast" to CitadelTypeSettings(Key("minecraft", "amethyst_shard"),
+            "maturing_fast" to CitadelTypeSettings(Key("minecraft", "amethyst_shard"), lvl = 2,
                 health = HealthSettings(20.0), maturing = MaturingSettings(300, 2.0)),
-            "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"),
+            "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"), lvl = 4,
                 health = HealthSettings(40.0), maturing = MaturingSettings(600, 4.0)),
-            "maturing_strong" to CitadelTypeSettings(Key("minecraft", "netherite_ingot"),
+            "maturing_strong" to CitadelTypeSettings(Key("minecraft", "netherite_ingot"), lvl = 5,
                 health = HealthSettings(80.0), maturing = MaturingSettings(1800, 4.0)),
-            "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
+            "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), lvl = 999,
+                damagePolicy = CitadelDamagePolicy.DENY)
         )
         private val ID_PATTERN = Regex("[a-z0-9_-]+")
 
@@ -53,9 +54,10 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 
         private fun readType(value: Any?, path: String): CitadelTypeSettings {
             val values = readMapping(value, path)
-            val unknown = values.keys.firstOrNull { it !in setOf("item", "damage-policy", "health", "maturing") }
+            val unknown = values.keys.firstOrNull { it !in setOf("item", "lvl", "damage-policy", "health", "maturing") }
             require(unknown == null) { "Unknown configuration field $path.$unknown" }
             val item = readItem(values["item"], "$path.item")
+            val lvl = readLevel(values["lvl"], "$path.lvl")
             val rawPolicy = if (values.containsKey("damage-policy")) values["damage-policy"] else "allow"
             require(rawPolicy is String) { "$path.damage-policy must be allow or deny" }
             val policy = when (rawPolicy.lowercase(Locale.ROOT)) {
@@ -69,7 +71,7 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
             }
             val maturing = if (values.containsKey("maturing")) readMaturing(values["maturing"], "$path.maturing") else null
             require(maturing == null || health != null) { "$path.maturing requires $path.health" }
-            return CitadelTypeSettings(item, policy, health, maturing)
+            return CitadelTypeSettings(item, lvl, policy, health, maturing)
         }
 
         private fun readItem(value: Any?, path: String): Key {
@@ -84,6 +86,20 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
                 "Invalid $path: $value; expected a lowercase item key (item or namespace:item)"
             }
             return Key(namespace, item)
+        }
+
+        private fun readLevel(value: Any?, path: String): Int {
+            val message = "$path is required and must be a positive whole number fitting in Int"
+            require(value is Number) { message }
+            val lvl = try {
+                BigDecimal(value.toString()).intValueExact()
+            } catch (exception: NumberFormatException) {
+                throw IllegalArgumentException(message, exception)
+            } catch (exception: ArithmeticException) {
+                throw IllegalArgumentException(message, exception)
+            }
+            require(lvl > 0) { message }
+            return lvl
         }
 
         private fun readHealth(value: Any?, path: String): HealthSettings {
@@ -140,11 +156,13 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 
 data class CitadelTypeSettings(
     val item: Key,
+    val lvl: Int,
     val damagePolicy: CitadelDamagePolicy = CitadelDamagePolicy.ALLOW,
     val health: HealthSettings? = null,
     val maturing: MaturingSettings? = null
 ) {
     init {
+        require(lvl > 0) { "Citadel type lvl must be positive" }
         require(item.namespace.isNotEmpty() && item.key.isNotEmpty()) {
             "Citadel type item must contain both namespace and value"
         }

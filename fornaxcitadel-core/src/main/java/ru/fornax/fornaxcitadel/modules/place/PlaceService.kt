@@ -4,6 +4,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
+import ru.fornax.fornaxcitadel.core.citadel.ReinforcementLevel
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -24,6 +25,7 @@ class PlaceService(
         manager.registerComponent(CitadelKind.KEY, CitadelKind::class.java)
         manager.registerComponent(CitadelOwner.KEY, CitadelOwner::class.java)
         manager.registerComponent(ReinforcementItem.KEY, ReinforcementItem::class.java)
+        manager.registerComponent(ReinforcementLevel.KEY, ReinforcementLevel::class.java)
     }
 
     override fun enable() {

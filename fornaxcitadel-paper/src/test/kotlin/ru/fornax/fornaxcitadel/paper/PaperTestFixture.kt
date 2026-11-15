@@ -99,15 +99,15 @@ internal class PaperTestFixture(
     citadelSettings: CitadelTypesSettings = CitadelTypesSettings(
         linkedMapOf(
             "reinforced" to CitadelTypeSettings(
-                Key("minecraft", "iron_ingot"),
+                Key("minecraft", "iron_ingot"), 2,
                 health = HealthSettings(100.0)
             ),
             "maturing" to CitadelTypeSettings(
-                Key("minecraft", "emerald"),
+                Key("minecraft", "emerald"), 4,
                 health = HealthSettings(40.0), maturing = MaturingSettings(600, 4.0)
             ),
             "invulnerable" to CitadelTypeSettings(
-                Key("minecraft", "nether_star"),
+                Key("minecraft", "nether_star"), 999,
                 damagePolicy = CitadelDamagePolicy.DENY
             )
         )

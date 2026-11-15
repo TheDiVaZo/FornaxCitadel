@@ -59,7 +59,7 @@ class PaperDamageValidationTest {
     @Test
     fun `configured damage denial vetoes ordinary damage but allows authorized creative destruction even with health`() {
         val settings = CitadelTypesSettings(mapOf("protected" to CitadelTypeSettings(
-            Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY, HealthSettings(100.0))))
+            Key("minecraft", "nether_star"), 999, CitadelDamagePolicy.DENY, HealthSettings(100.0))))
         PaperTestFixture(permissions = true, citadelSettings = settings).use { fixture ->
             fixture.installer.permissions.add("fornaxcitadel.admin")
             fixture.place(Key("fornaxcitadel", "protected"))

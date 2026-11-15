@@ -13,6 +13,8 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
+import ru.fornax.fornaxcitadel.core.citadel.ReinforcementLevel
+import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -34,6 +36,68 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ConfiguredCitadelTypesTest {
+    @Test
+    fun `every default type stores its level through item command and action placement`() {
+        for ((name, settings) in CitadelTypesSettings.DEFAULT_TYPES) {
+            for (source in listOf("item", "command", "action")) {
+                PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings()).use { fixture ->
+                    fixture.installer.permissions.add("fornaxcitadel.admin")
+                    val type = assertNotNull(fixture.citadelTypes.find(name))
+                    when (source) {
+                        "item" -> {
+                            fixture.installer.held = fixture.reinforcementStack(type)
+                            dispatch(fixture.placementListener, fixture.interact(), fixture.plugin)
+                        }
+                        "command" -> {
+                            fixture.installer.target = fixture.block()
+                            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
+                                fixture.materials, fixture.citadelTypes) {}
+                            commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", name))
+                        }
+                        else -> fixture.place(type)
+                    }
+                    val placed = assertNotNull(fixture.module.citadels.findProtecting(fixture.position), "$name: $source")
+                    assertEquals(settings.lvl, placed.getComponent(ReinforcementLevel::class.java)?.lvl, "$name: $source")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `stored levels survive reload and config changes while new citadels receive independent levels`() {
+        val settings = CitadelTypesSettings()
+        val snapshot = PaperTestFixture(permissions = true, citadelSettings = settings).use { fixture ->
+            fixture.place()
+            fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
+            assertNotNull(fixture.backend.loadChunk(WXZCord(fixture.worldId, 0, 0)).join())
+        }
+        val changed = CitadelTypesSettings(settings.types +
+            ("reinforced" to settings.types.getValue("reinforced").copy(lvl = 7)))
+        PaperTestFixture(load = false, permissions = true, citadelSettings = changed).use { fixture ->
+            fixture.backend.saveChunk(snapshot).join()
+            fixture.loadChunk(0, 0)
+            val restored = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertEquals(2, restored.getComponent(ReinforcementLevel::class.java)?.lvl)
+            val type = assertNotNull(fixture.citadelTypes.find("reinforced"))
+            val positions = listOf(fixture.position.copy(x = 3), fixture.position.copy(x = 4))
+            val placed = positions.map { position ->
+                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+                    PlaceAction(fixture.context(fixture.installer), position, type)))
+                assertNotNull(fixture.module.citadels.findProtecting(position))
+            }
+            placed.forEach { assertEquals(7, it.getComponent(ReinforcementLevel::class.java)?.lvl) }
+            assertTrue(placed.first().editComponent(ReinforcementLevel::class.java) { it.lvl = 8 })
+            assertEquals(7, placed.last().getComponent(ReinforcementLevel::class.java)?.lvl)
+            assertEquals(2, restored.getComponent(ReinforcementLevel::class.java)?.lvl)
+            fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
+            fixture.loadChunk(0, 0)
+            for ((position, lvl) in listOf(fixture.position to 2, positions[0] to 8, positions[1] to 7)) {
+                assertEquals(lvl, assertNotNull(fixture.module.citadels.findProtecting(position))
+                    .getComponent(ReinforcementLevel::class.java)?.lvl)
+            }
+        }
+    }
+
     @Test
     fun `info reads a maturing citadel without changing health or dirtying storage`() {
         PaperTestFixture(permissions = true, citadelSettings = CUSTOM_TYPES).use { fixture ->
@@ -172,6 +236,7 @@ class ConfiguredCitadelTypesTest {
                 citadel-types:
                   diamond_wall:
                     item: diamond
+                    lvl: 3
                     health:
                       max: 37.0
             """.trimIndent())
@@ -200,6 +265,7 @@ class ConfiguredCitadelTypesTest {
                 citadel-types:
                   steel_guard:
                     item: thirdparty:steel_plate
+                    lvl: 1
                     health:
                       max: 29.0
             """.trimIndent())
@@ -229,7 +295,7 @@ class ConfiguredCitadelTypesTest {
         val settings = CitadelTypesSettings(
             mapOf(
                 "steel_guard" to
-                        CitadelTypeSettings(itemKey, health = HealthSettings(29.0))
+                        CitadelTypeSettings(itemKey, 1, health = HealthSettings(29.0))
             )
         )
         val fixture = PaperTestFixture(permissions = true, citadelSettings = settings)
@@ -271,6 +337,7 @@ class ConfiguredCitadelTypesTest {
                 citadel-types:
                   steel_guard:
                     item: thirdparty:steel_plate
+                    lvl: 1
                     health: {max: 29.0}
             """.trimIndent())
         }
@@ -309,18 +376,18 @@ class ConfiguredCitadelTypesTest {
         val CUSTOM_TYPES = CitadelTypesSettings(
             linkedMapOf(
                 "clay_guard" to CitadelTypeSettings(
-                    Key("minecraft", "clay_ball"),
+                    Key("minecraft", "clay_ball"), 1,
                     health = HealthSettings(13.0)
                 ),
                 "titanium" to CitadelTypeSettings(
-                    Key("minecraft", "iron_ingot"),
+                    Key("minecraft", "iron_ingot"), 2,
                     health = HealthSettings(73.0)
                 ),
                 "growing_wall" to CitadelTypeSettings(
-                    Key("minecraft", "emerald"),
+                    Key("minecraft", "emerald"), 4,
                     health = HealthSettings(48.0), maturing = MaturingSettings(30, 8.0)
                 ),
-                "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), CitadelDamagePolicy.DENY)
+                "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), 999, CitadelDamagePolicy.DENY)
             )
         )
     }

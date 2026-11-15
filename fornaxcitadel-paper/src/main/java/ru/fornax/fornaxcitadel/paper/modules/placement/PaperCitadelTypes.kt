@@ -2,6 +2,7 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
+import ru.fornax.fornaxcitadel.core.citadel.ReinforcementLevel
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
@@ -30,6 +31,9 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
     fun register(module: CitadelModule) {
         for ((name, settings) in configured) {
             val initializers = buildList<CitadelInitializer> {
+                add(CitadelInitializer { _, draft ->
+                    draft.addComponent(ReinforcementLevel::class.java, ReinforcementLevel(settings.lvl))
+                })
                 settings.health?.let { add(HealthInitializer(it.max)) }
                 settings.maturing?.let {
                     add(MaturingInitializer(Math.multiplyExact(it.durationSeconds, 1000), it.initialDamageMultiplier))
