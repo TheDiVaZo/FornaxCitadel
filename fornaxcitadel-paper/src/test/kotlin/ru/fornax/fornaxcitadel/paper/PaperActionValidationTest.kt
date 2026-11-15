@@ -139,7 +139,8 @@ class PaperActionValidationTest {
             fixture.module.actions.post(action)
             assertEquals(1, fixture.module.actions.drainPosted())
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-            assertEquals(1, fixture.playerBreaks.size)
+            assertTrue(fixture.playerBreaks.isEmpty())
+            assertEquals(Material.STONE, fixture.block().type)
         }
     }
 

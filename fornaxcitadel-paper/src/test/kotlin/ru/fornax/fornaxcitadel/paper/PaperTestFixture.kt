@@ -135,8 +135,6 @@ internal class PaperTestFixture(
     var vanillaBlockChanges = 0
     var blockLookups = 0
     val playerBreaks = mutableListOf<Pair<Player, Block>>()
-    var breakBlockReturnsFalse = false
-    var breakBlockFailure: RuntimeException? = null
     var beforeBreakEvent: (BlockBreakEvent) -> Unit = {}
     var afterBreakEvent: (BlockBreakEvent) -> Unit = {}
     val droppedItems = mutableListOf<Pair<Location, ItemStack>>()
@@ -267,8 +265,7 @@ internal class PaperTestFixture(
         }
     }
     val dismantleService = PaperDismantleService(plugin, module, dismantleMaterials, dismantleSettings, dismantleRandom)
-    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled,
-        dismantleService::consumeBreakEvent)
+    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
     val explosionService = PaperExplosionService(plugin, module, explosionPowers)
     val environmentService = PaperEnvironmentService(plugin, module)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
@@ -301,8 +298,6 @@ internal class PaperTestFixture(
 
     private fun breakBlock(player: Player, block: Block): Boolean {
         playerBreaks.add(player to block)
-        breakBlockFailure?.let { throw it }
-        if (breakBlockReturnsFalse) return false
         val event = BlockBreakEvent(block, player)
         beforeBreakEvent(event)
         dispatch(breakingListener, event, plugin)

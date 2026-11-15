@@ -23,7 +23,7 @@ permissions:
     description: Нанесение урона укреплению
     default: true
   fornaxcitadel.dismantle:
-    description: Демонтаж собственного укрепления вместе с блоком
+    description: Снятие собственного укрепления с блока
     default: true
   fornaxcitadel.info:
     description: Просмотр укрепления под прицелом

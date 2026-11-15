@@ -26,7 +26,7 @@ player-damage:
     first-join-hours: 48
     play-time-hours: 12
 
-# Dismantling removes the owner's reinforcement and breaks the targeted block.
+# Dismantling removes the owner's reinforcement and preserves the targeted block.
 dismantle:
   # Chance to return one stored reinforcement item when dismantling a damaged citadel.
   # Full health or no Health component always returns the item, even when this chance is 0.

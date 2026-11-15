@@ -5,7 +5,6 @@ import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.World
 import org.bukkit.block.Block
-import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
@@ -29,7 +28,6 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -56,14 +54,16 @@ class PaperDismantleServiceTest {
             assertTrue(fixture.playerBreaks.isEmpty())
             coordinator.unregisterValidator(veto)
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(stranger))
-            assertSame(fixture.stranger.player, fixture.playerBreaks.single().first)
+            assertTrue(fixture.playerBreaks.isEmpty())
+            assertNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertEquals(Material.STONE, fixture.block().type)
             assertEquals(1, fixture.droppedItems.size)
             coordinator.unregisterValidator(grant)
         }
     }
 
     @Test
-    fun `successful dismantle breaks once without damage reentry and handles completion after refund`() {
+    fun `successful dismantle preserves the block without damage and handles completion after refund`() {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             fixture.place()
             val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
@@ -72,7 +72,7 @@ class PaperDismantleServiceTest {
                 override val actionClass = DismantleAction::class.java
                 override fun handle(action: DismantleAction) {
                     assertFalse(original.isCurrent)
-                    assertEquals(Material.AIR, fixture.block().type)
+                    assertEquals(Material.STONE, fixture.block().type)
                     assertEquals(1, fixture.droppedItems.size)
                     completed.add(action)
                 }
@@ -81,78 +81,26 @@ class PaperDismantleServiceTest {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result = error("Dismantle reentered damage")
             })
-            fixture.beforeBreakEvent = {
-                assertTrue(original.isCurrent)
-                assertEquals(100.0, fixture.health())
-                assertFalse(fixture.dismantleService.consumeBreakEvent(fixture.stranger.player, it.block))
-                assertFalse(fixture.dismantleService.consumeBreakEvent(it.player, fixture.block(3, 64, 2)))
-            }
-            fixture.afterBreakEvent = {
-                assertFalse(it.isCancelled)
-                assertTrue(original.isCurrent)
-                assertFalse(fixture.dismantleService.consumeBreakEvent(it.player, it.block))
-            }
+            fixture.beforeBreakEvent = { error("Dismantle fired a block break event") }
+            fixture.afterBreakEvent = { error("Dismantle fired a block break event") }
 
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
             assertEquals(fixture.position, completed.single().position)
-            assertEquals(1, fixture.playerBreaks.size)
+            assertTrue(fixture.playerBreaks.isEmpty())
+            assertNull(fixture.module.citadels.findProtecting(fixture.position))
             val (location, refund) = fixture.droppedItems.single()
             assertEquals(fixture.block().location.add(0.5, 0.5, 0.5), location)
             assertEquals(Material.IRON_INGOT, refund.type)
             assertEquals(1, refund.amount)
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
-            assertEquals(1, fixture.playerBreaks.size)
+            assertTrue(fixture.playerBreaks.isEmpty())
             assertEquals(1, fixture.droppedItems.size)
             assertEquals(1, completed.size)
         }
     }
 
     @Test
-    fun `cancelled failed and throwing physical breaks preserve reinforcement and always clear the bypass`() {
-        for (failure in listOf("cancel before", "cancel after", "false", "throw")) {
-            PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
-                fixture.place()
-                val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
-                val completed = mutableListOf<DismantleAction>()
-                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DismantleAction> {
-                    override val actionClass = DismantleAction::class.java
-                    override fun handle(action: DismantleAction) {
-                        completed.add(action)
-                    }
-                })
-                when (failure) {
-                    "cancel before" -> fixture.beforeBreakEvent = { it.isCancelled = true }
-                    "cancel after" -> fixture.afterBreakEvent = { it.isCancelled = true }
-                    "false" -> fixture.breakBlockReturnsFalse = true
-                    "throw" -> fixture.breakBlockFailure = IllegalStateException("physical break failed")
-                }
-                if (failure == "throw") {
-                    assertFailsWith<IllegalStateException> { fixture.module.actions.execute(fixture.action()) }
-                } else assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()), failure)
-
-                assertTrue(original.isCurrent, failure)
-                assertEquals(100.0, fixture.health())
-                assertEquals(Material.STONE, fixture.block().type)
-                assertTrue(fixture.droppedItems.isEmpty())
-                assertTrue(completed.isEmpty())
-                assertFalse(fixture.dismantleService.consumeBreakEvent(fixture.installer.player, fixture.block()))
-                fixture.beforeBreakEvent = {}
-                fixture.afterBreakEvent = {}
-                fixture.breakBlockReturnsFalse = false
-                fixture.breakBlockFailure = null
-                val ordinary = BlockBreakEvent(fixture.block(), fixture.installer.player)
-                dispatch(fixture.breakingListener, ordinary, fixture.plugin)
-                assertTrue(ordinary.isCancelled)
-                assertEquals(99.0, fixture.health())
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
-                assertEquals(1, fixture.droppedItems.size)
-                assertEquals(1, completed.size)
-            }
-        }
-    }
-
-    @Test
-    fun `missing or failing material adapters reject before any physical break`() {
+    fun `missing or failing material adapters preserve the reinforcement and block`() {
         for (providerPresent in listOf(false, true)) {
             PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(0.0)).use { fixture ->
                 val key = Key("external", "broken_refund")
@@ -174,20 +122,13 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `full or absent health guarantees a refund without rolling but cancellation still prevents it`() {
+    fun `full or absent health guarantees a refund without rolling`() {
         for (withHealth in listOf(false, true)) for (chance in listOf(0.0, 0.5)) {
             PaperTestFixture(dismantleSettings = DismantleSettings(chance),
                 dismantleRandom = { error("Guaranteed refund must not roll") }).use { fixture ->
                 fixture.place()
-                val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
                 if (!withHealth) assertNotNull(fixture.manager.removeComponent(
                     Health::class.java, fixture.worldId, fixture.position.x, fixture.position.y, fixture.position.z))
-                fixture.beforeBreakEvent = { it.isCancelled = true }
-
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
-                assertTrue(original.isCurrent)
-                assertTrue(fixture.droppedItems.isEmpty())
-                fixture.beforeBreakEvent = {}
 
                 assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
                 val refund = fixture.droppedItems.single().second
@@ -198,8 +139,8 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `refund chance uses health captured before material preparation and the physical break`() {
-        for (initiallyFull in listOf(false, true)) for (mutationStage in listOf("material", "break")) {
+    fun `refund chance uses health captured before material preparation`() {
+        for (initiallyFull in listOf(false, true)) {
             var rolls = 0
             PaperTestFixture(dismantleSettings = DismantleSettings(0.5),
                 dismantleRandom = { rolls++; 0.75 }).use { fixture ->
@@ -217,11 +158,10 @@ class PaperDismantleServiceTest {
                     override fun isConsists(itemStack: ItemStack) = false
                     override fun isConsists(block: Block) = false
                     override fun createItemStack(amount: Int): ItemStack {
-                        if (mutationStage == "material") changeHealth()
+                        changeHealth()
                         return TestItemStack(Material.IRON_INGOT, amount)
                     }
                 }))
-                if (mutationStage == "break") fixture.beforeBreakEvent = { changeHealth() }
 
                 assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
                 assertEquals(if (initiallyFull) 1 else 0, fixture.droppedItems.size)
@@ -264,19 +204,26 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `replacement made by a break listener is never removed or refunded using the old handle`() {
+    fun `replacement made during material preparation is never removed or refunded using the old handle`() {
         PaperTestFixture(dismantleSettings = DismantleSettings(1.0)).use { fixture ->
-            fixture.place()
+            val key = Key("custom", "replacing_refund")
+            fixture.placeWithItem(key)
             val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
-            fixture.afterBreakEvent = {
-                assertTrue(fixture.manager.removeCitadel(original))
-                val replacement = MutableCitadelDraft(fixture.position).apply {
-                    addComponent(CitadelKind::class.java, CitadelKind(PaperCitadelTypes.REINFORCED))
-                    addComponent(CitadelOwner::class.java, CitadelOwner(fixture.stranger.id))
-                    HealthInitializer(7.0).initialize(fixture.context(fixture.stranger), this)
+            fixture.materials.register(key.namespace, TestMaterialRegistry(object : MaterialAdapter {
+                override fun getKey() = key
+                override fun isConsists(itemStack: ItemStack) = false
+                override fun isConsists(block: Block) = false
+                override fun createItemStack(amount: Int): ItemStack {
+                    assertTrue(fixture.manager.removeCitadel(original))
+                    val replacement = MutableCitadelDraft(fixture.position).apply {
+                        addComponent(CitadelKind::class.java, CitadelKind(PaperCitadelTypes.REINFORCED))
+                        addComponent(CitadelOwner::class.java, CitadelOwner(fixture.stranger.id))
+                        HealthInitializer(7.0).initialize(fixture.context(fixture.stranger), this)
+                    }
+                    assertEquals(ActionResult.SUCCESS, fixture.manager.createCitadel(replacement))
+                    return TestItemStack(Material.IRON_INGOT, amount)
                 }
-                assertEquals(ActionResult.SUCCESS, fixture.manager.createCitadel(replacement))
-            }
+            }))
 
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
             val current = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
@@ -336,7 +283,7 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `linked block dismantling breaks the clicked part and removes the resolved reinforcement`() {
+    fun `linked block dismantling preserves both parts and removes the resolved reinforcement`() {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             val (lower, upper) = fixture.door()
             // Existing linked protection is independent of the current solid-block placement filter.
@@ -347,7 +294,9 @@ class PaperDismantleServiceTest {
             assertEquals(lower.testPosition(), original.position)
 
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action(position = upper.testPosition())))
-            assertSame(upper, fixture.playerBreaks.single().second)
+            assertTrue(fixture.playerBreaks.isEmpty())
+            assertEquals(Material.OAK_DOOR, lower.type)
+            assertEquals(Material.OAK_DOOR, upper.type)
             assertFalse(original.isCurrent)
             assertNull(fixture.manager.findCitadel(fixture.worldId, lower.x, lower.y, lower.z))
             assertEquals(upper.location.add(0.5, 0.5, 0.5), fixture.droppedItems.single().first)

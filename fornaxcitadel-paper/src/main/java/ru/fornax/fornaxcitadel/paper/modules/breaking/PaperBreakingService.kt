@@ -25,8 +25,7 @@ class PaperBreakingService @JvmOverloads constructor(
     private val module: CitadelModule,
     private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService(),
     private val messages: PaperMessages = PaperMessages.defaults(),
-    private val creativeModeEnabled: Boolean = true,
-    private val dismantleBreak: (Player, Block) -> Boolean = { _, _ -> false }
+    private val creativeModeEnabled: Boolean = true
 ) : LifecycleService {
     private val manager = module.actions.componentManager
     private val listener = PaperBreakingListener(this)
@@ -48,8 +47,6 @@ class PaperBreakingService @JvmOverloads constructor(
         HandlerList.unregisterAll(listener)
         enabled = false
     }
-
-    internal fun consumeDismantleBreak(player: Player, block: Block): Boolean = dismantleBreak(player, block)
 
     fun canStartBreaking(player: Player, block: Block): Boolean {
         if (!enabled || !block.supportsCitadelData()) return true

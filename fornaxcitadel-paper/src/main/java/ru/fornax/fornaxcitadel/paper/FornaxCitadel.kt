@@ -116,7 +116,7 @@ class FornaxCitadel : JavaPlugin() {
             }
             dismantle = PaperDismantleService(this, module, materials, settings.dismantle).also(services::add)
             services.add(PaperBreakingService(this, module, playerDamage, messages,
-                settings.playerDamage.creativeModeEnabled, dismantle::consumeBreakEvent))
+                settings.playerDamage.creativeModeEnabled))
             services.add(PaperExplosionService(this, module, settings.explosionPowers))
             services.add(PaperEnvironmentService(this, module))
 

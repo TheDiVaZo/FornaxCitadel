@@ -70,7 +70,8 @@ class CitadelCommandTest {
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("dismantle"))
 
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-            assertEquals(Material.AIR, fixture.block().type)
+            assertEquals(Material.STONE, fixture.block().type)
+            assertTrue(fixture.playerBreaks.isEmpty())
             assertEquals(Material.IRON_INGOT, fixture.droppedItems.single().second.type)
             assertEquals(listOf("Dismantled"), fixture.installer.chatMessages.plainText())
             assertTrue(fixture.installer.actionBarMessages.isEmpty())

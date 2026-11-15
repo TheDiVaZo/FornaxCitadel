@@ -20,7 +20,6 @@ class PaperBreakingListener(private val service: PaperBreakingService) : Listene
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onBreak(event: BlockBreakEvent) {
-        if (service.consumeDismantleBreak(event.player, event.block)) return
         // Keep the physical block safe during the action and if even error reporting fails.
         event.isCancelled = true
         event.isCancelled = service.breakBlock(event.player, event.block)
