@@ -14,6 +14,7 @@ import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
@@ -21,7 +22,7 @@ import java.util.UUID
 import java.util.logging.Level
 import kotlin.math.sqrt
 
-/** Converts vanilla destruction into validated damage while keeping reinforced blocks intact. */
+/** Applies validated damage and lets the explosion destroy blocks whose reinforcement was removed. */
 class PaperExplosionService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
@@ -96,7 +97,7 @@ class PaperExplosionService @JvmOverloads constructor(
     }
 
     private fun damageBlocks(blocks: MutableList<Block>, sourceFactory: () -> ExplosionSource) {
-        val targets = linkedMapOf<CitadelPosition, Pair<CitadelHandle, CitadelPosition>>()
+        val targets = linkedMapOf<CitadelPosition, ExplosionTarget>()
         val iterator = blocks.iterator()
         while (iterator.hasNext()) {
             val block = iterator.next()
@@ -110,7 +111,7 @@ class PaperExplosionService @JvmOverloads constructor(
             try {
                 val citadel = module.citadels.findProtecting(originalPosition) ?: continue
                 iterator.remove()
-                targets.putIfAbsent(citadel.position, citadel to originalPosition)
+                targets.getOrPut(citadel.position) { ExplosionTarget(citadel, originalPosition) }.blocks.add(block)
             } catch (_: CitadelResolutionUnavailableException) {
                 iterator.remove()
             } catch (exception: Exception) {
@@ -128,18 +129,23 @@ class PaperExplosionService @JvmOverloads constructor(
             return
         }
         val context = ActionContext(null, source)
-        for ((citadel, originalPosition) in targets.values) {
+        val destroyedBlocks = mutableListOf<Block>()
+        for (target in targets.values) {
+            val citadel = target.citadel
             try {
                 if (!citadel.isCurrent) continue
                 val position = citadel.position
-                val target = ExplosionPosition(position.world,
+                val targetPosition = ExplosionPosition(position.world,
                     position.x.toDouble(), position.y.toDouble(), position.z.toDouble())
-                val damage = calculateDamage(source.power, source.position, target)
-                module.actions.execute(DamageAction(context, originalPosition, damage))
+                val damage = calculateDamage(source.power, source.position, targetPosition)
+                val result = module.actions.execute(DamageAction(context, target.originalPosition, damage))
+                if (result == ActionResult.SUCCESS && !citadel.isCurrent) destroyedBlocks.addAll(target.blocks)
             } catch (exception: Exception) {
                 plugin.logger.log(Level.SEVERE, "Could not apply explosion damage at ${citadel.position}", exception)
             }
         }
+        // Keep all protected blocks excluded during callbacks; vanilla handles destruction afterward.
+        blocks.addAll(destroyedBlocks)
     }
 
     /** Reconciles reinforcement data for sources that Paper removed before firing BlockExplodeEvent. */
@@ -168,6 +174,10 @@ class PaperExplosionService @JvmOverloads constructor(
         if (!CitadelPosition.isSupported(x, y, z) || !manager.isChunkLoaded(world, x shr 4, z shr 4)) return
         val citadel = manager.findCitadel(world, x, y, z) ?: return
         module.remove.remove(citadel)
+    }
+
+    private class ExplosionTarget(val citadel: CitadelHandle, val originalPosition: CitadelPosition) {
+        val blocks = mutableListOf<Block>()
     }
 
     private class PrimedPower(val power: Float) {

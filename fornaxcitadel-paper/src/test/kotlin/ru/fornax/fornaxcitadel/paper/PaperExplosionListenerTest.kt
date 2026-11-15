@@ -164,6 +164,62 @@ class PaperExplosionListenerTest {
     }
 
     @Test
+    fun `entity and block explosions return destroyed blocks only after all damage callbacks`() {
+        for (entityExplosion in listOf(true, false)) {
+            PaperTestFixture(permissions = true).use { fixture ->
+                fixture.place()
+                val first = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+                assertTrue(first.editComponent(Health::class.java) { it.health = 10.0 })
+                val second = fixture.block(3, 64, 2)
+                fixture.placeAt(second)
+                val third = fixture.block(5, 64, 2)
+                fixture.placeAt(third)
+                val thirdHandle = assertNotNull(fixture.module.citadels.findProtecting(third.testPosition()))
+                assertTrue(thirdHandle.editComponent(Health::class.java) { it.health = 10.0 })
+                val ordinary = fixture.block(7, 64, 2)
+                val (event, affectedBlocks) = if (entityExplosion) {
+                    val event = fixture.entityExplosion(fixture.block(), second, third, ordinary)
+                    event to event.blockList()
+                } else {
+                    val event = fixture.blockExplosion(fixture.block(), second, third, ordinary)
+                    event to event.blockList()
+                }
+                val visited = mutableListOf<Int>()
+                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                    override val actionClass = DamageAction::class.java
+                    override fun validate(action: DamageAction): ActionValidator.Result {
+                        assertEquals(listOf(ordinary), affectedBlocks)
+                        if (action.citadelX != 1) assertFalse(first.isCurrent)
+                        visited.add(action.citadelX)
+                        return ActionValidator.Result.Neutral
+                    }
+                })
+                var completed = 0
+                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+                    override val actionClass = DamageAction::class.java
+                    override fun handle(action: DamageAction) {
+                        assertEquals(listOf(ordinary), affectedBlocks)
+                        completed++
+                    }
+                })
+
+                dispatch(fixture.explosionListener, event, fixture.plugin)
+
+                assertEquals(listOf(1, 3, 5), visited)
+                assertEquals(3, completed)
+                assertFalse(first.isCurrent)
+                assertFalse(thirdHandle.isCurrent)
+                assertEquals(77.5, assertNotNull(fixture.module.citadels.findProtecting(second.testPosition()))
+                    .getComponent(Health::class.java)?.health)
+                assertEquals(listOf(ordinary, fixture.block(), third), affectedBlocks)
+                assertEquals(0, fixture.vanillaBlockChanges)
+                assertTrue(fixture.playerBreaks.isEmpty())
+                assertTrue(fixture.droppedItems.isEmpty())
+            }
+        }
+    }
+
+    @Test
     fun `prime radius overrides fallback and is forgotten after normal cancelled or cancelled prime events`() {
         val fixture = PaperTestFixture(explosionPowers = ExplosionPowerSettings(defaultEntityPower = 3.0f))
         fixture.place()
@@ -404,7 +460,7 @@ class PaperExplosionListenerTest {
         assertEquals(listOf(1, 3), visited)
         assertEquals(100.0, fixture.health())
         assertNull(fixture.manager.findCitadel(fixture.worldId, 3, 64, 2))
-        assertEquals(listOf(ordinary), event.blockList())
+        assertEquals(listOf(ordinary, second), event.blockList())
         assertEquals(4.0f, fixture.explosionService.getEntityExplosionPower(entity.uniqueId))
         assertEquals(0, fixture.vanillaBlockChanges)
     }

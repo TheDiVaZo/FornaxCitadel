@@ -203,32 +203,48 @@ class MultipartReinforcementTest {
     }
 
     @Test
-    fun `both explosion halves are protected and one reinforcement receives one damage action`() {
-        fixture().use { fixture ->
-            val (lower, upper) = fixture.door()
-            val handle = fixture.placeExact(lower)
-            var hits = 0
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
-                override val actionClass = DamageAction::class.java
-                override fun validate(action: DamageAction): ActionValidator.Result {
-                    hits++
-                    return ActionValidator.Result.Neutral
+    fun `explosions damage linked reinforcement once and return only affected parts when destroyed`() {
+        for (bothParts in listOf(false, true)) {
+            fixture().use { fixture ->
+                val (lower, upper) = fixture.door()
+                val handle = fixture.placeExact(lower)
+                var hits = 0
+                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                    override val actionClass = DamageAction::class.java
+                    override fun validate(action: DamageAction): ActionValidator.Result {
+                        hits++
+                        return ActionValidator.Result.Neutral
+                    }
+                })
+                val entity = paperProxy<Entity>("exploding entity") { method, _ ->
+                    when (method.name) {
+                        "getUniqueId" -> UUID(30, 40)
+                        "getType" -> EntityType.CREEPER
+                        else -> unsupported(method)
+                    }
                 }
-            })
-            val entity = paperProxy<Entity>("exploding entity") { method, _ ->
-                when (method.name) {
-                    "getUniqueId" -> UUID(30, 40)
-                    "getType" -> EntityType.CREEPER
-                    else -> unsupported(method)
-                }
-            }
-            val event = EntityExplodeEvent(entity, lower.location,
-                mutableListOf(upper, lower), 1.0f, ExplosionResult.DESTROY)
-            dispatch(fixture.explosionListener, event, fixture.plugin)
+                val affected = if (bothParts) listOf(upper, lower) else listOf(upper)
+                val event = EntityExplodeEvent(entity, lower.location,
+                    affected.toMutableList(), 1.0f, ExplosionResult.DESTROY)
+                dispatch(fixture.explosionListener, event, fixture.plugin)
 
-            assertTrue(event.blockList().isEmpty())
-            assertEquals(1, hits)
-            assertEquals(60.0, handle.getComponent(Health::class.java)?.health)
+                assertTrue(event.blockList().isEmpty())
+                assertEquals(1, hits)
+                assertEquals(60.0, handle.getComponent(Health::class.java)?.health)
+                assertTrue(handle.editComponent(Health::class.java) { it.health = 40.0 })
+                val lethal = EntityExplodeEvent(entity, lower.location,
+                    affected.toMutableList(), 1.0f, ExplosionResult.DESTROY)
+                dispatch(fixture.explosionListener, lethal, fixture.plugin)
+
+                assertFalse(handle.isCurrent)
+                assertEquals(2, hits)
+                assertEquals(affected, lethal.blockList())
+                assertEquals(Material.OAK_DOOR, lower.type)
+                assertEquals(Material.OAK_DOOR, upper.type)
+                assertEquals(0, fixture.vanillaBlockChanges)
+                assertTrue(fixture.playerBreaks.isEmpty())
+                assertTrue(fixture.droppedItems.isEmpty())
+            }
         }
     }
 
