@@ -422,6 +422,7 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
     var online = true
     var location = Location(world, 0.0, 64.0, 0.0)
     var gameMode = GameMode.SURVIVAL
+    var sneaking = false
     var firstPlayed = 0L
     var playTimeTicks = 0
     var actionBarFailure: RuntimeException? = null
@@ -456,6 +457,7 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
             "getWorld" -> location.world
             "getLocation" -> location.clone()
             "getGameMode" -> gameMode
+            "isSneaking" -> sneaking
             "getFirstPlayed" -> firstPlayed
             "getStatistic" -> if (args.contentEquals(arrayOf(Statistic.PLAY_ONE_MINUTE))) playTimeTicks else unsupported(method)
             "getInventory" -> inventory

@@ -50,6 +50,7 @@ class MultipartReinforcementTest {
                 val responsible = if (bed) second else first
                 val clicked = if (bed) first else second
                 fixture.installer.held = fixture.reinforcementStack(amount = 3)
+                fixture.installer.sneaking = true
                 val event = fixture.interact(clicked)
 
                 dispatch(fixture.placementListener, event, fixture.plugin)

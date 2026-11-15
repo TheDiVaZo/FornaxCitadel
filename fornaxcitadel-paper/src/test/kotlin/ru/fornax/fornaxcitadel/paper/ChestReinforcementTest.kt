@@ -103,7 +103,7 @@ class ChestReinforcementTest {
     }
 
     @Test
-    fun `item placement stores the selected half and full health permits opening either half`() {
+    fun `item placement requires sneaking and full health permits opening either half`() {
         for (material in listOf(Material.CHEST, Material.TRAPPED_CHEST) + copperChestMaterials) {
             for (selectLeft in listOf(false, true)) {
                 fixture().use { fixture ->
@@ -111,7 +111,20 @@ class ChestReinforcementTest {
                     val selected = if (selectLeft) left else right
                     val other = if (selectLeft) right else left
                     fixture.installer.held = fixture.reinforcementStack(amount = 3)
+                    val ordinary = PlayerInteractEvent(fixture.installer.player, Action.RIGHT_CLICK_BLOCK,
+                        fixture.installer.held, selected, BlockFace.UP, EquipmentSlot.HAND)
+                    val ordinaryBlockUse = ordinary.useInteractedBlock()
+                    val ordinaryItemUse = ordinary.useItemInHand()
+
+                    dispatch(fixture.placementListener, ordinary, fixture.plugin)
+
+                    assertNull(fixture.module.citadels.findProtecting(selected.testPosition()))
+                    assertEquals(3, fixture.installer.held.amount)
+                    assertEquals(ordinaryBlockUse, ordinary.useInteractedBlock())
+                    assertEquals(ordinaryItemUse, ordinary.useItemInHand())
+                    assertTrue(fixture.installer.messages.isEmpty())
                     for ((index, part) in listOf(selected, other, selected).withIndex()) {
+                        fixture.installer.sneaking = index == 0
                         val event = PlayerInteractEvent(fixture.installer.player, Action.RIGHT_CLICK_BLOCK,
                             fixture.installer.held, part, BlockFace.UP, EquipmentSlot.HAND)
                         val blockUse = event.useInteractedBlock()

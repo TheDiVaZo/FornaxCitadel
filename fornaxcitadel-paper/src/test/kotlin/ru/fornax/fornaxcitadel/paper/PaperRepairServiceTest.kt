@@ -235,6 +235,61 @@ class PaperRepairServiceTest {
     }
 
     @Test
+    fun `interactable repair requires sneaking and permits ordinary interaction at full health`() {
+        for (kind in listOf("chest", "bed", "door")) {
+            PaperTestFixture(permissions = true).use { fixture ->
+                val (first, second) = when (kind) {
+                    "chest" -> fixture.doubleChest()
+                    "bed" -> fixture.bed()
+                    else -> fixture.door()
+                }
+                val clicked = if (kind == "bed") first else second
+                val other = if (kind == "bed") second else first
+                assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(
+                    fixture.context(fixture.installer), clicked.testPosition(), PaperCitadelTypes.REINFORCED,
+                    Key("minecraft", "iron_ingot"))))
+                val target = assertNotNull(fixture.module.citadels.findProtecting(clicked.testPosition()))
+                assertTrue(target.editComponent(Health::class.java) { it.health = 10.0 })
+                fixture.installer.held = fixture.reinforcementStack()
+                val ordinary = fixture.interact(block = clicked)
+                val ordinaryBlockUse = ordinary.useInteractedBlock()
+                val ordinaryItemUse = ordinary.useItemInHand()
+
+                dispatch(fixture.placementListener, ordinary, fixture.plugin)
+
+                assertEquals(10.0, target.getComponent(Health::class.java)?.health)
+                assertEquals(2, fixture.installer.held.amount)
+                assertEquals(ordinaryBlockUse, ordinary.useInteractedBlock())
+                assertEquals(ordinaryItemUse, ordinary.useItemInHand())
+                assertTrue(fixture.installer.messages.isEmpty())
+                fixture.installer.sneaking = true
+                val repair = fixture.interact(block = clicked)
+
+                dispatch(fixture.placementListener, repair, fixture.plugin)
+
+                assertEquals(Event.Result.DENY, repair.useInteractedBlock())
+                assertEquals(Event.Result.DENY, repair.useItemInHand())
+                assertTrue(target.isCurrent)
+                assertEquals(100.0, target.getComponent(Health::class.java)?.health)
+                assertEquals(1, fixture.installer.held.amount)
+                fixture.installer.messages.clear()
+                for (sneaking in listOf(false, true)) {
+                    fixture.installer.sneaking = sneaking
+                    val full = fixture.interact(block = other)
+                    val blockUse = full.useInteractedBlock()
+                    val itemUse = full.useItemInHand()
+                    dispatch(fixture.placementListener, full, fixture.plugin)
+                    assertEquals(blockUse, full.useInteractedBlock())
+                    assertEquals(itemUse, full.useItemInHand())
+                    assertEquals(1, fixture.installer.held.amount)
+                    assertTrue(fixture.installer.messages.isEmpty())
+                }
+                assertEquals(0, fixture.vanillaBlockChanges)
+            }
+        }
+    }
+
+    @Test
     fun `missing owner needs another authorizer and repair lifecycle preserves external validators`() {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.place()

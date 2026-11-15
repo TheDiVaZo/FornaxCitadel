@@ -13,7 +13,7 @@ import org.bukkit.block.data.BlockData
 
 /**
  * Test metadata for the few block types used by our fixtures, not a simulated Paper server.
- * Material.isBlock/isSolid execute their real API code against this registry.
+ * Material.isBlock/isSolid/isInteractable execute their real API code against this registry.
  */
 class TestRegistryAccess : RegistryAccess {
     private val registries = mutableMapOf<String, Registry<Keyed>>()
@@ -43,8 +43,10 @@ class TestRegistryAccess : RegistryAccess {
             Material.PISTON, Material.STICKY_PISTON, Material.PISTON_HEAD, Material.MOVING_PISTON
         ) + copperChestMaterials
         val nonSolid = setOf(Material.WATER, Material.LAVA, Material.AIR, Material.CAVE_AIR, Material.VOID_AIR)
+        val interactable = setOf(Material.CHEST, Material.TRAPPED_CHEST,
+            Material.OAK_DOOR, Material.IRON_DOOR, Material.RED_BED, Material.BLUE_BED) + copperChestMaterials
         (solid + nonSolid).associate { material ->
-            material.key.asString() to blockType(material, material in solid)
+            material.key.asString() to blockType(material, material in solid, material in interactable)
         }
     }
 
@@ -74,7 +76,7 @@ class TestRegistryAccess : RegistryAccess {
         }
     }
 
-    private fun blockType(material: Material, solid: Boolean): BlockType.Typed<BlockData> {
+    private fun blockType(material: Material, solid: Boolean, interactable: Boolean): BlockType.Typed<BlockData> {
         val key = NamespacedKey.minecraft(material.key.key)
         lateinit var type: BlockType.Typed<BlockData>
         type = paperProxy("test block type $key") { method, _ ->
@@ -82,6 +84,7 @@ class TestRegistryAccess : RegistryAccess {
                 "getKey", "key" -> key
                 "asMaterial" -> material
                 "isSolid" -> solid
+                "isInteractable" -> interactable
                 "isAir" -> material == Material.AIR || material == Material.CAVE_AIR || material == Material.VOID_AIR
                 "typed" -> type
                 "getBlockDataClass" -> BlockData::class.java

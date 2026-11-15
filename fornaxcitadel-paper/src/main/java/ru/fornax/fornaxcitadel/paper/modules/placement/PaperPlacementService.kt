@@ -88,6 +88,7 @@ class PaperPlacementService @JvmOverloads constructor(
         if (!enabled) return
         val block = event.clickedBlock ?: return
         val player = event.player
+        if (block.type.isInteractable && !player.isSneaking) return
         val materialKey = resolveMaterialKey(event.item) ?: return
         if (resolveMaterialKey(player.inventory.itemInMainHand) != materialKey) return
         var messageGroup = "placement"
