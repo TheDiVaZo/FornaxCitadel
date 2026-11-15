@@ -19,7 +19,8 @@ class PaperMessagesTest {
         val messages = PaperMessages.defaults()
         val gameplay = listOf(
             "placement.invalid-block", "placement.denied", "placement.success", "placement.error",
-            "breaking.chunk-unavailable", "breaking.denied", "breaking.removed", "breaking.damaged", "breaking.error"
+            "breaking.chunk-unavailable", "breaking.denied", "breaking.removed", "breaking.damaged", "breaking.error",
+            "repair.success", "repair.denied", "repair.error"
         )
         val commands = listOf(
             "description", "usage.help", "usage.save", "usage.place", "usage.remove", "usage.dismantle", "usage.info", "usage.give",

@@ -103,7 +103,7 @@ class ChestReinforcementTest {
     }
 
     @Test
-    fun `item placement stores the selected half and counterpart duplicates consume no item`() {
+    fun `item placement stores the selected half and full health permits opening either half`() {
         for (material in listOf(Material.CHEST, Material.TRAPPED_CHEST) + copperChestMaterials) {
             for (selectLeft in listOf(false, true)) {
                 fixture().use { fixture ->
@@ -111,11 +111,14 @@ class ChestReinforcementTest {
                     val selected = if (selectLeft) left else right
                     val other = if (selectLeft) right else left
                     fixture.installer.held = fixture.reinforcementStack(amount = 3)
-                    for (part in listOf(selected, other, selected)) {
+                    for ((index, part) in listOf(selected, other, selected).withIndex()) {
                         val event = PlayerInteractEvent(fixture.installer.player, Action.RIGHT_CLICK_BLOCK,
                             fixture.installer.held, part, BlockFace.UP, EquipmentSlot.HAND)
+                        val blockUse = event.useInteractedBlock()
+                        val itemUse = event.useItemInHand()
                         dispatch(fixture.placementListener, event, fixture.plugin)
-                        assertEquals(Event.Result.DENY, event.useInteractedBlock())
+                        assertEquals(if (index == 0) Event.Result.DENY else blockUse, event.useInteractedBlock())
+                        assertEquals(if (index == 0) Event.Result.DENY else itemUse, event.useItemInHand())
                     }
                     assertEquals(2, fixture.installer.held.amount)
                     assertNotNull(fixture.materialPlacement.findExact(selected))

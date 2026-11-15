@@ -20,6 +20,17 @@ placement:
     text: '<red>Не удалось выполнить действие. Сообщите администратору.</red>'
     channel: ACTION_BAR
 
+repair:
+  success:
+    text: '<green>Укрепление восстановлено.</green>'
+    channel: ACTION_BAR
+  denied:
+    text: '<red>Не удалось починить укрепление.</red>'
+    channel: ACTION_BAR
+  error:
+    text: '<red>Не удалось выполнить действие. Сообщите администратору.</red>'
+    channel: ACTION_BAR
+
 breaking:
   chunk-unavailable:
     text: '<red>Данные чанка пока недоступны.</red>'

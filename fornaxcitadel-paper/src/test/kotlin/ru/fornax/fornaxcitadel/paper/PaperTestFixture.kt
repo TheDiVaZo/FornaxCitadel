@@ -70,6 +70,7 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
+import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
@@ -265,6 +266,7 @@ internal class PaperTestFixture(
         }
     }
     val dismantleService = PaperDismantleService(plugin, module, dismantleMaterials, dismantleSettings, dismantleRandom)
+    val repairService = PaperRepairService(module, materials)
     val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
     val explosionService = PaperExplosionService(plugin, module, explosionPowers)
     val environmentService = PaperEnvironmentService(plugin, module)
@@ -283,6 +285,7 @@ internal class PaperTestFixture(
         if (initializeModule) module.enable()
         if (initializeSystems) {
             dismantleService.enable()
+            repairService.enable()
             placementService.enable()
             breakingService.enable()
             explosionService.enable()
@@ -403,6 +406,7 @@ internal class PaperTestFixture(
         environmentService.disable()
         explosionService.disable()
         breakingService.disable()
+        repairService.disable()
         dismantleService.disable()
         placementService.disable()
         module.disable()
@@ -428,7 +432,7 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
     var held: ItemStack = TestItemStack(Material.AIR, 0)
     var target: Block? = null
     var targetLookups = 0
-    val permissions = mutableSetOf("fornaxcitadel.place", "fornaxcitadel.damage", "fornaxcitadel.dismantle")
+    val permissions = mutableSetOf("fornaxcitadel.place", "fornaxcitadel.damage", "fornaxcitadel.dismantle", "fornaxcitadel.repair")
     var breakBlockHandler: (Block) -> Boolean = { error("No player break handler installed") }
     val messages = mutableListOf<Any?>()
     val chatMessages = mutableListOf<Any?>()

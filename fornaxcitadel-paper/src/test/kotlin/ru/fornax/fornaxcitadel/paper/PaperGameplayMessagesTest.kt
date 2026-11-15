@@ -47,7 +47,7 @@ class PaperGameplayMessagesTest {
 
                 assertEquals(1, fixture.installer.held.amount)
                 assertEquals(100.0, fixture.health())
-                assertDelivery(fixture.installer, channel, "placement.denied")
+                assertDelivery(fixture.installer, "NONE", "")
 
                 dispatch(fixture.placementListener, fixture.interact(fixture.block(x = Int.MAX_VALUE)), fixture.plugin)
 

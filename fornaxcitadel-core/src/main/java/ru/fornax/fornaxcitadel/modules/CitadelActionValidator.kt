@@ -10,6 +10,7 @@ import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 
 /** Checks core execution prerequisites without granting authorization or loading chunks. */
 class CitadelActionValidator(
@@ -20,7 +21,7 @@ class CitadelActionValidator(
 
     override fun validate(action: ActionData): ActionValidator.Result {
         if (action !is PlaceAction && action !is DamageAction && action !is RemoveAction &&
-            action !is DismantleAction) return ActionValidator.Result.Neutral
+            action !is DismantleAction && action !is RepairAction) return ActionValidator.Result.Neutral
         if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) {
             return ActionValidator.Result.Rejected
         }

@@ -17,13 +17,14 @@ import ru.fornax.fornaxcitadel.modules.place.PlaceService
 import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
+import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 
 /**
  * Core lifecycle entry point. Construct and register definitions before loading chunks;
  * call [enable] to attach processors and prerequisite validators and [disable] to detach them.
  *
  * Register read-only authorization checks on [actions.validatorCoordinator]. Damage, explicit
- * destruction, administrative removal and dismantling require a validator's Success; a rejection always wins.
+ * destruction, administrative removal, dismantling and repair require a validator's Success; a rejection always wins.
  * This module validates target availability and placement prerequisites before execution.
  * These prerequisite checks never grant authorization. Definitions configure initial components;
  * source keys are attribution.
@@ -48,6 +49,7 @@ class CitadelModule @JvmOverloads constructor(
         actionMetaRegistry.register(RemoveAction.KEY, ActionMeta(false))
         actionMetaRegistry.register(DamageAction.KEY, ActionMeta(false))
         actionMetaRegistry.register(DismantleAction.KEY, ActionMeta(false))
+        actionMetaRegistry.register(RepairAction.KEY, ActionMeta(false))
     }
     val place = PlaceService(actions, definitions)
     val remove = RemoveService(actions)

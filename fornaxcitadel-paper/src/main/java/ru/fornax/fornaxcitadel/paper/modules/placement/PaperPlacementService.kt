@@ -3,23 +3,29 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 import org.bukkit.GameMode
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
+import org.bukkit.event.Event
 import org.bukkit.event.HandlerList
+import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.paper.PaperMessages
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
 
-/** Resolves consumable materials and installs their configured definition through core actions. */
+/** Resolves reinforcement item use into placement or repair through core actions. */
 class PaperPlacementService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
@@ -75,6 +81,48 @@ class PaperPlacementService @JvmOverloads constructor(
         val key = resolveMaterialKey(item) ?: return null
         if (key !in definitionsByMaterial) return null
         return key.takeIf { resolveMaterialKey(player.inventory.itemInMainHand) == it }
+    }
+
+    /** Called by the listener after checking the hand, click type and item-use cancellation. */
+    fun interact(event: PlayerInteractEvent) {
+        if (!enabled) return
+        val block = event.clickedBlock ?: return
+        val player = event.player
+        val materialKey = resolveMaterialKey(event.item) ?: return
+        if (resolveMaterialKey(player.inventory.itemInMainHand) != materialKey) return
+        var messageGroup = "placement"
+        try {
+            val position = CitadelPosition(block.world.uid, block.x, block.y, block.z)
+            val citadel = if (block.supportsCitadelData()) module.citadels.findProtecting(position) else null
+            if (citadel != null) {
+                messageGroup = "repair"
+                val health = citadel.getComponent(Health::class.java) ?: return
+                if (health.health >= health.maxHealth ||
+                    citadel.getComponent(ReinforcementItem::class.java)?.materialKey != materialKey) return
+                denyUse(event)
+                val result = module.actions.execute(RepairAction(
+                    ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY)), position
+                ))
+                messages.sendGameplay(player, if (result == ActionResult.SUCCESS) "repair.success" else "repair.denied")
+                return
+            }
+            if (materialKey !in definitionsByMaterial) return
+            denyUse(event)
+            place(player, block, materialKey)
+        } catch (_: CitadelResolutionUnavailableException) {
+            if (materialKey !in definitionsByMaterial) return
+            denyUse(event)
+            messages.sendGameplay(player, "$messageGroup.denied")
+        } catch (exception: Exception) {
+            denyUse(event)
+            plugin.logger.log(Level.SEVERE, "Could not use a reinforcement item", exception)
+            messages.sendGameplay(player, "$messageGroup.error")
+        }
+    }
+
+    private fun denyUse(event: PlayerInteractEvent) {
+        event.setUseInteractedBlock(Event.Result.DENY)
+        event.setUseItemInHand(Event.Result.DENY)
     }
 
     fun place(player: Player, block: Block, materialKey: Key) {

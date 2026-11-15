@@ -25,6 +25,9 @@ permissions:
   fornaxcitadel.dismantle:
     description: Снятие собственного укрепления с блока
     default: true
+  fornaxcitadel.repair:
+    description: Починка собственного укрепления исходным материалом
+    default: true
   fornaxcitadel.info:
     description: Просмотр укрепления под прицелом
     default: true
