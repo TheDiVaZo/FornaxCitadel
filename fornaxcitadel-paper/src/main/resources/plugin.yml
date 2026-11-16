@@ -29,7 +29,7 @@ permissions:
     description: Снятие собственного или бесхозного укрепления с блока
     default: true
   fornaxcitadel.repair:
-    description: Починка и приватизация укрепления материалом
+    description: Починка, приватизация и улучшение укрепления материалом
     default: true
   fornaxcitadel.info:
     description: Просмотр укрепления под прицелом

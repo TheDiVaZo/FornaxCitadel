@@ -4,18 +4,22 @@ import org.bukkit.Material
 import org.bukkit.Server
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 
 /** Restricts reinforcement to solid block materials, excluding every piston part. */
 class ReinforceableBlockValidator @JvmOverloads constructor(
     private val server: Server,
     private val citadels: CitadelFacade? = null
-) : ActionValidator<PlaceAction> {
-    override val actionClass = PlaceAction::class.java
+) : ActionValidator<ActionData> {
+    override val actionClass = ActionData::class.java
 
-    override fun validate(action: PlaceAction): ActionValidator.Result {
+    override fun validate(action: ActionData): ActionValidator.Result {
+        if (action !is PlaceAction && action !is UpgradeAction) return ActionValidator.Result.Neutral
         val block = server.findLoadedPlacementBlock(action, citadels) ?: return ActionValidator.Result.Rejected
-        return if (isAllowed(block.type)) ActionValidator.Result.Success else ActionValidator.Result.Rejected
+        if (!isAllowed(block.type)) return ActionValidator.Result.Rejected
+        return if (action is PlaceAction) ActionValidator.Result.Success else ActionValidator.Result.Neutral
     }
 
     fun isAllowed(material: Material): Boolean {

@@ -12,6 +12,7 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 
 /** Checks core execution prerequisites without granting authorization or loading chunks. */
 class CitadelActionValidator(
@@ -22,11 +23,14 @@ class CitadelActionValidator(
 
     override fun validate(action: ActionData): ActionValidator.Result {
         if (action !is PlaceAction && action !is DamageAction && action !is RemoveAction &&
-            action !is DismantleAction && action !is RepairAction && action !is ClaimAction) return ActionValidator.Result.Neutral
+            action !is DismantleAction && action !is RepairAction && action !is UpgradeAction && action !is ClaimAction) return ActionValidator.Result.Neutral
         if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) {
             return ActionValidator.Result.Rejected
         }
         return try {
+            if (action is UpgradeAction && definitions.find(action.definitionKey) == null) {
+                return ActionValidator.Result.Rejected
+            }
             if (action is PlaceAction) {
                 if (definitions.find(action.definitionKey) == null) return ActionValidator.Result.Rejected
                 val responsible = citadels.getResponsiblePosition(action.position)

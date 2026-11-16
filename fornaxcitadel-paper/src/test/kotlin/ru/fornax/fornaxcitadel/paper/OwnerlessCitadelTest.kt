@@ -20,6 +20,7 @@ import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
@@ -156,6 +157,35 @@ class OwnerlessCitadelTest {
                 assertEquals(2, f.installer.held.amount, change)
                 if (original.isCurrent) assertEquals(if (change == "health") 7.0 else 10.0, f.health())
             } finally { service.disable() }
+        }
+    }
+
+    @Test
+    fun `upgrade claims unowned entity only on success before completion observers`() {
+        val heavy = Key("fornaxcitadel", "reinforced_heavy")
+        for (veto in listOf(false, true)) PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings()).use { f ->
+            f.place()
+            f.unown()
+            val original = f.citadel()
+            f.installer.held = f.reinforcementStack(heavy)
+            var completed = 0
+            f.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<UpgradeAction> {
+                override val actionClass = UpgradeAction::class.java
+                override fun handle(action: UpgradeAction) {
+                    assertEquals(f.installer.id, original.getComponent(CitadelOwner::class.java)?.playerId)
+                    completed++
+                }
+            })
+            if (veto) f.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<UpgradeAction> {
+                override val actionClass = UpgradeAction::class.java
+                override fun validate(action: UpgradeAction) = ActionValidator.Result.Rejected
+            })
+            assertEquals(if (veto) ActionResult.DENIED else ActionResult.SUCCESS,
+                f.module.actions.execute(UpgradeAction(f.context(f.installer), f.position, heavy)))
+            assertEquals(if (veto) 0 else 1, completed)
+            assertEquals(if (veto) null else f.installer.id, original.getComponent(CitadelOwner::class.java)?.playerId)
+            assertEquals(if (veto) 2 else 1, f.installer.held.amount)
+            assertTrue(original.isCurrent)
         }
     }
 

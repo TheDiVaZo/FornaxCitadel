@@ -28,6 +28,7 @@ import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,6 +38,21 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CitadelActionValidatorTest {
+    @Test
+    fun `upgrade requires a registered destination but not a known source definition`() {
+        Fixture(approve = true).use { fixture ->
+            val target = fixture.create()
+            target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "removed") }
+            fixture.recordExecutions()
+            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+                UpgradeAction(ActionContext.SYSTEM, POSITION, Key("test", "unknown"))))
+            assertTrue(fixture.executed.isEmpty())
+            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+                UpgradeAction(ActionContext.SYSTEM, POSITION, TYPE)))
+            assertEquals(1, fixture.executed.size)
+        }
+    }
+
     @Test
     fun `invalid core actions never reach a processor despite an earlier approval`() {
         Fixture(approve = true).use { fixture ->
@@ -213,7 +229,7 @@ class CitadelActionValidatorTest {
 
         fun recordExecutions() {
             val processors = module.actions.processorCoordinator
-            for (key in listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY, DismantleAction.KEY, RepairAction.KEY, ClaimAction.KEY)) {
+            for (key in listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY, ClaimAction.KEY)) {
                 processors.getProcessor(key)?.let(processors::unregisterProcessor)
                 processors.registerProcessor(object : ActionProcessor<ActionData>() {
                     override val actionClass = ActionData::class.java
@@ -253,7 +269,8 @@ class CitadelActionValidatorTest {
             RemoveAction(ActionContext.SYSTEM, position),
             DismantleAction(ActionContext.SYSTEM, position),
             RepairAction(ActionContext.SYSTEM, position),
-            ClaimAction(ActionContext.SYSTEM, position)
+            ClaimAction(ActionContext.SYSTEM, position),
+            UpgradeAction(ActionContext.SYSTEM, position, TYPE)
         )
     }
 }

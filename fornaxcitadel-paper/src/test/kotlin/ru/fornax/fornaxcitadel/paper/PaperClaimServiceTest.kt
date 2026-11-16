@@ -15,6 +15,7 @@ import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.*
@@ -88,15 +89,15 @@ class PaperClaimServiceTest {
     }
 
     @Test
-    fun `claim veto or disabled claim service prevents every repair mutation`() {
-        for (upgrade in listOf(false)) for (disabled in listOf(false, true)) {
+    fun `claim veto or disabled claim service prevents every repair and upgrade mutation`() {
+        for (upgrade in listOf(false, true)) for (disabled in listOf(false, true)) {
             PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings()).use { f ->
                 f.placeUnowned()
                 val target = f.citadel()
                 target.editComponent(Health::class.java) { it.health = 5.0 }
                 val startedAt = target.getComponent(Maturing::class.java)?.startedAtMillis
                 val kind = target.getComponent(CitadelKind::class.java)?.definitionKey
-                val type = PaperCitadelTypes.REINFORCED
+                val type = if (upgrade) HEAVY else PaperCitadelTypes.REINFORCED
                 f.installer.held = f.reinforcementStack(type)
                 var claims = 0
                 f.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<ClaimAction> {
@@ -112,7 +113,8 @@ class PaperClaimServiceTest {
                 if (disabled) f.claimService.disable()
                 val notifications = mutableListOf<ActionData>()
                 f.observe(notifications::add)
-                val action = RepairAction(f.context(f.installer), f.position)
+                val action = if (upgrade) UpgradeAction(f.context(f.installer), f.position, HEAVY)
+                    else RepairAction(f.context(f.installer), f.position)
                 f.manager.saveAll().join()
                 val saves = f.backend.saves
                 assertEquals(ActionResult.DENIED, f.module.actions.execute(action))
@@ -131,12 +133,12 @@ class PaperClaimServiceTest {
     }
 
     @Test
-    fun `posted repairs notify claim then parent only after all changes complete`() {
-        for (upgrade in listOf(false)) {
+    fun `posted repair and upgrade notify claim then parent only after all changes complete`() {
+        for (upgrade in listOf(false, true)) {
             PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings()).use { f ->
                 f.placeUnowned()
                 f.citadel().editComponent(Health::class.java) { it.health = 5.0 }
-                val type = PaperCitadelTypes.REINFORCED
+                val type = if (upgrade) HEAVY else PaperCitadelTypes.REINFORCED
                 f.installer.held = f.reinforcementStack(type)
                 val expectedHealth = checkNotNull(f.module.health.findDefinition(type)).maxHealth
                 val notifications = mutableListOf<Key>()
@@ -147,7 +149,8 @@ class PaperClaimServiceTest {
                     assertEquals(type, f.citadel().getComponent(CitadelKind::class.java)?.definitionKey)
                     assertEquals(1, f.installer.held.amount)
                 }
-                val action = RepairAction(f.context(f.installer), f.position)
+                val action = if (upgrade) UpgradeAction(f.context(f.installer), f.position, HEAVY)
+                    else RepairAction(f.context(f.installer), f.position)
                 f.module.actions.post(action)
                 assertNull(f.citadel().getComponent(CitadelOwner::class.java))
                 assertEquals(1, f.module.actions.drainPosted(1))

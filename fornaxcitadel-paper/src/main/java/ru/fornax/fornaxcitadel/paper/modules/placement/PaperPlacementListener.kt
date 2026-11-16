@@ -8,7 +8,7 @@ import org.bukkit.event.block.Action
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
 
-/** Routes main-hand reinforcement item use to placement or repair. */
+/** Routes main-hand reinforcement item use to placement, repair or upgrade. */
 class PaperPlacementListener(private val service: PaperPlacementService) : Listener {
     // A vanilla no-op may deny block interaction while still allowing use of a custom item.
     @EventHandler(priority = EventPriority.HIGHEST)

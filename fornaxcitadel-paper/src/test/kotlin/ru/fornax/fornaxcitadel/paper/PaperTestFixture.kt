@@ -78,6 +78,7 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.claim.PaperClaimService
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
+import ru.fornax.fornaxcitadel.paper.modules.upgrade.PaperUpgradeService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
@@ -301,6 +302,7 @@ internal class PaperTestFixture(
     val dismantleService = PaperDismantleService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
     val claimService = PaperClaimService(module)
     val repairService = PaperRepairService(module, citadelTypes, materials)
+    val upgradeService = PaperUpgradeService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
     val breakingService = PaperBreakingService(plugin, module, citadelTypes, playerDamage, messages, creativeModeEnabled)
     val acidService = acidSettings?.let {
         AcidService(plugin, module, citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it))
@@ -324,6 +326,7 @@ internal class PaperTestFixture(
             dismantleService.enable()
             claimService.enable()
             repairService.enable()
+            upgradeService.enable()
             placementService.enable()
             breakingService.enable()
             acidService?.enable()
@@ -479,6 +482,7 @@ internal class PaperTestFixture(
         explosionService.disable()
         breakingService.disable()
         repairService.disable()
+        upgradeService.disable()
         claimService.disable()
         dismantleService.disable()
         placementService.disable()

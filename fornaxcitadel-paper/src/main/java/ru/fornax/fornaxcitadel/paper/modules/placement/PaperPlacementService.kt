@@ -19,13 +19,14 @@ import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.PaperMessages
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
 
-/** Resolves reinforcement item use into placement, repair or claiming through core actions. */
+/** Resolves reinforcement item use into placement, repair or upgrade through core actions. */
 class PaperPlacementService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
@@ -110,7 +111,9 @@ class PaperPlacementService @JvmOverloads constructor(
                         RepairAction(context, position)
                     }
                 } else {
-                    return
+                    val destination = definitionsByMaterial[materialKey] ?: return
+                    messageGroup = "upgrade"
+                    UpgradeAction(context, position, destination)
                 }
                 denyUse(event)
                 val result = module.actions.execute(action)
