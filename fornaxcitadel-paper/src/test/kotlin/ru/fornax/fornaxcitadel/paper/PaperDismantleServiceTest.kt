@@ -9,7 +9,6 @@ import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -139,39 +138,6 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `refund chance uses health captured before material preparation`() {
-        for (initiallyFull in listOf(false, true)) {
-            var rolls = 0
-            PaperTestFixture(dismantleSettings = DismantleSettings(0.5),
-                citadelSettings = typesWithItem(Key("custom", "health_changing_refund")),
-                dismantleRandom = { rolls++; 0.75 }).use { fixture ->
-                val key = Key("custom", "health_changing_refund")
-                fixture.placeWithItem(key)
-                val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
-                if (!initiallyFull) assertTrue(original.editComponent(Health::class.java) { it.health = 99.0 })
-                val changeHealth = {
-                    assertTrue(original.editComponent(Health::class.java) {
-                        it.health = if (initiallyFull) 99.0 else fixture.module.health.maxHealth(original)!!
-                    })
-                }
-                fixture.materials.register(key.namespace, TestMaterialRegistry(object : MaterialAdapter {
-                    override fun getKey() = key
-                    override fun isConsists(itemStack: ItemStack) = false
-                    override fun isConsists(block: Block) = false
-                    override fun createItemStack(amount: Int): ItemStack {
-                        changeHealth()
-                        return TestItemStack(Material.IRON_INGOT, amount)
-                    }
-                }))
-
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
-                assertEquals(if (initiallyFull) 1 else 0, fixture.droppedItems.size)
-                assertEquals(if (initiallyFull) 0 else 1, rolls)
-            }
-        }
-    }
-
-    @Test
     fun `damaged reinforcement uses configured chance boundaries and missing metadata never rolls`() {
         for ((chance, sample, refunded) in listOf(
             Triple(0.0, 0.0, false), Triple(1.0, 0.999, true),
@@ -200,39 +166,6 @@ class PaperDismantleServiceTest {
             assertTrue(assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
                 .editComponent(Health::class.java) { it.health = 99.0 })
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
-            assertTrue(fixture.droppedItems.isEmpty())
-        }
-    }
-
-    @Test
-    fun `replacement made during material preparation is never removed or refunded using the old handle`() {
-        PaperTestFixture(dismantleSettings = DismantleSettings(1.0),
-            citadelSettings = typesWithItem(Key("custom", "replacing_refund"))).use { fixture ->
-            val key = Key("custom", "replacing_refund")
-            fixture.placeWithItem(key)
-            val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
-            fixture.materials.register(key.namespace, TestMaterialRegistry(object : MaterialAdapter {
-                override fun getKey() = key
-                override fun isConsists(itemStack: ItemStack) = false
-                override fun isConsists(block: Block) = false
-                override fun createItemStack(amount: Int): ItemStack {
-                    assertTrue(fixture.manager.removeCitadel(original))
-                    val replacement = MutableCitadelDraft(fixture.position).apply {
-                        addComponent(CitadelKind::class.java, CitadelKind(PaperCitadelTypes.REINFORCED))
-                        addComponent(CitadelOwner::class.java, CitadelOwner(fixture.stranger.id))
-                        addComponent(Health::class.java, Health(7.0))
-                    }
-                    assertEquals(ActionResult.SUCCESS, fixture.manager.createCitadel(replacement))
-                    return TestItemStack(Material.IRON_INGOT, amount)
-                }
-            }))
-
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
-            val current = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-            assertFalse(original.isCurrent)
-            assertTrue(current.isCurrent)
-            assertEquals(fixture.stranger.id, current.getComponent(CitadelOwner::class.java)?.playerId)
-            assertEquals(7.0, fixture.health())
             assertTrue(fixture.droppedItems.isEmpty())
         }
     }

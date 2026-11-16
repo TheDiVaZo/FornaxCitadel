@@ -5,7 +5,11 @@ import org.bukkit.block.Block
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.util.Key
 
-/** Resolves material identities without assigning citadel definitions or gameplay rules. */
+/**
+ * Resolves material identities without assigning citadel definitions or gameplay rules.
+ * Lookups are trusted synchronous reads. They must not mutate their inputs, the world,
+ * inventories, citadels or profiles.
+ */
 interface MaterialRegistry {
     fun getType(key: Key): MaterialAdapter?
     fun getTypeOrNull(stack: ItemStack): MaterialAdapter?

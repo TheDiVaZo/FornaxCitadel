@@ -1,7 +1,5 @@
 package ru.fornax.fornaxcitadel.paper.modules.repair
 
-import org.bukkit.GameMode
-import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
@@ -36,29 +34,15 @@ class PaperRepairService(
         val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
             "Validated repair target is unavailable"
         }
-        val owner = citadel.getComponent(CitadelOwner::class.java)?.playerId ?: return ActionResult.DENIED
-        val kind = citadel.getComponent(CitadelKind::class.java)?.definitionKey
-        val component = citadel.getComponent(Health::class.java)
-        val health = module.health.currentHealth(citadel) ?: return ActionResult.DENIED
+        if (citadel.getComponent(CitadelOwner::class.java) == null) return ActionResult.DENIED
+        val health = citadel.getComponent(Health::class.java)?.health ?: return ActionResult.DENIED
         if (!health.isFinite() || health < 0.0) return ActionResult.DENIED
         val maximum = module.health.maxHealth(citadel) ?: return ActionResult.DENIED
         if (health >= maximum) return ActionResult.DENIED
         val itemKey = citadelTypes.itemKey(citadel) ?: return ActionResult.DENIED
         val held = player.inventory.itemInMainHand
-        val originalItem = held.clone()
         if (!held.hasMaterial() || materials.getTypeOrNull(held)?.getKey() != itemKey) return ActionResult.DENIED
 
-        // Material adapters may run plugin code. The approved entity, owner and item must still be current.
-        val currentCitadel = module.citadels.findProtecting(action.position)
-        if (!player.isOnline || player.gameMode == GameMode.SPECTATOR || player.world.uid != action.citadelW ||
-            !citadel.isCurrent || currentCitadel?.runtimeId != citadel.runtimeId || currentCitadel.position != citadel.position ||
-            player.inventory.itemInMainHand != originalItem || held != originalItem ||
-            citadel.getComponent(CitadelOwner::class.java)?.playerId != owner ||
-            citadel.getComponent(CitadelKind::class.java)?.definitionKey != kind ||
-            citadel.getComponent(Health::class.java) !== component ||
-            module.health.currentHealth(citadel) != health || module.health.maxHealth(citadel) != maximum) {
-            return ActionResult.DENIED
-        }
         check(citadel.editComponent(Health::class.java) { it.health = maximum }) {
             "Validated repair target changed during commit"
         }

@@ -10,6 +10,7 @@ import org.bukkit.event.Event
 import org.bukkit.event.block.Action
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
+import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
@@ -23,6 +24,9 @@ import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
+import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
+import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import java.util.UUID
 import kotlin.test.Test
@@ -32,6 +36,37 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperRepairServiceTest {
+    @Test
+    fun `direct repair recognizes the held material once`() {
+        PaperTestFixture(permissions = true).use { fixture ->
+            fixture.place()
+            fixture.damage()
+            fixture.installer.held = fixture.reinforcementStack()
+            var heldLookups = 0
+            val materials = object : MaterialRegistry by fixture.materials {
+                override fun getTypeOrNull(stack: ItemStack): MaterialAdapter? {
+                    heldLookups++
+                    return fixture.materials.getTypeOrNull(stack)
+                }
+            }
+            fixture.repairService.disable()
+            val service = PaperRepairService(fixture.module, fixture.citadelTypes, materials).also { it.enable() }
+            try {
+                val action = fixture.action()
+                assertTrue(fixture.module.actions.isAllowed(action))
+                assertEquals(0, heldLookups)
+
+                assertEquals(ActionResult.SUCCESS, service.repair(action))
+
+                assertEquals(1, heldLookups)
+                assertEquals(100.0, fixture.health())
+                assertEquals(1, fixture.installer.held.amount)
+            } finally {
+                service.disable()
+            }
+        }
+    }
+
     @Test
     fun `owner repairs fully before completion handlers and only survival spends one item`() {
         for (mode in listOf(GameMode.SURVIVAL, GameMode.CREATIVE)) for (amount in listOf(1, 3)) {

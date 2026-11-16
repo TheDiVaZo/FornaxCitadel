@@ -31,30 +31,18 @@ class LazyHealthTest {
     }
 
     @Test
-    fun `without HP invalid calculations and state changes still prevent removal`() {
-        for (change in listOf("throw", "invalid", "profile", "health", "kind", "replacement")) {
+    fun `without HP invalid calculations still prevent removal`() {
+        for (modifier in listOf(
+            DamageModifier { _, _, _ -> error("modifier failed") },
+            DamageModifier { _, _, _ -> Double.NaN }
+        )) {
             val f = HealthFixture(createInitial = false)
             val target = f.create()
-            f.service.registerModifier { _, _, amount ->
-                when (change) {
-                    "throw" -> error("modifier failed")
-                    "invalid" -> return@registerModifier Double.NaN
-                    "profile" -> f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(100.0))
-                    "health" -> f.manager.putComponent(Health::class.java, target.world, target.x, target.y, target.z, Health(7.0))
-                    "kind" -> target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "new") }
-                    "replacement" -> { f.manager.removeCitadel(target); f.create() }
-                }
-                f.chunk.resetDirty()
-                amount
-            }
+            f.service.registerModifier(modifier)
             f.chunk.resetDirty()
-            if (change in listOf("throw", "invalid")) {
-                assertFailsWith<IllegalStateException>(change) { f.service.damage(target, 0.0) }
-            } else {
-                assertEquals(ActionResult.DENIED, f.service.damage(target, 0.0), change)
-            }
-            assertTrue(f.reference().isCurrent, change)
-            assertFalse(f.chunk.isDirty, change)
+            assertFailsWith<IllegalStateException> { f.service.damage(target, 0.0) }
+            assertTrue(target.isCurrent)
+            assertFalse(f.chunk.isDirty)
         }
     }
 
@@ -225,30 +213,4 @@ class LazyHealthTest {
         assertFalse(chunk.isDirty)
     }
 
-    @Test
-    fun `changed target component or settings during calculation aborts without overwriting new state`() {
-        for (change in listOf("profile", "removed profile", "kind", "health", "replacement", "unload")) {
-            val f = HealthFixture(createInitial = false)
-            f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(100.0))
-            val citadel = f.create()
-            val chunk = f.chunk
-            f.service.registerModifier { _, _, amount ->
-                when (change) {
-                    "profile" -> f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(200.0))
-                    "removed profile" -> f.service.unregisterDefinition(HealthFixture.TYPE)
-                    "kind" -> citadel.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "changed") }
-                    "health" -> f.manager.putComponent(Health::class.java, citadel.world, citadel.x, citadel.y, citadel.z, Health(7.0))
-                    "replacement" -> { f.manager.removeCitadel(citadel); f.create() }
-                    "unload" -> f.storage.chunk = null
-                }
-                chunk.resetDirty()
-                amount
-            }
-            assertEquals(ActionResult.DENIED, f.service.damage(citadel, 1.0), change)
-            if (change != "unload") {
-                assertEquals(if (change == "health") 7.0 else null, f.citadel.getComponent(Health::class.java)?.health, change)
-            }
-            assertFalse(chunk.isDirty, change)
-        }
-    }
 }

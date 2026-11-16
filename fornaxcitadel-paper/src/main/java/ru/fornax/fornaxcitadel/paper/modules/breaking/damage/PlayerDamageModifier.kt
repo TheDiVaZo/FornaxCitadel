@@ -3,7 +3,11 @@ package ru.fornax.fornaxcitadel.paper.modules.breaking.damage
 import org.bukkit.entity.Player
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 
-/** Read-only damage calculation. Do not mutate or retain the live citadel or its components. */
+/**
+ * Trusted read-only damage calculation. Do not mutate gameplay state, input objects or settings used
+ * by the current calculation, including through captured references. Do not retain live components.
+ * Callers validate the returned damage without taking snapshots or rechecking gameplay state.
+ */
 fun interface PlayerDamageModifier : Comparable<PlayerDamageModifier> {
     fun priority(): Priority = Priority.NORMAL
 

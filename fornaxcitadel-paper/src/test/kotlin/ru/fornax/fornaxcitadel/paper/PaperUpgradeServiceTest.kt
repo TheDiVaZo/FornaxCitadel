@@ -12,7 +12,6 @@ import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
 import ru.fornax.fornaxcitadel.core.component.ReadableComponent
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
@@ -21,11 +20,11 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
+import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidSettings
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
@@ -34,11 +33,44 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
+import ru.fornax.fornaxcitadel.paper.modules.upgrade.PaperUpgradeService
 import java.io.DataInput
 import java.io.DataOutput
 import kotlin.test.*
 
 class PaperUpgradeServiceTest {
+    @Test
+    fun `direct upgrade recognizes the held material once`() {
+        fixture().use { f ->
+            f.place()
+            f.installer.held = f.reinforcementStack(HEAVY)
+            var heldLookups = 0
+            val materials = object : MaterialRegistry by f.dismantleMaterials {
+                override fun getTypeOrNull(stack: ItemStack): MaterialAdapter? {
+                    heldLookups++
+                    return f.dismantleMaterials.getTypeOrNull(stack)
+                }
+            }
+            f.upgradeService.disable()
+            val service = PaperUpgradeService(f.plugin, f.module, f.citadelTypes, materials).also { it.enable() }
+            try {
+                val action = f.action()
+                assertTrue(f.module.actions.isAllowed(action))
+                assertEquals(0, heldLookups)
+
+                assertEquals(ActionResult.SUCCESS, service.upgrade(action))
+
+                assertEquals(1, heldLookups)
+                assertEquals(HEAVY, f.citadel().getComponent(CitadelKind::class.java)?.definitionKey)
+                assertEquals(30.0, f.health())
+                assertEquals(1, f.installer.held.amount)
+                assertEquals(1, f.droppedItems.size)
+            } finally {
+                service.disable()
+            }
+        }
+    }
+
     @Test
     fun `upgrade preserves identity owner and extra components and completes before notifying handlers`() {
         for (mode in listOf(GameMode.SURVIVAL, GameMode.CREATIVE)) for (amount in listOf(1, 3)) {
@@ -373,47 +405,27 @@ class PaperUpgradeServiceTest {
     }
 
     @Test
-    fun `custom refund failures or mutations abort before changing reinforcement or consuming items`() {
+    fun `custom refund failures abort before changing reinforcement or consuming items`() {
         val key = Key("custom", "refund")
-        for (reason in listOf("missing", "throw", "empty", "two", "health", "maximum", "item", "owner", "recognition", "block", "replacement")) {
+        for (reason in listOf("missing", "throw", "empty", "two")) {
             val types = CitadelTypesSettings.DEFAULT_TYPES.toMutableMap()
             types["reinforced"] = types.getValue("reinforced").copy(item = key)
             PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings(types)).use { f ->
                 f.place()
-                val original = f.citadel()
                 f.installer.held = f.reinforcementStack(HEAVY)
                 if (reason != "missing") f.materials.register("custom", TestMaterialRegistry(object : MaterialAdapter {
                     override fun getKey() = key
-                    override fun isConsists(itemStack: ItemStack): Boolean {
-                        if (reason == "recognition") original.editComponent(CitadelOwner::class.java) { it.playerId = f.stranger.id }
-                        return false
-                    }
+                    override fun isConsists(itemStack: ItemStack) = false
                     override fun isConsists(block: Block) = false
-                    override fun createItemStack(amount: Int): ItemStack {
-                        when (reason) {
-                            "throw" -> error("Provider failed")
-                            "empty" -> return TestItemStack(Material.AIR, 1)
-                            "two" -> return TestItemStack(Material.IRON_INGOT, 2)
-                            "health" -> original.editComponent(Health::class.java) { it.health = 19.0 }
-                            "maximum" -> f.module.health.registerDefinition(HEAVY, HealthDefinition(100.0))
-                            "item" -> f.installer.held = TestItemStack(Material.DIRT, 2)
-                            "owner" -> original.editComponent(CitadelOwner::class.java) { it.playerId = f.stranger.id }
-                            "block" -> f.material(Material.PISTON)
-                            "replacement" -> {
-                                f.manager.removeCitadel(original)
-                                f.manager.createCitadel(MutableCitadelDraft(f.position).apply {
-                                    addComponent(CitadelKind::class.java, CitadelKind(PaperCitadelTypes.REINFORCED))
-                                    addComponent(CitadelOwner::class.java, CitadelOwner(f.stranger.id))
-                                    addComponent(Health::class.java, Health(7.0))
-                                })
-                            }
-                        }
-                        return TestItemStack(Material.IRON_INGOT, 1)
+                    override fun createItemStack(amount: Int): ItemStack = when (reason) {
+                        "throw" -> error("Provider failed")
+                        "empty" -> TestItemStack(Material.AIR, 1)
+                        else -> TestItemStack(Material.IRON_INGOT, 2)
                     }
                 }))
                 assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action()), reason)
                 assertEquals(PaperCitadelTypes.REINFORCED, f.citadel().getComponent(CitadelKind::class.java)?.definitionKey)
-                assertEquals(when (reason) { "health" -> 19.0; "replacement" -> 7.0; else -> 20.0 }, f.health())
+                assertEquals(20.0, f.health())
                 assertEquals(2, f.installer.held.amount)
                 assertTrue(f.droppedItems.isEmpty())
             }
@@ -438,42 +450,6 @@ class PaperUpgradeServiceTest {
                 assertTrue(adapter.isConsists(f.installer.held))
                 assertEquals(if (channel == "CHAT") 1 else 0, f.installer.chatMessages.size)
                 assertTrue(f.installer.actionBarMessages.isEmpty())
-            }
-        }
-    }
-
-    @Test
-    fun `world or chunk becoming unavailable during refund creation denies without consuming or loading`() {
-        val key = Key("custom", "refund")
-        val types = CitadelTypesSettings.DEFAULT_TYPES.toMutableMap()
-        types["reinforced"] = types.getValue("reinforced").copy(item = key)
-        for (unavailable in listOf("world", "chunk", "storage")) {
-            PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings(types)).use { f ->
-                f.place()
-                val original = f.citadel()
-                f.installer.held = f.reinforcementStack(HEAVY)
-                f.materials.register("custom", TestMaterialRegistry(object : MaterialAdapter {
-                    override fun getKey() = key
-                    override fun isConsists(itemStack: ItemStack) = false
-                    override fun isConsists(block: Block) = false
-                    override fun createItemStack(amount: Int): ItemStack {
-                        when (unavailable) {
-                            "world" -> f.worldAvailable = false
-                            "chunk" -> f.worldChunkLoaded = false
-                            "storage" -> f.manager.unloadChunk(f.worldId, 0, 0).join()
-                        }
-                        return TestItemStack(Material.IRON_INGOT, 1)
-                    }
-                }))
-                assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action()), unavailable)
-                assertEquals(2, f.installer.held.amount)
-                assertTrue(f.droppedItems.isEmpty())
-                if (original.isCurrent) assertEquals(20.0, original.getComponent(Health::class.java)?.health)
-                f.worldAvailable = true
-                f.worldChunkLoaded = true
-                if (unavailable == "storage") f.loadChunk(0, 0)
-                assertEquals(20.0, f.health())
-                assertEquals(PaperCitadelTypes.REINFORCED, f.citadel().getComponent(CitadelKind::class.java)?.definitionKey)
             }
         }
     }

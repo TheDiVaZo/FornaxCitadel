@@ -84,7 +84,7 @@ class PaperBreakingService @JvmOverloads constructor(
                     if (event.isCancelled) return@executeBatch false
                     dropItem = dropItem && event.isDropItems
                 }
-                current()
+                createEvent == null || current()
             }, commit = {
                 executingDestruction = true
                 val state = block.state
@@ -96,7 +96,6 @@ class PaperBreakingService @JvmOverloads constructor(
                 } else emptyList()
                 val inventories = parts.mapNotNull(::inventory)
                 val contents = inventories.flatMap { it.contents.filterNotNull().filter(ItemStack::hasMaterial).map(ItemStack::clone) }
-                check(current()) { "Destruction target changed while creating items" }
                 reinforcements.forEach {
                     check(module.remove.remove(it) == ActionResult.SUCCESS) { "Destruction target expired" }
                 }

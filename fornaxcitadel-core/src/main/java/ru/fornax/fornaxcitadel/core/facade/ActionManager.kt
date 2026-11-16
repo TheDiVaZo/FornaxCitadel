@@ -41,7 +41,8 @@ class ActionManager @JvmOverloads constructor(
     /**
      * Trusted platform operation, e.g. all reinforced parts of one physical construction.
      * Validate every intent before and after prepare, then commit exactly once.
-     * prepare must not mutate gameplay state; commit must perform no further cancelable validation.
+     * prepare does not commit the requested changes, but may dispatch events whose listeners change
+     * gameplay state; intents are validated again afterward. commit performs no further cancelable validation.
      * This is not a world transaction: unexpected commit failures propagate without simulated rollback.
      * Notifications run only after the entire commit succeeds, under the normal reentrancy guard.
      */

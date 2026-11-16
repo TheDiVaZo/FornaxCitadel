@@ -155,10 +155,9 @@ public final class HealthService implements LifecycleService {
         }
         if (!componentManager.isCurrent(citadel)) return ActionResult.DENIED;
         ReadableHealth component = citadel.getComponent(Health.class);
-        Double initialHealth = currentHealth(citadel);
-        if (initialHealth != null) requireValidHealth(initialHealth);
-        Key originalKey = definitionKey(citadel);
         Double maximum = maxHealth(citadel);
+        Double initialHealth = component == null ? maximum : Double.valueOf(component.getHealth());
+        if (initialHealth != null) requireValidHealth(initialHealth);
 
         double modifiedDamage = damage;
         List<DamageModifier> currentModifiers = modifiers;
@@ -168,12 +167,6 @@ public final class HealthService implements LifecycleService {
                 throw new IllegalStateException("Damage modifier " + modifier.getClass().getName()
                         + " returned invalid damage: " + modifiedDamage);
             }
-        }
-        if (!componentManager.isCurrent(citadel) || citadel.getComponent(Health.class) != component
-                || !Objects.equals(originalKey, definitionKey(citadel))
-                || !Objects.equals(maximum, maxHealth(citadel))
-                || !Objects.equals(initialHealth, currentHealth(citadel))) {
-            return ActionResult.DENIED;
         }
         // An authorized hit also removes a reinforcement with no health or configured maximum.
         if (initialHealth == null || initialHealth == 0.0) {
@@ -193,8 +186,8 @@ public final class HealthService implements LifecycleService {
             health.setHealth(remainingHealth);
             return Unit.INSTANCE;
         });
-        if (!edited || citadel.getComponent(Health.class) != component) return ActionResult.DENIED;
-        if (component.getHealth() == 0.0) {
+        if (!edited) return ActionResult.DENIED;
+        if (remainingHealth == 0.0) {
             return removeService.remove(citadel);
         }
         return ActionResult.SUCCESS;

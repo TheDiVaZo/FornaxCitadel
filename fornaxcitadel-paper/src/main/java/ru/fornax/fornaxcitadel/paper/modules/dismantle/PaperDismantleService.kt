@@ -40,7 +40,7 @@ class PaperDismantleService @JvmOverloads constructor(
         val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
             "Validated dismantle target is unavailable"
         }
-        val owner = citadel.getComponent(CitadelOwner::class.java)?.playerId ?: return ActionResult.DENIED
+        if (citadel.getComponent(CitadelOwner::class.java) == null) return ActionResult.DENIED
         val world = checkNotNull(plugin.server.getWorld(action.citadelW)) {
             "Validated dismantle world is unavailable"
         }
@@ -55,7 +55,6 @@ class PaperDismantleService @JvmOverloads constructor(
             plugin.logger.log(Level.WARNING, "Could not create dismantling refund for $itemKey", failure)
             return ActionResult.DENIED
         }
-        if (!citadel.isCurrent || citadel.getComponent(CitadelOwner::class.java)?.playerId != owner) return ActionResult.DENIED
         val dropLocation = block.location.add(0.5, 0.5, 0.5)
         val result = module.remove.remove(citadel)
         if (result == ActionResult.SUCCESS && refund != null &&
