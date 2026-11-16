@@ -27,6 +27,7 @@ import ru.fornax.fornaxcitadel.modules.validateDamage
 import ru.fornax.fornaxcitadel.modules.validateRemoval
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
@@ -141,8 +142,9 @@ class CitadelFacadeTest {
         Fixture().use { fixture ->
             val initialized = mutableListOf<CitadelPosition>()
             val placed = mutableListOf<PlaceAction>()
+            fixture.module.health.registerDefinition(CUSTOM_TYPE, HealthDefinition(100.0))
             fixture.module.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
-                CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(100.0)
+                CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(fixture.module.health)
             )))
             fixture.module.actions.validateDamage(CUSTOM_TYPE)
             fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
@@ -266,9 +268,11 @@ class CitadelFacadeTest {
         val module = CitadelModule(manager, scheduler, resolver = if (useRules) resolver else direct)
 
         init {
-            module.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(100.0))))
+            module.health.registerDefinition(TYPE, HealthDefinition(100.0))
+            module.health.registerDefinition(BLOCKED_TYPE, HealthDefinition(100.0))
+            module.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(module.health))))
             module.actions.validateDamage(TYPE)
-            module.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(100.0))))
+            module.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(module.health))))
             module.actions.validateDamage(BLOCKED_TYPE) { _, _ -> false }
             module.actions.validateDamage(mode = DamageAction.Mode.DESTROY)
             module.actions.validateRemoval()
@@ -278,13 +282,13 @@ class CitadelFacadeTest {
 
         fun fill(draft: CitadelDraft) {
             draft.addComponent(CitadelKind::class.java, CitadelKind(TYPE))
-            HealthInitializer(100.0).initialize(CONTEXT, draft)
+            HealthInitializer(module.health).initialize(CONTEXT, draft)
         }
 
         fun createExact(position: CitadelPosition, type: Key = TYPE): CitadelHandle {
             val draft = MutableCitadelDraft(position)
             draft.addComponent(CitadelKind::class.java, CitadelKind(type))
-            HealthInitializer(100.0).initialize(CONTEXT, draft)
+            HealthInitializer(module.health).initialize(CONTEXT, draft)
             assertEquals(ActionResult.SUCCESS, manager.createCitadel(draft))
             return assertNotNull(exact(position))
         }

@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.paper.modules.repair
 
 import org.bukkit.GameMode
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -15,6 +15,7 @@ import ru.fornax.fornaxcitadel.paper.material.hasMaterial
 /** Restores authorized reinforcement to full health using one item of its original material. */
 class PaperRepairService(
     private val module: CitadelModule,
+    private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry
 ) : LifecycleService {
     private val validator = OwnerRepairValidator(module.citadels)
@@ -50,12 +51,13 @@ class PaperRepairService(
         val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
             "Validated repair target is unavailable"
         }
-        val health = citadel.getComponent(Health::class.java) ?: return ActionResult.DENIED
-        if (health.health >= health.maxHealth) return ActionResult.DENIED
-        val itemKey = citadel.getComponent(ReinforcementItem::class.java)?.materialKey ?: return ActionResult.DENIED
+        val health = module.health.currentHealth(citadel) ?: return ActionResult.DENIED
+        val maximum = module.health.maxHealth(citadel) ?: return ActionResult.DENIED
+        if (health >= maximum) return ActionResult.DENIED
+        val itemKey = citadelTypes.itemKey(citadel) ?: return ActionResult.DENIED
         val held = player.inventory.itemInMainHand
         if (!held.hasMaterial() || materials.getTypeOrNull(held)?.getKey() != itemKey) return ActionResult.DENIED
-        if (!citadel.editComponent(Health::class.java) { it.health = it.maxHealth }) return ActionResult.DENIED
+        if (!citadel.editComponent(Health::class.java) { it.health = maximum }) return ActionResult.DENIED
         if (player.gameMode != GameMode.CREATIVE) {
             held.amount--
             player.inventory.setItemInMainHand(if (held.amount == 0) null else held)

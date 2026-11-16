@@ -13,7 +13,6 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementLevel
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -37,7 +36,7 @@ import kotlin.test.assertTrue
 
 class ConfiguredCitadelTypesTest {
     @Test
-    fun `every default type stores its level through item command and action placement`() {
+    fun `every default type resolves its level through item command and action placement`() {
         for ((name, settings) in CitadelTypesSettings.DEFAULT_TYPES) {
             for (source in listOf("item", "command", "action")) {
                 PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings()).use { fixture ->
@@ -57,14 +56,14 @@ class ConfiguredCitadelTypesTest {
                         else -> fixture.place(type)
                     }
                     val placed = assertNotNull(fixture.module.citadels.findProtecting(fixture.position), "$name: $source")
-                    assertEquals(settings.lvl, placed.getComponent(ReinforcementLevel::class.java)?.lvl, "$name: $source")
+                    assertEquals(settings.lvl, fixture.citadelTypes.level(placed), "$name: $source")
                 }
             }
         }
     }
 
     @Test
-    fun `stored levels survive reload and config changes while new citadels receive independent levels`() {
+    fun `current levels apply to restored and newly placed citadels`() {
         val settings = CitadelTypesSettings()
         val snapshot = PaperTestFixture(permissions = true, citadelSettings = settings).use { fixture ->
             fixture.place()
@@ -77,7 +76,7 @@ class ConfiguredCitadelTypesTest {
             fixture.backend.saveChunk(snapshot).join()
             fixture.loadChunk(0, 0)
             val restored = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
-            assertEquals(2, restored.getComponent(ReinforcementLevel::class.java)?.lvl)
+            assertEquals(7, fixture.citadelTypes.level(restored))
             val type = assertNotNull(fixture.citadelTypes.find("reinforced"))
             val positions = listOf(fixture.position.copy(x = 3), fixture.position.copy(x = 4))
             val placed = positions.map { position ->
@@ -85,15 +84,14 @@ class ConfiguredCitadelTypesTest {
                     PlaceAction(fixture.context(fixture.installer), position, type)))
                 assertNotNull(fixture.module.citadels.findProtecting(position))
             }
-            placed.forEach { assertEquals(7, it.getComponent(ReinforcementLevel::class.java)?.lvl) }
-            assertTrue(placed.first().editComponent(ReinforcementLevel::class.java) { it.lvl = 8 })
-            assertEquals(7, placed.last().getComponent(ReinforcementLevel::class.java)?.lvl)
-            assertEquals(2, restored.getComponent(ReinforcementLevel::class.java)?.lvl)
+            placed.forEach { assertEquals(7, fixture.citadelTypes.level(it)) }
+            assertEquals(7, fixture.citadelTypes.level(placed.first()))
+            assertEquals(7, fixture.citadelTypes.level(placed.last()))
+            assertEquals(7, fixture.citadelTypes.level(restored))
             fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
             fixture.loadChunk(0, 0)
-            for ((position, lvl) in listOf(fixture.position to 2, positions[0] to 8, positions[1] to 7)) {
-                assertEquals(lvl, assertNotNull(fixture.module.citadels.findProtecting(position))
-                    .getComponent(ReinforcementLevel::class.java)?.lvl)
+            for ((position, lvl) in listOf(fixture.position to 7, positions[0] to 7, positions[1] to 7)) {
+                assertEquals(lvl, fixture.citadelTypes.level(assertNotNull(fixture.module.citadels.findProtecting(position))))
             }
         }
     }
@@ -117,7 +115,7 @@ class ConfiguredCitadelTypesTest {
 
             assertEquals(saves, fixture.backend.saves)
             assertEquals(24.0, target.getComponent(Health::class.java)?.health)
-            assertEquals(48.0, target.getComponent(Health::class.java)?.maxHealth)
+            assertEquals(48.0, fixture.module.health.maxHealth(target))
             val messages = fixture.installer.messages.filterIsInstance<Component>()
                 .map(PlainTextComponentSerializer.plainText()::serialize)
             assertEquals(3, messages.count { it.contains("24.0 / 48.0") })
@@ -140,15 +138,19 @@ class ConfiguredCitadelTypesTest {
 
         assertEquals(13.0, handles[0].getComponent(Health::class.java)?.health)
         assertEquals(73.0, handles[1].getComponent(Health::class.java)?.health)
-        assertNull(handles[0].getComponent(Maturing::class.java))
-        assertNull(handles[1].getComponent(Maturing::class.java))
+        assertNotNull(handles[0].getComponent(Maturing::class.java))
+        assertNotNull(handles[1].getComponent(Maturing::class.java))
+        assertTrue(fixture.module.health.maturation.isMature(handles[0]))
+        assertTrue(fixture.module.health.maturation.isMature(handles[1]))
         val growing = handles[2]
         assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
-        val maturing = assertNotNull(growing.getComponent(Maturing::class.java))
-        assertEquals(30_000L, maturing.maturationDurationMillis)
-        assertEquals(8.0, maturing.initialDamageMultiplier)
+        assertNotNull(growing.getComponent(Maturing::class.java))
+        val key = assertNotNull(growing.getComponent(CitadelKind::class.java)).definitionKey
+        val profile = assertNotNull(fixture.module.health.maturation.findDefinition(key))
+        assertEquals(30L, profile.duration.seconds)
+        assertEquals(8.0, profile.initialDamageMultiplier)
         assertTrue(growing.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
-        assertEquals(48.0, growing.getComponent(Health::class.java)?.maxHealth)
+        assertEquals(48.0, fixture.module.health.maxHealth(growing))
         assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
     }
 

@@ -8,6 +8,7 @@ import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSystem
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationTarget
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthService
 import java.util.UUID
 import java.util.logging.Level
 
@@ -18,7 +19,7 @@ import java.util.logging.Level
  * Unchanged stages are resent on the first observation pass after 20 server ticks; this keeps
  * client animations alive without an additional timer. Larger observation intervals delay it.
  */
-class CrackHealthObservationSystem(private val plugin: Plugin) : ObservationSystem<Player> {
+class CrackHealthObservationSystem(private val plugin: Plugin, private val health: HealthService) : ObservationSystem<Player> {
     override val requiredComponents = setOf(Health::class.java)
 
     private val overlays = HashMap<ObservationTarget, MutableMap<UUID, Overlay>>()
@@ -47,11 +48,12 @@ class CrackHealthObservationSystem(private val plugin: Plugin) : ObservationSyst
     private fun update(citadel: CitadelHandle, target: ObservationTarget, viewers: List<Player>, force: Boolean) {
         checkMainThread()
         val component = citadel.getComponent(Health::class.java)
-        if (component == null) {
+        val maximum = health.maxHealth(citadel)
+        if (component == null || maximum == null) {
             clearTarget(target)
             return
         }
-        val progress = (1.0 - component.health / component.maxHealth).coerceIn(0.0, 0.99).toFloat()
+        val progress = (1.0 - component.health / maximum).coerceIn(0.0, 0.99).toFloat()
         // Paper maps positive progress to floor(9 * progress), with zero reserved for clearing.
         val stage = if (progress == 0.0f) -1 else (9 * progress).toInt()
         val now = plugin.server.currentTick

@@ -272,7 +272,7 @@ class CitadelTypesSettingsTest {
     }
 
     @Test
-    fun `health values and duration must be finite positive and representable`() {
+    fun `health values are positive and duration is non-negative and representable`() {
         val cases = listOf(
             "max: 0" to "max",
             "max: -1" to "max",
@@ -293,13 +293,12 @@ class CitadelTypesSettingsTest {
             "initial-damage-multiplier" to Double.NaN,
             "initial-damage-multiplier" to Double.POSITIVE_INFINITY,
             "initial-damage-multiplier" to "4",
-            "duration-seconds" to 0,
             "duration-seconds" to -1,
             "duration-seconds" to 0.5,
             "duration-seconds" to "10",
             "duration-seconds" to Double.POSITIVE_INFINITY,
-            "duration-seconds" to Long.MAX_VALUE,
-            "duration-seconds" to Long.MAX_VALUE / 1000 + 1
+            "duration-seconds" to Double.NaN,
+            "duration-seconds" to Double.MAX_VALUE
         )
         for ((field, value) in maturingCases) {
             val config = yaml("citadel-types: {bad: {lvl: 1, item: diamond, health: {max: 4}, maturing: {duration-seconds: 10, initial-damage-multiplier: 2}}}")
@@ -307,7 +306,11 @@ class CitadelTypesSettingsTest {
             val exception = assertFailsWith<IllegalArgumentException>("$field=$value") { CitadelTypesSettings.read(config) }
             assertTrue(exception.message.orEmpty().contains("citadel-types.bad.maturing.$field"), exception.message)
         }
-        assertEquals(Long.MAX_VALUE / 1000, MaturingSettings(Long.MAX_VALUE / 1000, 1.0).durationSeconds)
+        for (duration in listOf(0L, 1L, Long.MAX_VALUE / 1000 + 1, Long.MAX_VALUE)) {
+            val config = yaml("citadel-types: {valid: {lvl: 1, item: diamond, health: {max: 4}, maturing: {duration-seconds: $duration, initial-damage-multiplier: 2}}}")
+            assertEquals(duration, CitadelTypesSettings.read(config).types.getValue("valid").maturing?.durationSeconds)
+            assertEquals(duration, MaturingSettings(duration, 1.0).durationSeconds)
+        }
     }
 
     @Test
@@ -323,7 +326,7 @@ class CitadelTypesSettingsTest {
         assertFailsWith<IllegalArgumentException> { HealthSettings(Double.NaN) }
         assertFailsWith<IllegalArgumentException> { HealthSettings(0.0) }
         assertFailsWith<IllegalArgumentException> { MaturingSettings(10, 0.5) }
-        assertFailsWith<IllegalArgumentException> { MaturingSettings(Long.MAX_VALUE, 2.0) }
+        assertFailsWith<IllegalArgumentException> { MaturingSettings(-1, 2.0) }
         assertFailsWith<IllegalArgumentException> {
             CitadelTypeSettings(Key("minecraft", "diamond"), 3, CitadelDamagePolicy.DENY,
                 maturing = MaturingSettings(10, 2.0))

@@ -3,6 +3,7 @@ package ru.fornax.fornaxcitadel.modules.health
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -16,19 +17,18 @@ import kotlin.test.assertTrue
 
 class MaturingDamageModifierTest {
     @Test
-    fun `initialization records independent maturation parameters without publishing a partial citadel`() {
+    fun `initialization records only placement time without publishing a partial citadel`() {
         val fixture = HealthFixture(createInitial = false)
         val clock = MutableHealthClock(1_793_204_123_456L)
-        val initializer = MaturingInitializer(600_000L, 4.0, clock)
+        val initializer = MaturingInitializer(clock)
         val draft = fixture.draft()
-        HealthInitializer(40.0).initialize(ActionContext.SYSTEM, draft)
+        fixture.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(40.0))
+        HealthInitializer(fixture.service).initialize(ActionContext.SYSTEM, draft)
 
         initializer.initialize(ActionContext.SYSTEM, draft)
 
         val maturation = assertNotNull(draft.getComponent(Maturing::class.java))
         assertEquals(clock.timeMillis, maturation.startedAtMillis)
-        assertEquals(600_000L, maturation.maturationDurationMillis)
-        assertEquals(4.0, maturation.initialDamageMultiplier)
         assertEquals(40.0, assertNotNull(draft.getComponent(Health::class.java)).health)
         assertNull(fixture.manager.findCitadel(draft.world, draft.x, draft.y, draft.z))
         assertFalse(fixture.chunk.isDirty)
@@ -47,20 +47,18 @@ class MaturingDamageModifierTest {
     @Test
     fun `damage follows the old effective durability curve while stored components stay unchanged`() {
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(40.0, 15.0)
+        val health = Health(15.0)
         val citadel = fixture.create(health = health, startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
         val maturation = assertNotNull(citadel.getComponent(Maturing::class.java))
-        val modifier = MaturingDamageModifier(fixture.clock)
+        val modifier = MaturingDamageModifier(fixture.service.maturation)
         fixture.chunk.resetDirty()
 
         for ((now, expectedDamage) in listOf(500L to 20.0, 1_000L to 20.0, 1_500L to 8.0, 2_000L to 5.0, 20_000L to 5.0)) {
             fixture.clock.timeMillis = now
             assertEquals(expectedDamage, modifier.getDamage(ActionContext.SYSTEM, citadel, 5.0), 1e-12)
-            assertEquals(40.0, health.maxHealth)
+
             assertEquals(15.0, health.health)
             assertEquals(1_000L, maturation.startedAtMillis)
-            assertEquals(1_000L, maturation.maturationDurationMillis)
-            assertEquals(4.0, maturation.initialDamageMultiplier)
             assertFalse(fixture.chunk.isDirty)
         }
     }
@@ -68,9 +66,9 @@ class MaturingDamageModifierTest {
     @Test
     fun `missing maturation and unit multiplier preserve incoming damage`() {
         val fixture = HealthFixture(createInitial = false)
-        val plain = fixture.create(health = Health(40.0, 10.0))
-        val unit = fixture.create(1, Health(40.0, 10.0), startedAtMillis = 1_000L, initialDamageMultiplier = 1.0)
-        val modifier = MaturingDamageModifier(fixture.clock)
+        val plain = fixture.create(health = Health(10.0))
+        val unit = fixture.create(1, Health(10.0), startedAtMillis = 1_000L, initialDamageMultiplier = 1.0)
+        val modifier = MaturingDamageModifier(fixture.service.maturation)
         fixture.chunk.resetDirty()
 
         for (amount in listOf(0.0, 2.5, Double.MAX_VALUE)) {
@@ -84,7 +82,7 @@ class MaturingDamageModifierTest {
     fun `zero is preserved and amplified damage saturates at the finite maximum`() {
         val fixture = HealthFixture(createInitial = false)
         val citadel = fixture.create(startedAtMillis = 1_000L, initialDamageMultiplier = Double.MAX_VALUE)
-        val modifier = MaturingDamageModifier(fixture.clock)
+        val modifier = MaturingDamageModifier(fixture.service.maturation)
 
         assertEquals(0.0, modifier.getDamage(ActionContext.SYSTEM, citadel, 0.0))
         assertEquals(Double.MAX_VALUE, modifier.getDamage(ActionContext.SYSTEM, citadel, 2.0))
@@ -101,8 +99,9 @@ class MaturingDamageModifierTest {
         val fixture = HealthFixture(createInitial = false, clock = MutableHealthClock(Long.MAX_VALUE))
         val past = fixture.create(startedAtMillis = Long.MIN_VALUE, maturationDurationMillis = Long.MAX_VALUE,
             initialDamageMultiplier = 4.0)
-        val future = fixture.create(1, startedAtMillis = Long.MAX_VALUE, initialDamageMultiplier = 4.0)
-        val modifier = MaturingDamageModifier(fixture.clock)
+        val future = fixture.create(1, startedAtMillis = Long.MAX_VALUE, maturationDurationMillis = Long.MAX_VALUE,
+            initialDamageMultiplier = 4.0)
+        val modifier = MaturingDamageModifier(fixture.service.maturation)
 
         assertEquals(5.0, modifier.getDamage(ActionContext.SYSTEM, past, 5.0))
         fixture.clock.timeMillis = Long.MIN_VALUE
@@ -110,10 +109,10 @@ class MaturingDamageModifierTest {
     }
 
     @Test
-    fun `saved damaged health and maturation parameters survive reload and elapsed offline time`() {
+    fun `saved damaged health and start time survive reload and elapsed offline time`() {
         val fixture = HealthFixture(createInitial = false)
         val startedAt = 1_793_204_123_456L
-        val originalHealth = Health(40.0, 15.0)
+        val originalHealth = Health(15.0)
         val original = fixture.create(health = originalHealth, startedAtMillis = startedAt,
             maturationDurationMillis = 600_000L, initialDamageMultiplier = 4.0)
         val originalMaturing = assertNotNull(original.getComponent(Maturing::class.java))
@@ -127,13 +126,11 @@ class MaturingDamageModifierTest {
         val restoredMaturing = assertNotNull(restored.getComponent(Maturing::class.java))
         assertNotSame(originalHealth, restoredHealth)
         assertNotSame(originalMaturing, restoredMaturing)
-        assertEquals(40.0, restoredHealth.maxHealth)
+
         assertEquals(15.0, restoredHealth.health)
         assertEquals(startedAt, restoredMaturing.startedAtMillis)
-        assertEquals(600_000L, restoredMaturing.maturationDurationMillis)
-        assertEquals(4.0, restoredMaturing.initialDamageMultiplier)
 
-        val modifier = MaturingDamageModifier(fixture.clock)
+        val modifier = MaturingDamageModifier(fixture.service.maturation)
         fixture.clock.timeMillis = startedAt + 300_000L
         assertEquals(8.0, modifier.getDamage(ActionContext.SYSTEM, restored, 5.0), 1e-12)
         fixture.clock.timeMillis = startedAt + 900_000L
@@ -145,7 +142,7 @@ class MaturingDamageModifierTest {
     @Test
     fun `damage sequence across maturation preserves the former health fractions`() {
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(100.0, 100.0)
+        val health = Health(100.0)
         val citadel = fixture.create(health = health, startedAtMillis = 1_000L, initialDamageMultiplier = 5.0)
 
         fixture.service.damage(citadel, 2.0)
@@ -156,17 +153,17 @@ class MaturingDamageModifierTest {
         fixture.clock.timeMillis = 2_000L
         fixture.service.damage(citadel, 10.0)
         assertEquals(70.0, health.health, 1e-12)
-        assertEquals(100.0, health.maxHealth)
+
     }
 
     @Test
     fun `duplicate maturation initialization preserves the original component`() {
         val fixture = HealthFixture(createInitial = false)
         val draft = fixture.draft()
-        val original = Maturing(42L, 100L, 2.0)
+        val original = Maturing(42L)
         draft.addComponent(Maturing::class.java, original)
 
-        assertFails { MaturingInitializer(1_000L, 4.0).initialize(ActionContext.SYSTEM, draft) }
+        assertFails { MaturingInitializer().initialize(ActionContext.SYSTEM, draft) }
         assertSame(original, draft.getComponent(Maturing::class.java))
         assertEquals(42L, original.startedAtMillis)
         assertTrue(fixture.chunk.isEmpty)
@@ -174,14 +171,10 @@ class MaturingDamageModifierTest {
     }
 
     @Test
-    fun `invalid maturation component parameters and initializer settings are rejected`() {
-        for (duration in listOf(0L, -1L)) {
-            assertFailsWith<IllegalArgumentException> { Maturing(0L, duration, 4.0) }
-            assertFailsWith<IllegalArgumentException> { MaturingInitializer(duration, 4.0) }
-        }
+    fun `invalid live definition settings are rejected`() {
+        assertFailsWith<IllegalArgumentException> { MaturationDefinition(Duration.ofNanos(-1), 4.0) }
         for (multiplier in listOf(0.0, 0.5, -1.0, Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)) {
-            assertFailsWith<IllegalArgumentException> { Maturing(0L, 1_000L, multiplier) }
-            assertFailsWith<IllegalArgumentException> { MaturingInitializer(1_000L, multiplier) }
+            assertFailsWith<IllegalArgumentException> { MaturationDefinition(Duration.ofSeconds(1), multiplier) }
         }
     }
 }

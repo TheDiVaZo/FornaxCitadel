@@ -2,11 +2,15 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementLevel
+import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
+import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
+import ru.fornax.fornaxcitadel.modules.health.MaturationDefinition
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
+import java.time.Duration
 import java.util.Locale
 import kotlin.collections.iterator
 
@@ -23,6 +27,12 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
     /** Installation material identity is independent of the citadel definition's identity. */
     fun itemKey(key: Key): Key? = name(key)?.let { configured.getValue(it).item }
 
+    fun level(key: Key): Int? = name(key)?.let { configured.getValue(it).lvl }
+
+    fun itemKey(citadel: CitadelHandle): Key? = citadel.getComponent(CitadelKind::class.java)?.definitionKey?.let(::itemKey)
+
+    fun level(citadel: CitadelHandle): Int? = citadel.getComponent(CitadelKind::class.java)?.definitionKey?.let(::level)
+
     fun damagePolicy(key: Key): CitadelDamagePolicy? = name(key)?.let { configured.getValue(it).damagePolicy }
 
     fun isInvulnerable(key: Key): Boolean = damagePolicy(key) == CitadelDamagePolicy.DENY
@@ -30,16 +40,17 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
 
     fun register(module: CitadelModule) {
         for ((name, settings) in configured) {
+            val key = byName.getValue(name)
             val initializers = buildList<CitadelInitializer> {
-                add(CitadelInitializer { _, draft ->
-                    draft.addComponent(ReinforcementLevel::class.java, ReinforcementLevel(settings.lvl))
-                })
-                settings.health?.let { add(HealthInitializer(it.max)) }
-                settings.maturing?.let {
-                    add(MaturingInitializer(Math.multiplyExact(it.durationSeconds, 1000), it.initialDamageMultiplier))
-                }
+                add(HealthInitializer(module.health))
+                add(MaturingInitializer())
             }
-            module.registerDefinition(CitadelDefinition(byName.getValue(name), initializers))
+            module.registerDefinition(CitadelDefinition(key, initializers))
+            settings.health?.let { module.health.registerDefinition(key, HealthDefinition(it.max)) }
+            module.health.maturation.registerDefinition(key, MaturationDefinition(
+                Duration.ofSeconds(settings.maturing?.durationSeconds ?: 0),
+                settings.maturing?.initialDamageMultiplier ?: 1.0
+            ))
         }
     }
 

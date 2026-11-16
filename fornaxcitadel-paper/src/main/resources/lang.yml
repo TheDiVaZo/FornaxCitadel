@@ -97,4 +97,5 @@ commands:
     type: '<green>Тип: {type}</green>'
     unknown-type: 'неизвестен'
     health: '<green>Здоровье: {health} / {maximum}</green>'
+    health-without-maximum: '<green>Здоровье: {health}</green>'
     invulnerable: '<green>Неуязвимое укрепление.</green>'

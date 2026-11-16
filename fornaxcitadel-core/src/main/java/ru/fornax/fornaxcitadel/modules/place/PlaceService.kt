@@ -3,8 +3,6 @@ package ru.fornax.fornaxcitadel.modules.place
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementLevel
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -24,8 +22,6 @@ class PlaceService(
     init {
         manager.registerComponent(CitadelKind.KEY, CitadelKind::class.java)
         manager.registerComponent(CitadelOwner.KEY, CitadelOwner::class.java)
-        manager.registerComponent(ReinforcementItem.KEY, ReinforcementItem::class.java)
-        manager.registerComponent(ReinforcementLevel.KEY, ReinforcementLevel::class.java)
     }
 
     override fun enable() {
@@ -41,9 +37,6 @@ class PlaceService(
         actions.citadels.createCitadel(action.position) { draft ->
             draft.addComponent(CitadelKind::class.java, CitadelKind(definition.key))
             action.context.actorId?.let { draft.addComponent(CitadelOwner::class.java, CitadelOwner(it)) }
-            action.reinforcementItemKey?.let {
-                draft.addComponent(ReinforcementItem::class.java, ReinforcementItem(it))
-            }
             for (initializer in definition.initializers) initializer.initialize(action.context, draft)
         } ?: return ActionResult.DENIED
         return ActionResult.SUCCESS

@@ -10,9 +10,9 @@ import org.bukkit.event.Event
 import org.bukkit.event.block.Action
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
+import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -71,16 +71,15 @@ class PaperRepairServiceTest {
     }
 
     @Test
-    fun `full health wrong material and missing metadata preserve ordinary interaction without feedback`() {
-        for (reason in listOf("full", "wrong material", "missing health", "missing material")) {
+    fun `full health unregistered material and missing health preserve ordinary interaction without feedback`() {
+        for (reason in listOf("full", "wrong material", "missing health")) {
             PaperTestFixture(permissions = true).use { fixture ->
                 fixture.place()
                 if (reason != "full") fixture.damage()
                 fixture.installer.held = fixture.reinforcementStack()
                 when (reason) {
-                    "wrong material" -> fixture.installer.held = TestItemStack(Material.EMERALD, 2)
+                    "wrong material" -> fixture.installer.held = TestItemStack(Material.DIRT, 2)
                     "missing health" -> fixture.manager.removeComponent(Health::class.java, fixture.worldId, 1, 64, 2)
-                    "missing material" -> fixture.manager.removeComponent(ReinforcementItem::class.java, fixture.worldId, 1, 64, 2)
                 }
                 val event = fixture.interact()
                 val blockUse = event.useInteractedBlock()
@@ -200,13 +199,13 @@ class PaperRepairServiceTest {
     }
 
     @Test
-    fun `original custom material repairs after reload without a placement binding and preserves maturation`() {
-        PaperTestFixture(permissions = true).use { fixture ->
+    fun `configured custom material repairs after reload and preserves maturation`() {
+        PaperTestFixture(permissions = true, citadelSettings = typesWithItem(Key("custom", "original"), PaperCitadelTypes.MATURING)).use { fixture ->
             val original = TestMaterialAdapter(Key("custom", "original"))
             val different = TestMaterialAdapter(Key("custom", "different"))
             fixture.materials.register("custom", TestMaterialRegistry(original, different))
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
-                fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.MATURING, original.getKey())))
+                fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.MATURING)))
             val placed = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
             assertTrue(placed.editComponent(Maturing::class.java) { it.startedAtMillis = 1L })
             fixture.damage()
@@ -227,10 +226,10 @@ class PaperRepairServiceTest {
             fixture.loadChunk(0, 0)
             val restored = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
             assertEquals(40.0, restored.getComponent(Health::class.java)?.health)
-            assertEquals(40.0, restored.getComponent(Health::class.java)?.maxHealth)
+            assertEquals(40.0, fixture.module.health.maxHealth(restored))
             assertEquals(1L, restored.getComponent(Maturing::class.java)?.startedAtMillis)
             assertEquals(fixture.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
-            assertEquals(original.getKey(), restored.getComponent(ReinforcementItem::class.java)?.materialKey)
+            assertEquals(original.getKey(), fixture.citadelTypes.itemKey(restored))
         }
     }
 
@@ -246,8 +245,7 @@ class PaperRepairServiceTest {
                 val clicked = if (kind == "bed") first else second
                 val other = if (kind == "bed") second else first
                 assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(
-                    fixture.context(fixture.installer), clicked.testPosition(), PaperCitadelTypes.REINFORCED,
-                    Key("minecraft", "iron_ingot"))))
+                    fixture.context(fixture.installer), clicked.testPosition(), PaperCitadelTypes.REINFORCED)))
                 val target = assertNotNull(fixture.module.citadels.findProtecting(clicked.testPosition()))
                 assertTrue(target.editComponent(Health::class.java) { it.health = 10.0 })
                 fixture.installer.held = fixture.reinforcementStack()
@@ -300,7 +298,7 @@ class PaperRepairServiceTest {
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
             val grant = fixture.validate { ActionValidator.Result.Success }
             repeat(2) { fixture.repairService.disable() }
-            assertSame(ActionValidator.Result.Success, fixture.module.actions.validatorCoordinator.validate(action))
+            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
             repeat(2) { fixture.repairService.enable() }
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))

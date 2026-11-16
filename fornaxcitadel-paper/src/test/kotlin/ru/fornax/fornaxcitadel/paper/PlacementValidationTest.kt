@@ -133,7 +133,7 @@ class PlacementValidationTest {
     @Test
     fun `both validators reject unavailable worlds chunks and invalid heights before accessing blocks`() {
         val fixture = PaperTestFixture()
-        val validators: List<ActionValidator<PlaceAction>> = listOf(
+        val validators: List<ActionValidator<in PlaceAction>> = listOf(
             ReinforceableBlockValidator(fixture.server),
             PlacementBlockListValidator(fixture.server, fixture.materials, BlockListType.BLACKLIST, emptySet())
         )

@@ -248,7 +248,7 @@ internal class PaperTestFixture(
     val permissionService = PaperPermissionService(module.actions, permissionValidator)
     val damageValidationService = PaperDamageValidationService(module.actions,
         PaperDamageValidator(module.citadels, citadelTypes, creativeModeEnabled))
-    val placementService = PaperPlacementService(plugin, module, materials, placementSettings, messages).also { service ->
+    val placementService = PaperPlacementService(plugin, module, citadelTypes, materials, placementSettings, messages).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
         }
@@ -265,8 +265,8 @@ internal class PaperTestFixture(
             }
         }
     }
-    val dismantleService = PaperDismantleService(plugin, module, dismantleMaterials, dismantleSettings, dismantleRandom)
-    val repairService = PaperRepairService(module, materials)
+    val dismantleService = PaperDismantleService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
+    val repairService = PaperRepairService(module, citadelTypes, materials)
     val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
     val explosionService = PaperExplosionService(plugin, module, explosionPowers)
     val environmentService = PaperEnvironmentService(plugin, module)
@@ -366,7 +366,7 @@ internal class PaperTestFixture(
 
     fun place(type: Key = PaperCitadelTypes.REINFORCED) {
         assertEquals(ActionResult.SUCCESS, module.actions.execute(
-            PlaceAction(context(installer), position, type, citadelTypes.itemKey(type))))
+            PlaceAction(context(installer), position, type)))
     }
 
     fun context(player: TestPlayer) = ActionContext(player.id, PlayerSource(player.player, Key("test", "player")))

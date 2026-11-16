@@ -6,8 +6,6 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementLevel
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
@@ -28,11 +26,13 @@ import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
+import ru.fornax.fornaxcitadel.modules.health.MaturationDefinition
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceService
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
@@ -53,8 +53,6 @@ class ServiceLifecycleTest {
 
         assertNotNull(fixture.types.getType(CitadelKind::class.java))
         assertNotNull(fixture.types.getType(CitadelOwner::class.java))
-        assertNotNull(fixture.types.getType(ReinforcementItem::class.java))
-        assertNotNull(fixture.types.getType(ReinforcementLevel::class.java))
         assertNotNull(fixture.types.getType(Health::class.java))
         assertNotNull(fixture.types.getType(Maturing::class.java))
         assertEquals(ActionResult.DENIED, fixture.place())
@@ -65,9 +63,7 @@ class ServiceLifecycleTest {
         val citadel = assertNotNull(fixture.find())
         assertEquals(TYPE, citadel.getComponent(CitadelKind::class.java)?.definitionKey)
         assertEquals(1_000L, citadel.getComponent(Maturing::class.java)?.startedAtMillis)
-        assertEquals(10_000L, citadel.getComponent(Maturing::class.java)?.maturationDurationMillis)
-        assertEquals(2.0, citadel.getComponent(Maturing::class.java)?.initialDamageMultiplier)
-        assertEquals(10.0, citadel.getComponent(Health::class.java)?.maxHealth)
+
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 2.0)))
         assertEquals(8.0, fixture.currentHealth())
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 3.0)))
@@ -83,8 +79,6 @@ class ServiceLifecycleTest {
         val componentTypes = listOf(
             fixture.types.getType(CitadelKind::class.java),
             fixture.types.getType(CitadelOwner::class.java),
-            fixture.types.getType(ReinforcementItem::class.java),
-            fixture.types.getType(ReinforcementLevel::class.java),
             fixture.types.getType(Health::class.java),
             fixture.types.getType(Maturing::class.java)
         )
@@ -116,8 +110,6 @@ class ServiceLifecycleTest {
         assertEquals(componentTypes, listOf(
             fixture.types.getType(CitadelKind::class.java),
             fixture.types.getType(CitadelOwner::class.java),
-            fixture.types.getType(ReinforcementItem::class.java),
-            fixture.types.getType(ReinforcementLevel::class.java),
             fixture.types.getType(Health::class.java),
             fixture.types.getType(Maturing::class.java)
         ))
@@ -312,6 +304,7 @@ class ServiceLifecycleTest {
 
         fun prepare() {
             definitions.register(CitadelDefinition(TYPE, initializers()))
+            health.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
             actions.validateDamage(TYPE)
             storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0))
         }
@@ -328,7 +321,10 @@ class ServiceLifecycleTest {
         val scheduler = ManualScheduler()
         val failures = mutableListOf<Exception>()
         val module = CitadelModule(manager, scheduler, maxActionsPerTick = maxActionsPerTick,
-            actionFailureHandler = failures::add).apply { actions.validateDamage(TYPE) }
+            actionFailureHandler = failures::add).apply {
+            actions.validateDamage(TYPE)
+            health.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
+        }
 
         fun load() { storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0)) }
     }
@@ -351,8 +347,8 @@ class ServiceLifecycleTest {
 
         fun placeAction() = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
         fun initializers(): List<CitadelInitializer> = listOf(
-            HealthInitializer(10.0),
-            MaturingInitializer(10_000L, 2.0, Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))
+            CitadelInitializer { _, draft -> draft.addComponent(Health::class.java, Health(10.0)) },
+            MaturingInitializer(Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))
         )
 
         fun damageProcessor() = object : ActionProcessor<DamageAction>() {

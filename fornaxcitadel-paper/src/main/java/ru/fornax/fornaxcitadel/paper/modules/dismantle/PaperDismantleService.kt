@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.paper.modules.dismantle
 
 import org.bukkit.plugin.Plugin
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -17,6 +17,7 @@ import kotlin.random.Random
 class PaperDismantleService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
+    private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry,
     private val settings: DismantleSettings = DismantleSettings(),
     private val random: () -> Double = { Random.nextDouble() }
@@ -61,8 +62,9 @@ class PaperDismantleService @JvmOverloads constructor(
             "Validated dismantle target is unavailable"
         }
         val health = citadel.getComponent(Health::class.java)
-        val refundChance = if (health == null || health.health == health.maxHealth) 1.0 else settings.refundChance
-        val itemKey = citadel.getComponent(ReinforcementItem::class.java)?.materialKey
+        val maximum = module.health.maxHealth(citadel)
+        val refundChance = if (health == null || maximum != null && health.health >= maximum) 1.0 else settings.refundChance
+        val itemKey = citadelTypes.itemKey(citadel)
         val refund = if (refundChance > 0.0 && itemKey != null) {
             val material = materials.getType(itemKey) ?: return ActionResult.DENIED
             try {

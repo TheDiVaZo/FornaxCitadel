@@ -19,6 +19,7 @@ import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSubscription
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
@@ -29,10 +30,57 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperCrackHealthObservationSystemTest {
+    @Test
+    fun `observing implicit full health stays read-only and cracks appear after the first hit`() {
+        Fixture().use { f ->
+            val position = f.target.position
+            f.paper.manager.removeComponent(Health::class.java, position.world, position.x, position.y, position.z)
+            f.paper.manager.saveAll().join()
+            val saves = f.paper.backend.saves
+            f.observe(f.paper.installer)
+            f.paper.advanceTicks(2)
+            assertTrue(f.paper.installer.blockDamagePackets.isEmpty())
+            assertNull(f.target.getComponent(Health::class.java))
+            assertEquals(100.0, f.paper.module.health.currentHealth(f.target))
+            f.paper.manager.saveAll().join()
+            assertEquals(saves, f.paper.backend.saves)
+
+            assertEquals(ActionResult.SUCCESS, f.paper.module.health.damage(f.target, 20.0))
+            f.paper.advanceTicks(1)
+            assertEquals(80.0, f.target.getComponent(Health::class.java)?.health)
+            assertEquals(0.2f, f.paper.installer.blockDamagePackets.single().progress)
+            assertTrue(f.failures.isEmpty())
+        }
+    }
+
+    @Test
+    fun `live maximum updates cracks and missing maximum clears overlays without touching HP`() {
+        Fixture().use { f ->
+            f.observe(f.paper.installer)
+            val packets = f.paper.installer.blockDamagePackets
+            assertEquals(0.5f, packets.last().progress)
+            f.paper.manager.saveAll().join()
+            val saves = f.paper.backend.saves
+            f.paper.module.health.registerDefinition(TYPE, HealthDefinition(200.0))
+            f.paper.advanceTicks(1)
+            assertEquals(0.75f, packets.last().progress)
+            f.paper.module.health.unregisterDefinition(TYPE)
+            f.paper.advanceTicks(1)
+            assertEquals(0.0f, packets.last().progress)
+            f.paper.module.health.registerDefinition(TYPE, HealthDefinition(25.0))
+            f.paper.advanceTicks(1)
+            assertEquals(0.0f, packets.last().progress)
+            assertEquals(50.0, f.target.getComponent(Health::class.java)?.health)
+            f.paper.manager.saveAll().join()
+            assertEquals(saves, f.paper.backend.saves)
+        }
+    }
+
     @Test
     fun `entry sends immediately while unchanged stage waits twenty server ticks`() {
         Fixture().use { fixture ->
@@ -132,6 +180,7 @@ class PaperCrackHealthObservationSystemTest {
     fun `every health bearing type is displayed with an independent negative source id`() {
         Fixture().use { fixture ->
             val protectedType = Key("test", "protected_health")
+            fixture.paper.module.health.registerDefinition(protectedType, HealthDefinition(100.0))
             fixture.paper.module.registerDefinition(CitadelDefinition(protectedType, listOf(initialHealth(75.0))))
             val protected = fixture.create(2, type = protectedType)
             val emptyType = Key("test", "without_health")
@@ -213,7 +262,7 @@ class PaperCrackHealthObservationSystemTest {
             fixture.observe(fixture.paper.installer)
             val position = fixture.target.position
             fixture.paper.manager.putComponent(Health::class.java, position.world, position.x, position.y,
-                position.z, ReplacementHealth(100.0, 75.0))
+                position.z, ReplacementHealth(75.0))
 
             fixture.paper.advanceTicks(1)
 
@@ -307,7 +356,7 @@ class PaperCrackHealthObservationSystemTest {
         Fixture().use { fixture ->
             val position = fixture.target.position
             fixture.paper.manager.putComponent(Maturing::class.java, position.world, position.x,
-                position.y, position.z, Maturing(0L, 1L, 4.0))
+                position.y, position.z, Maturing(0L))
             fixture.paper.manager.saveAll().join()
             val saves = fixture.paper.backend.saves
             fixture.observe(fixture.paper.installer)
@@ -318,7 +367,7 @@ class PaperCrackHealthObservationSystemTest {
             assertEquals(saves, fixture.paper.backend.saves)
             val health = assertNotNull(fixture.target.getComponent(Health::class.java))
             assertEquals(50.0, health.health)
-            assertEquals(100.0, health.maxHealth)
+            assertEquals(100.0, fixture.paper.module.health.maxHealth(fixture.target))
             assertTrue(fixture.paper.installer.blockDamagePackets.all { it.progress == 0.5f })
             assertTrue(fixture.paper.stranger.blockDamagePackets.all { it.progress == 0.5f })
             assertTrue(fixture.failures.isEmpty())
@@ -330,10 +379,11 @@ class PaperCrackHealthObservationSystemTest {
         private val scheduler = PaperScheduler(paper.plugin)
         val failures = mutableListOf<Exception>()
         val observations = ObservationService<Player>(paper.manager, scheduler, failureHandler = failures::add)
-        val system = CrackHealthObservationSystem(paper.plugin)
+        val system = CrackHealthObservationSystem(paper.plugin, paper.module.health)
         val target: CitadelHandle
 
         init {
+            paper.module.health.registerDefinition(TYPE, HealthDefinition(100.0))
             paper.module.registerDefinition(CitadelDefinition(TYPE, listOf(initialHealth(50.0))))
             target = create(paper.position.x)
             observations.registerSystem(system)
@@ -366,7 +416,7 @@ class PaperCrackHealthObservationSystemTest {
         }
     }
 
-    private class ReplacementHealth(maximum: Double, current: Double) : Health(maximum, current)
+    private class ReplacementHealth(current: Double) : Health(current)
 
     private fun TestBlockDamage.position() = CitadelPosition(checkNotNull(location.world).uid,
         location.blockX, location.blockY, location.blockZ)
@@ -381,7 +431,7 @@ class PaperCrackHealthObservationSystemTest {
     private companion object {
         val TYPE = Key("test", "crack_health")
         fun initialHealth(current: Double) = CitadelInitializer { _, draft ->
-            draft.addComponent(Health::class.java, ReplacementHealth(100.0, current))
+            draft.addComponent(Health::class.java, ReplacementHealth(current))
         }
     }
 }

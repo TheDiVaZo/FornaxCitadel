@@ -8,7 +8,6 @@ import org.bukkit.command.CommandSender
 import org.bukkit.configuration.file.YamlConfiguration
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
@@ -47,7 +46,7 @@ class CitadelCommandTest {
         assertEquals(PaperCitadelTypes.INVULNERABLE, placed.getComponent(CitadelKind::class.java)?.definitionKey)
         assertEquals(fixture.installer.id, placed.getComponent(CitadelOwner::class.java)?.playerId)
         assertEquals(fixture.citadelTypes.itemKey(PaperCitadelTypes.INVULNERABLE),
-            placed.getComponent(ReinforcementItem::class.java)?.materialKey)
+            fixture.citadelTypes.itemKey(placed))
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("remove"))
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(0, fixture.vanillaBlockChanges)

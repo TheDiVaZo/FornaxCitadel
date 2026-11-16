@@ -2,6 +2,7 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.configuration.file.YamlConfiguration
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
@@ -35,15 +36,13 @@ class PaperConfigurationTest {
         for ((name, type) in settings.citadelTypes.types) {
             val handle = handles.getValue(name)
             assertEquals(type.health?.max, handle.getComponent(Health::class.java)?.health)
-            assertEquals(type.health?.max, handle.getComponent(Health::class.java)?.maxHealth)
-            val maturing = handle.getComponent(Maturing::class.java)
-            if (type.maturing == null) {
-                assertNull(maturing)
-            } else {
-                assertNotNull(maturing)
-                assertEquals(type.maturing.durationSeconds * 1000, maturing.maturationDurationMillis)
-                assertEquals(type.maturing.initialDamageMultiplier, maturing.initialDamageMultiplier)
-            }
+            assertEquals(type.health?.max, fixture.module.health.maxHealth(handle))
+            assertTrue(assertNotNull(handle.getComponent(Maturing::class.java)).startedAtMillis > 0)
+            val key = assertNotNull(handle.getComponent(CitadelKind::class.java)).definitionKey
+            val profile = assertNotNull(fixture.module.health.maturation.findDefinition(key))
+            assertEquals(Duration.ofSeconds(type.maturing?.durationSeconds ?: 0), profile.duration)
+            assertEquals(type.maturing?.initialDamageMultiplier ?: 1.0, profile.initialDamageMultiplier)
+            assertEquals(profile.duration.isZero, fixture.module.health.maturation.isMature(handle))
         }
     }
 

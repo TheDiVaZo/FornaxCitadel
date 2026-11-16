@@ -5,11 +5,10 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.util.Key
 
-class PlaceAction @JvmOverloads constructor(
+class PlaceAction(
     context: ActionContext,
     position: CitadelPosition,
-    val definitionKey: Key,
-    val reinforcementItemKey: Key? = null
+    val definitionKey: Key
 ) : ActionData(KEY, position, context) {
     companion object {
         @JvmField val KEY = Key("citadel", "place")

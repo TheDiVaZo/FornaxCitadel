@@ -16,7 +16,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
-import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
@@ -150,7 +149,7 @@ class CitadelCommand(
                     sender.message("commands.unknown-type", "type" to args[1])
                     return
                 }
-                val result = module.actions.execute(PlaceAction(context, position, type, citadelTypes.itemKey(type)))
+                val result = module.actions.execute(PlaceAction(context, position, type))
                 sender.message(if (result == ActionResult.SUCCESS) "commands.place.success" else "commands.place.denied")
             }
             "remove" -> {
@@ -171,11 +170,12 @@ class CitadelCommand(
                 val type = kind?.let(citadelTypes::name) ?: kind?.asString()
                     ?: messages.plainText("commands.info.unknown-type")
                 sender.message("commands.info.type", "type" to type)
-                val health = citadel.getComponent(Health::class.java)
+                val health = module.health.currentHealth(citadel)
                 if (health != null) {
-                    sender.message("commands.info.health",
-                        "health" to String.format(Locale.ROOT, "%.1f", health.health),
-                        "maximum" to String.format(Locale.ROOT, "%.1f", health.maxHealth))
+                    val maximum = module.health.maxHealth(citadel)
+                    sender.message(if (maximum == null) "commands.info.health-without-maximum" else "commands.info.health",
+                        "health" to String.format(Locale.ROOT, "%.1f", health),
+                        "maximum" to (maximum?.let { String.format(Locale.ROOT, "%.1f", it) } ?: ""))
                 }
                 if (kind != null && citadelTypes.isInvulnerable(kind)) sender.message("commands.info.invulnerable")
             }

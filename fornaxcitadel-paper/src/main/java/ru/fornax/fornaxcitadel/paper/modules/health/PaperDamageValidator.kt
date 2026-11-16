@@ -32,11 +32,11 @@ class PaperDamageValidator(
             else ActionValidator.Result.Rejected
         }
 
-        val kind = citadel.getComponent(CitadelKind::class.java) ?: return ActionValidator.Result.Neutral
-        return when (citadelTypes.damagePolicy(kind.definitionKey)) {
+        val kind = citadel.getComponent(CitadelKind::class.java)
+        return when (kind?.definitionKey?.let(citadelTypes::damagePolicy)) {
             CitadelDamagePolicy.ALLOW -> ActionValidator.Result.Success
             CitadelDamagePolicy.DENY -> ActionValidator.Result.Rejected
-            null -> ActionValidator.Result.Neutral
+            null -> ActionValidator.Result.Success
         }
     }
 }

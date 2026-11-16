@@ -26,12 +26,15 @@ import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamageModifier
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
+import ru.fornax.fornaxcitadel.modules.health.MaturationDefinition
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
@@ -50,11 +53,11 @@ class CitadelModuleTest {
     @Test
     fun `registering another definition with the same key preserves the original`() {
         val fixture = Fixture()
-        val original = CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(100.0)))
+        val original = CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.health)))
         fixture.module.registerDefinition(original)
 
         assertFailsWith<IllegalArgumentException> {
-            fixture.module.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(1.0))))
+            fixture.module.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.health))))
         }
 
         assertSame(original, fixture.module.definitions.find(DEFAULT_KIND))
@@ -64,7 +67,8 @@ class CitadelModuleTest {
     fun `placement publishes a complete citadel and occupied placement leaves it unchanged`() {
         val fixture = Fixture()
         val clock = Clock.fixed(Instant.ofEpochMilli(1_793_204_123_456L), ZoneOffset.UTC)
-        fixture.register(initializers = listOf(MaturingInitializer(1_000L, 5.0, clock)))
+        fixture.register(initializers = listOf(MaturingInitializer(clock)))
+        fixture.module.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         var observedKind: Key? = null
         var observedHealth: Double? = null
@@ -464,7 +468,8 @@ class CitadelModuleTest {
     @Test
     fun `a type with health but no approving damage validator rejects damage`() {
         val fixture = Fixture()
-        fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(100.0))))
+        fixture.module.health.registerDefinition(DEFAULT_KIND, HealthDefinition(100.0))
+        fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.health))))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
@@ -498,14 +503,14 @@ class CitadelModuleTest {
         val fixture = Fixture()
         val clock = Clock.fixed(Instant.ofEpochMilli(Long.MAX_VALUE), ZoneOffset.UTC)
         fixture.register(maxHealth = 25.0)
-        fixture.register(MATURING_KIND, initializers = listOf(MaturingInitializer(1_000L, 5.0, clock)))
+        fixture.register(MATURING_KIND, initializers = listOf(MaturingInitializer(clock)))
+        fixture.module.health.maturation.registerDefinition(MATURING_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.place(SECOND_POSITION, MATURING_KIND))
         fixture.chunk().resetDirty()
 
-        assertEquals(25.0, fixture.health().maxHealth)
-        assertEquals(100.0, fixture.health(SECOND_POSITION).maxHealth)
+
         assertEquals(100.0, fixture.health(SECOND_POSITION).health)
         assertFalse(fixture.chunk().isDirty)
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 5.0))
@@ -516,7 +521,7 @@ class CitadelModuleTest {
         assertTrue(fixture.handle(SECOND_POSITION).editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
         fixture.chunk().resetDirty()
         assertEquals(50.0, fixture.health(SECOND_POSITION).health)
-        assertEquals(100.0, fixture.health(SECOND_POSITION).maxHealth)
+
         assertFalse(fixture.chunk().isDirty)
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 10.0, SECOND_POSITION))
         assertEquals(40.0, fixture.health(SECOND_POSITION).health)
@@ -720,7 +725,8 @@ class CitadelModuleTest {
         val fixture = Fixture()
         val startedAt = Long.MAX_VALUE
         val clock = Clock.fixed(Instant.ofEpochMilli(startedAt), ZoneOffset.UTC)
-        fixture.register(initializers = listOf(MaturingInitializer(1_000L, 5.0, clock)))
+        fixture.register(initializers = listOf(MaturingInitializer(clock)))
+        fixture.module.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 15.0))
@@ -734,10 +740,8 @@ class CitadelModuleTest {
         assertEquals(DEFAULT_KIND, restored.getComponent(CitadelKind::class.java)?.definitionKey)
         val maturing = assertNotNull(restored.getComponent(Maturing::class.java))
         assertEquals(startedAt, maturing.startedAtMillis)
-        assertEquals(1_000L, maturing.maturationDurationMillis)
-        assertEquals(5.0, maturing.initialDamageMultiplier)
         assertEquals(25.0, fixture.health().health)
-        assertEquals(100.0, fixture.health().maxHealth)
+
         assertFalse(fixture.chunk().isDirty)
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 1.0))
         assertEquals(20.0, fixture.health().health)
@@ -747,7 +751,7 @@ class CitadelModuleTest {
         fixture.load()
 
         assertEquals(20.0, fixture.health().health)
-        assertEquals(100.0, fixture.health().maxHealth)
+
         assertFalse(fixture.chunk().isDirty)
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 5.0))
         assertEquals(15.0, fixture.health().health)
@@ -818,7 +822,8 @@ class CitadelModuleTest {
             authorizeDamage: (ActionContext, CitadelHandle) -> Boolean = { _, _ -> true },
             initializers: List<CitadelInitializer> = emptyList()
         ) {
-            val prepared = initializers + listOfNotNull(maxHealth?.let(::HealthInitializer))
+            maxHealth?.let { module.health.registerDefinition(key, HealthDefinition(it)) }
+            val prepared = initializers + HealthInitializer(module.health)
             module.registerDefinition(CitadelDefinition(key, prepared))
             module.actions.validateDamage(key, allowed = authorizeDamage)
         }

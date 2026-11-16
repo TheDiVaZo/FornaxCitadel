@@ -15,6 +15,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -62,8 +63,9 @@ internal class HealthFixture(
         val draft = draft(x, definitionKey)
         if (health != null) draft.addComponent(Health::class.java, health)
         if (startedAtMillis != null) {
-            draft.addComponent(Maturing::class.java,
-                Maturing(startedAtMillis, maturationDurationMillis, initialDamageMultiplier))
+            service.maturation.registerDefinition(definitionKey,
+                MaturationDefinition(Duration.ofMillis(maturationDurationMillis), initialDamageMultiplier))
+            draft.addComponent(Maturing::class.java, Maturing(startedAtMillis))
         }
         return publish(draft)
     }

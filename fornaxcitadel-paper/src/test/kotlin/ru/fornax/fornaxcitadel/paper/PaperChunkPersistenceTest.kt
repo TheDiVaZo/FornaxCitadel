@@ -17,6 +17,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkListener
@@ -251,8 +252,9 @@ class PaperChunkPersistenceTest {
         }
 
         init {
+            module.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
             module.registerDefinition(
-                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(100.0)))
+                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(module.health)))
             )
             module.actions.validatorCoordinator.registerValidator(
                 PaperDamageValidator(module.citadels, paper.citadelTypes, true))

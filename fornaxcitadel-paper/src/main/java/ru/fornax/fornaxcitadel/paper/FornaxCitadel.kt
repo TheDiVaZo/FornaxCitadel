@@ -105,7 +105,7 @@ class FornaxCitadel : JavaPlugin() {
                 PaperDamageValidator(module.citadels, citadelTypes, settings.playerDamage.creativeModeEnabled)))
 
             val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)
-            placement = PaperPlacementService(this, module, materials, settings.placement, messages).also(services::add)
+            placement = PaperPlacementService(this, module, citadelTypes, materials, settings.placement, messages).also(services::add)
             citadelTypes.keys.forEach { type ->
                 placement.registerMaterial(requireNotNull(citadelTypes.itemKey(type)), type)
             }
@@ -117,8 +117,8 @@ class FornaxCitadel : JavaPlugin() {
                     ))
                 }
             }
-            dismantle = PaperDismantleService(this, module, materials, settings.dismantle).also(services::add)
-            repair = PaperRepairService(module, materials).also(services::add)
+            dismantle = PaperDismantleService(this, module, citadelTypes, materials, settings.dismantle).also(services::add)
+            repair = PaperRepairService(module, citadelTypes, materials).also(services::add)
             services.add(PaperBreakingService(this, module, playerDamage, messages,
                 settings.playerDamage.creativeModeEnabled))
             services.add(PaperExplosionService(this, module, settings.explosionPowers))
@@ -134,7 +134,7 @@ class FornaxCitadel : JavaPlugin() {
             observation = ObservationService(manager, scheduler, settings.observation.intervalTicks) { failure ->
                 logger.log(Level.SEVERE, "Citadel observation failed", failure)
             }
-            observation.registerSystem(CrackHealthObservationSystem(this))
+            observation.registerSystem(CrackHealthObservationSystem(this, module.health))
             val observationSource = Full3DObservation(this, module.actions, chunks, settings.observation.full3D)
             services.add(PaperObservationService(this, observation, observationSource))
             services.forEach { it.enable() }

@@ -9,14 +9,12 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.paper.PaperMessages
@@ -29,6 +27,7 @@ import java.util.logging.Level
 class PaperPlacementService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
+    private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry,
     settings: PlacementSettings = PlacementSettings(),
     private val messages: PaperMessages = PaperMessages.defaults()
@@ -97,9 +96,9 @@ class PaperPlacementService @JvmOverloads constructor(
             val citadel = if (block.supportsCitadelData()) module.citadels.findProtecting(position) else null
             if (citadel != null) {
                 messageGroup = "repair"
-                val health = citadel.getComponent(Health::class.java) ?: return
-                if (health.health >= health.maxHealth ||
-                    citadel.getComponent(ReinforcementItem::class.java)?.materialKey != materialKey) return
+                val health = module.health.currentHealth(citadel) ?: return
+                val maximum = module.health.maxHealth(citadel) ?: return
+                if (health >= maximum || citadelTypes.itemKey(citadel) != materialKey) return
                 denyUse(event)
                 val result = module.actions.execute(RepairAction(
                     ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY)), position
@@ -140,8 +139,7 @@ class PaperPlacementService @JvmOverloads constructor(
             val result = module.actions.execute(PlaceAction(
                 ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY)),
                 CitadelPosition(block.world.uid, block.x, block.y, block.z),
-                definitionKey,
-                materialKey
+                definitionKey
             ))
             if (result != ActionResult.SUCCESS) {
                 messages.sendGameplay(player, "placement.denied")

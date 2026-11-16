@@ -5,7 +5,6 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
@@ -40,24 +39,24 @@ import kotlin.test.assertTrue
 
 class PlacementMetadataTest {
     @Test
-    fun `owner and actual item are ready before initialization and notification and survive reload`() {
+    fun `owner and kind are ready before initialization and notification and survive reload`() {
         var initializerCalls = 0
         Fixture(initializers = listOf(CitadelInitializer { context, draft ->
             initializerCalls++
             assertEquals(PLAYER, context.actorId)
             assertEquals(PLAYER, draft.getComponent(CitadelOwner::class.java)?.playerId)
-            assertEquals(ITEM, draft.getComponent(ReinforcementItem::class.java)?.materialKey)
+            assertEquals(TYPE, draft.getComponent(CitadelKind::class.java)?.definitionKey)
         })).use { fixture ->
             var observerCalls = 0
             var observedOwner: UUID? = null
-            var observedItem: Key? = null
+            var observedKind: Key? = null
             fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
                 override val actionClass = PlaceAction::class.java
                 override fun handle(action: PlaceAction) {
                     observerCalls++
                     val handle = fixture.handle(action.position)
                     observedOwner = handle.getComponent(CitadelOwner::class.java)?.playerId
-                    observedItem = handle.getComponent(ReinforcementItem::class.java)?.materialKey
+                    observedKind = handle.getComponent(CitadelKind::class.java)?.definitionKey
                 }
             })
 
@@ -67,12 +66,12 @@ class PlacementMetadataTest {
             assertEquals(1, initializerCalls)
             assertEquals(1, observerCalls)
             assertEquals(PLAYER, observedOwner)
-            assertEquals(ITEM, observedItem)
-            assertMetadata(original, PLAYER, ITEM)
+            assertEquals(TYPE, observedKind)
+            assertMetadata(original, PLAYER)
             fixture.reload()
 
             assertFalse(original.isCurrent)
-            assertMetadata(fixture.handle(), PLAYER, ITEM)
+            assertMetadata(fixture.handle(), PLAYER)
             assertEquals(1, initializerCalls)
             assertEquals(1, observerCalls)
             assertFalse(fixture.chunk().isDirty)
@@ -80,11 +79,11 @@ class PlacementMetadataTest {
     }
 
     @Test
-    fun `vetoed and failed placement never publishes owner or item metadata`() {
+    fun `vetoed and failed placement never publishes owner or kind metadata`() {
         for (initializerFails in listOf(false, true)) {
             val initializers = if (initializerFails) listOf(CitadelInitializer { _, draft ->
                 assertEquals(PLAYER, draft.getComponent(CitadelOwner::class.java)?.playerId)
-                assertEquals(ITEM, draft.getComponent(ReinforcementItem::class.java)?.materialKey)
+                assertEquals(TYPE, draft.getComponent(CitadelKind::class.java)?.definitionKey)
                 error("Initialization failed")
             }) else emptyList()
             Fixture(initializers).use { fixture ->
@@ -112,7 +111,7 @@ class PlacementMetadataTest {
     }
 
     @Test
-    fun `occupied placement preserves the original owner and actual reinforcement item`() {
+    fun `occupied placement preserves the original owner and kind`() {
         Fixture().use { fixture ->
             assertEquals(ActionResult.SUCCESS, fixture.place())
             val original = fixture.handle()
@@ -120,55 +119,48 @@ class PlacementMetadataTest {
             fixture.chunk().resetDirty()
 
             assertEquals(ActionResult.DENIED, fixture.place(
-                context = ActionContext(UUID(8L, 9L), SOURCE), itemKey = Key("other", "reinforcement")
+                context = ActionContext(UUID(8L, 9L), SOURCE)
             ))
 
             assertTrue(original.isCurrent)
-            assertMetadata(original, PLAYER, ITEM)
+            assertMetadata(original, PLAYER)
             assertFalse(fixture.chunk().isDirty)
             fixture.reload()
-            assertMetadata(fixture.handle(), PLAYER, ITEM)
+            assertMetadata(fixture.handle(), PLAYER)
         }
     }
 
     @Test
-    fun `actor and item metadata are independently optional and stay absent after reload`() {
+    fun `actor metadata is optional and stay absent after reload`() {
         Fixture().use { fixture ->
-            val cases = listOf(
-                ActionContext.SYSTEM to null,
-                ActionContext.SYSTEM to ITEM,
-                CONTEXT to null
-            )
-            for ((index, inputs) in cases.withIndex()) {
-                val (context, item) = inputs
+            val cases = listOf(ActionContext.SYSTEM, CONTEXT)
+            for ((index, context) in cases.withIndex()) {
                 val position = POSITION.copy(x = POSITION.x + index)
-                assertEquals(ActionResult.SUCCESS, fixture.place(context, item, position))
-                assertMetadata(fixture.handle(position), context.actorId, item)
+                assertEquals(ActionResult.SUCCESS, fixture.place(context, position))
+                assertMetadata(fixture.handle(position), context.actorId)
             }
-
             fixture.reload()
-
-            for ((index, inputs) in cases.withIndex()) {
-                assertMetadata(fixture.handle(POSITION.copy(x = POSITION.x + index)), inputs.first.actorId, inputs.second)
+            for ((index, context) in cases.withIndex()) {
+                assertMetadata(fixture.handle(POSITION.copy(x = POSITION.x + index)), context.actorId)
             }
             assertFalse(fixture.chunk().isDirty)
         }
     }
 
     @Test
-    fun `legacy snapshots do not acquire invented owner or item metadata`() {
+    fun `legacy snapshots do not acquire invented owner or kind metadata`() {
         val legacy = ChunkCordSnapshot(CHUNK, listOf(CitadelSnapshot(
             ChunkCord.packPosition(POSITION.x, POSITION.y, POSITION.z),
             listOf(ComponentSnapshot(CitadelKind.KEY, CitadelKind(TYPE).toByteArray()))
         )))
         Fixture(snapshot = legacy).use { fixture ->
             assertEquals(TYPE, fixture.handle().getComponent(CitadelKind::class.java)?.definitionKey)
-            assertMetadata(fixture.handle(), null, null)
+            assertMetadata(fixture.handle(), null)
             assertFalse(fixture.chunk().isDirty)
 
             fixture.reload()
 
-            assertMetadata(fixture.handle(), null, null)
+            assertMetadata(fixture.handle(), null)
             assertFalse(fixture.chunk().isDirty)
         }
     }
@@ -202,11 +194,10 @@ class PlacementMetadataTest {
         }
     }
 
-    private fun assertMetadata(handle: CitadelHandle, playerId: UUID?, materialKey: Key?) {
+    private fun assertMetadata(handle: CitadelHandle, playerId: UUID?) {
         val owner = handle.getComponent(CitadelOwner::class.java)
-        val item = handle.getComponent(ReinforcementItem::class.java)
         if (playerId == null) assertNull(owner) else assertEquals(playerId, assertNotNull(owner).playerId)
-        if (materialKey == null) assertNull(item) else assertEquals(materialKey, assertNotNull(item).materialKey)
+        assertEquals(TYPE, handle.getComponent(CitadelKind::class.java)?.definitionKey)
     }
 
     private class Fixture(
@@ -227,8 +218,8 @@ class PlacementMetadataTest {
             manager.loadChunk(WORLD, 0, 0).join()
         }
 
-        fun place(context: ActionContext = CONTEXT, itemKey: Key? = ITEM, position: CitadelPosition = POSITION) =
-            module.actions.execute(PlaceAction(context, position, TYPE, itemKey))
+        fun place(context: ActionContext = CONTEXT, position: CitadelPosition = POSITION) =
+            module.actions.execute(PlaceAction(context, position, TYPE))
 
         fun find(position: CitadelPosition = POSITION) =
             manager.findCitadel(position.world, position.x, position.y, position.z)
@@ -278,6 +269,5 @@ class PlacementMetadataTest {
         val SOURCE = NamedActionSource(Key("test", "player"))
         val CONTEXT = ActionContext(PLAYER, SOURCE)
         val TYPE = Key("test", "reinforcement")
-        val ITEM = Key("custom", "original_reinforcement_item")
     }
 }

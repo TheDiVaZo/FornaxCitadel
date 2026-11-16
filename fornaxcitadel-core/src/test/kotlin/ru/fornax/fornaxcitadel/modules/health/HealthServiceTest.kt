@@ -23,7 +23,7 @@ class HealthServiceTest {
     @Test
     fun `explicit destruction is denied by default without touching health`() {
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(20.0, 10.0)
+        val health = Health(10.0)
         val citadel = fixture.create(health = health)
         fixture.actions.validateDamage(HealthFixture.TYPE)
         fixture.service.enable()
@@ -41,7 +41,7 @@ class HealthServiceTest {
     fun `authorized destruction bypasses numeric modifiers and ordinary damage validators`() {
         val fixture = HealthFixture(createInitial = false)
         fixture.actions.validateDamage(mode = DamageAction.Mode.DESTROY)
-        val health = Health(40.0, 40.0)
+        val health = Health(40.0)
         val citadel = fixture.create(health = health, startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
         fixture.actions.validateDamage(HealthFixture.TYPE) { _, _ -> false }
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("DESTROY must bypass modifiers") })
@@ -57,8 +57,8 @@ class HealthServiceTest {
     @Test
     fun `external actions and direct damage apply maturation exactly once and keep their contexts`() {
         val fixture = HealthFixture(createInitial = false, clock = MutableHealthClock(1_500L))
-        val externalHealth = Health(40.0, 40.0)
-        val directHealth = Health(40.0, 40.0)
+        val externalHealth = Health(40.0)
+        val directHealth = Health(40.0)
         val external = fixture.create(health = externalHealth, startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
         val direct = fixture.create(1, directHealth, startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
         val context = ActionContext(UUID(10L, 20L), NamedActionSource(Key("otherplugin", "damage")))
@@ -74,7 +74,7 @@ class HealthServiceTest {
         assertEquals(ActionResult.SUCCESS, fixture.service.damage(direct, 5.0))
         assertEquals(32.0, externalHealth.health)
         assertEquals(32.0, directHealth.health)
-        assertEquals(40.0, externalHealth.maxHealth)
+
         assertEquals(listOf(context to 8.0, ActionContext.SYSTEM to 8.0), observed)
 
         assertEquals(ActionResult.SUCCESS, fixture.service.damage(direct, 5.0, context))
@@ -85,7 +85,7 @@ class HealthServiceTest {
     @Test
     fun `modifiers run in registration order and repeated registration of one instance is idempotent`() {
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(100.0, 100.0)
+        val health = Health(100.0)
         val citadel = fixture.create(health = health)
         val amounts = mutableListOf<Double>()
         val add = DamageModifier { _, target, amount ->
@@ -110,7 +110,7 @@ class HealthServiceTest {
     @Test
     fun `unregistering is idempotent and registering again appends the modifier`() {
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(100.0, 100.0)
+        val health = Health(100.0)
         val citadel = fixture.create(health = health)
         val add = DamageModifier { _, _, amount -> amount + 2.0 }
         val multiply = DamageModifier { _, _, amount -> amount * 3.0 }
@@ -140,7 +140,7 @@ class HealthServiceTest {
             override fun hashCode(): Int = 0
         }
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(100.0, 100.0)
+        val health = Health(100.0)
         val citadel = fixture.create(health = health)
         val first = EqualModifier(2.0)
         val second = EqualModifier(10.0)
@@ -159,7 +159,7 @@ class HealthServiceTest {
     @Test
     fun `unregistering during calculation changes only subsequent damage chains`() {
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(100.0, 100.0)
+        val health = Health(100.0)
         val citadel = fixture.create(health = health)
         val calls = mutableListOf<String>()
         val later = DamageModifier { _, _, amount ->
@@ -196,7 +196,7 @@ class HealthServiceTest {
         )
         for (modifier in modifiers) {
             val fixture = HealthFixture(createInitial = false)
-            val health = Health(40.0, 30.0)
+            val health = Health(30.0)
             val citadel = fixture.create(health = health)
             fixture.service.registerModifier(DamageModifier { _, _, amount -> amount * 2.0 })
             fixture.service.registerModifier(modifier)
@@ -208,7 +208,7 @@ class HealthServiceTest {
 
             assertFalse(reachedLastModifier)
             assertEquals(30.0, health.health)
-            assertEquals(40.0, health.maxHealth)
+
             assertTrue(citadel.isCurrent)
             assertFalse(fixture.chunk.isDirty)
         }
@@ -217,7 +217,7 @@ class HealthServiceTest {
     @Test
     fun `denied actions never execute damage modifiers`() {
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(20.0, 20.0)
+        val health = Health(20.0)
         val citadel = fixture.create(health = health)
         fixture.actions.validateDamage(HealthFixture.TYPE) { _, _ -> false }
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("Denied actions must not calculate damage") })
@@ -232,7 +232,7 @@ class HealthServiceTest {
     @Test
     fun `advancing time and reading components never changes stored health or dirties the chunk`() {
         val fixture = HealthFixture(createInitial = false)
-        val health = Health(40.0, 15.0)
+        val health = Health(15.0)
         val citadel = fixture.create(health = health, startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
         fixture.chunk.resetDirty()
 
@@ -240,7 +240,7 @@ class HealthServiceTest {
             fixture.clock.timeMillis = now
             val current = assertNotNull(citadel.getComponent(Health::class.java))
             assertSame(health, current)
-            assertEquals(40.0, current.maxHealth)
+
             assertEquals(15.0, current.health)
             assertEquals(1_000L, assertNotNull(citadel.getComponent(Maturing::class.java)).startedAtMillis)
             assertFalse(fixture.chunk.isDirty)
@@ -250,7 +250,7 @@ class HealthServiceTest {
     @Test
     fun `direct lethal damage removes the entire citadel after health editing without notifying action handlers`() {
         val fixture = HealthFixture(createInitial = false)
-        val component = Health(20.0, 20.0)
+        val component = Health(20.0)
         val citadel = fixture.create(health = component)
         var handled = 0
         fixture.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
@@ -274,9 +274,9 @@ class HealthServiceTest {
     @Test
     fun `zero damage preserves living health and still completes an already dead citadel`() {
         val fixture = HealthFixture(createInitial = false)
-        val livingHealth = Health(20.0, 10.0)
+        val livingHealth = Health(10.0)
         val living = fixture.create(health = livingHealth)
-        val dead = fixture.create(1, Health(20.0, 0.0))
+        val dead = fixture.create(1, Health(0.0))
         fixture.chunk.resetDirty()
 
         assertEquals(ActionResult.DENIED, fixture.service.damage(living, 0.0))
@@ -290,7 +290,7 @@ class HealthServiceTest {
     @Test
     fun `invalid incoming damage is rejected before calculating or changing anything`() {
         val fixture = HealthFixture(createInitial = false)
-        val component = Health(20.0, 10.0)
+        val component = Health(10.0)
         val citadel = fixture.create(health = component)
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("Invalid input reached a modifier") })
         fixture.chunk.resetDirty()
@@ -306,12 +306,12 @@ class HealthServiceTest {
     @Test
     fun `stale foreign and unloaded handles cannot calculate damage or change a current citadel`() {
         val fixture = HealthFixture(createInitial = false)
-        val old = fixture.create(health = Health(20.0, 20.0))
+        val old = fixture.create(health = Health(20.0))
         assertTrue(fixture.manager.removeCitadel(old))
-        val replacementHealth = Health(20.0, 20.0)
+        val replacementHealth = Health(20.0)
         val replacement = fixture.create(health = replacementHealth)
         val otherFixture = HealthFixture(createInitial = false)
-        val foreignHealth = Health(20.0, 20.0)
+        val foreignHealth = Health(20.0)
         val foreign = otherFixture.create(health = foreignHealth)
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("Invalid target reached a modifier") })
         val loadedChunk = fixture.chunk
@@ -329,15 +329,16 @@ class HealthServiceTest {
     }
 
     @Test
-    fun `missing health rejects damage while static health needs no registered behavior`() {
+    fun `missing health is destroyed while static health needs no registered behavior`() {
         val fixture = HealthFixture(createInitial = false)
         val withoutHealth = fixture.create()
-        val component = Health(20.0, 10.0)
+        val component = Health(10.0)
         val withHealth = fixture.create(1, component)
         fixture.chunk.resetDirty()
 
-        assertEquals(ActionResult.DENIED, fixture.service.damage(withoutHealth, 5.0))
-        assertFalse(fixture.chunk.isDirty)
+        assertEquals(ActionResult.SUCCESS, fixture.service.damage(withoutHealth, 5.0))
+        assertFalse(withoutHealth.isCurrent)
+        assertTrue(fixture.chunk.isDirty)
         assertEquals(ActionResult.SUCCESS, fixture.service.damage(withHealth, 5.0))
         assertEquals(5.0, component.health)
     }
@@ -345,19 +346,16 @@ class HealthServiceTest {
     @Test
     fun `invalid existing health is rejected without changing the component or dirty state`() {
         val invalidStates = listOf(
-            0.0 to 0.0, -20.0 to 5.0,
-            Double.NaN to 5.0, Double.NEGATIVE_INFINITY to 5.0, Double.POSITIVE_INFINITY to 5.0,
-            20.0 to -1.0, 20.0 to 21.0, 20.0 to Double.NaN,
-            20.0 to Double.NEGATIVE_INFINITY, 20.0 to Double.POSITIVE_INFINITY
+            -1.0, Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY
         )
-        for ((maxHealth, health) in invalidStates) {
+        for (health in invalidStates) {
             val fixture = HealthFixture(createInitial = false)
-            val component = Health(maxHealth, health)
+            val component = Health(health)
             val citadel = fixture.create(health = component)
             fixture.chunk.resetDirty()
 
             assertFailsWith<IllegalStateException> { fixture.service.damage(citadel, 1.0) }
-            assertEquals(maxHealth, component.maxHealth)
+
             assertEquals(health, component.health)
             assertFalse(fixture.chunk.isDirty)
         }
@@ -367,19 +365,19 @@ class HealthServiceTest {
     fun `health initializer creates full static health and refuses duplicate initialization`() {
         val fixture = HealthFixture(createInitial = false)
         val draft = fixture.draft()
-        HealthInitializer(100.0).initialize(ActionContext.SYSTEM, draft)
+        fixture.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(100.0))
+        HealthInitializer(fixture.service).initialize(ActionContext.SYSTEM, draft)
         val health = assertNotNull(draft.getComponent(Health::class.java))
 
-        assertEquals(100.0, health.maxHealth)
         assertEquals(100.0, health.health)
         assertNull(draft.getComponent(Maturing::class.java))
-        assertFails { HealthInitializer(200.0).initialize(ActionContext.SYSTEM, draft) }
+        assertFails { HealthInitializer(fixture.service).initialize(ActionContext.SYSTEM, draft) }
         assertSame(health, draft.getComponent(Health::class.java))
         assertTrue(fixture.chunk.isEmpty)
         assertFalse(fixture.chunk.isDirty)
 
         for (maxHealth in listOf(0.0, -1.0, Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)) {
-            assertFailsWith<IllegalArgumentException> { HealthInitializer(maxHealth) }
+            assertFailsWith<IllegalArgumentException> { HealthDefinition(maxHealth) }
         }
     }
 }

@@ -2,21 +2,26 @@ package ru.fornax.fornaxcitadel.modules.health;
 
 import kotlin.Unit;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import ru.fornax.fornaxcitadel.core.citadel.CitadelKind;
 import ru.fornax.fornaxcitadel.core.facade.ActionManager;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager;
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
+import ru.fornax.fornaxcitadel.core.util.Key;
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService;
 
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
- * Applies authorized, modified damage on the owning game thread. Read health directly from its component.
+ * Applies authorized, modified damage on the owning game thread. Use currentHealth for read-only HP queries.
  * When assembled without CitadelModule, configure action metadata, prerequisite and authorization validators.
  * Direct calls do not notify action handlers.
  */
@@ -24,6 +29,8 @@ public final class HealthService implements LifecycleService {
     private final ActionManager actions;
     private final ComponentManager componentManager;
     private final RemoveService removeService;
+    private final MaturationService maturation;
+    private final Map<Key, HealthDefinition> definitions = new HashMap<>();
     private List<DamageModifier> modifiers = List.of();
     private final DamageProcessor processor = new DamageProcessor(this);
 
@@ -38,7 +45,40 @@ public final class HealthService implements LifecycleService {
         this.removeService = Objects.requireNonNull(removeService, "removeService");
         componentManager.registerComponent(Health.KEY, Health.class);
         componentManager.registerComponent(Maturing.KEY, Maturing.class);
-        registerModifier(new MaturingDamageModifier(Objects.requireNonNull(clock, "clock")));
+        maturation = new MaturationService(Objects.requireNonNull(clock, "clock"));
+        registerModifier(new MaturingDamageModifier(maturation));
+    }
+
+    @NotNull
+    public MaturationService getMaturation() { return maturation; }
+
+    /** Replaces live settings without changing saved HP or marking any chunks dirty. */
+    public void registerDefinition(@NotNull Key key, @NotNull HealthDefinition definition) {
+        definitions.put(Objects.requireNonNull(key, "key"), Objects.requireNonNull(definition, "definition"));
+    }
+
+    @Nullable
+    public HealthDefinition findDefinition(@NotNull Key key) { return definitions.get(key); }
+
+    public boolean unregisterDefinition(@NotNull Key key) { return definitions.remove(key) != null; }
+
+    @Nullable
+    public Double maxHealth(@NotNull CitadelHandle citadel) {
+        Key key = definitionKey(citadel);
+        HealthDefinition definition = key == null ? null : findDefinition(key);
+        return definition == null ? null : definition.getMaxHealth();
+    }
+
+    /**
+     * Returns saved HP, or the current maximum when Health has not been created yet.
+     * Does not create a component, clamp saved HP or dirty storage. Unavailable/foreign handles return null.
+     */
+    @Nullable
+    public Double currentHealth(@NotNull CitadelHandle citadel) {
+        if (!componentManager.isCurrent(citadel)) return null;
+        Health component = citadel.getComponent(Health.class);
+        if (component != null) return component.health;
+        return maxHealth(citadel);
     }
 
     @Override
@@ -86,7 +126,7 @@ public final class HealthService implements LifecycleService {
     /**
      * Applies already-authorized damage with the system context, including all common modifiers.
      * External requests must pass through the action pipeline.
-     * Destruction is completed after editing health and cannot be cancelled by another validator.
+     * Destruction cannot be cancelled by another validator after calculation succeeds.
      */
     @NotNull
     public ActionResult damage(@NotNull CitadelHandle citadel, double damage) {
@@ -103,8 +143,10 @@ public final class HealthService implements LifecycleService {
         }
         if (!componentManager.isCurrent(citadel)) return ActionResult.DENIED;
         Health component = citadel.getComponent(Health.class);
-        if (component == null) return ActionResult.DENIED;
-        requireValidHealth(component);
+        Double initialHealth = currentHealth(citadel);
+        if (initialHealth != null) requireValidHealth(initialHealth);
+        Key originalKey = definitionKey(citadel);
+        Double maximum = maxHealth(citadel);
 
         double modifiedDamage = damage;
         List<DamageModifier> currentModifiers = modifiers;
@@ -115,15 +157,26 @@ public final class HealthService implements LifecycleService {
                         + " returned invalid damage: " + modifiedDamage);
             }
         }
-        if (!componentManager.isCurrent(citadel) || citadel.getComponent(Health.class) != component) {
+        if (!componentManager.isCurrent(citadel) || citadel.getComponent(Health.class) != component
+                || !Objects.equals(originalKey, definitionKey(citadel))
+                || !Objects.equals(maximum, maxHealth(citadel))
+                || !Objects.equals(initialHealth, currentHealth(citadel))) {
             return ActionResult.DENIED;
         }
-        requireValidHealth(component);
-        if (component.health == 0.0) {
+        // An authorized hit also removes a reinforcement with no health or configured maximum.
+        if (initialHealth == null || initialHealth == 0.0) {
             return removeService.remove(citadel);
         }
-        double remainingHealth = Math.max(0.0, component.health - modifiedDamage);
-        if (remainingHealth == component.health) return ActionResult.DENIED;
+        if (modifiedDamage == 0.0) return ActionResult.DENIED;
+        double damageableHealth = maximum == null ? initialHealth : Math.min(initialHealth, maximum);
+        double remainingHealth = Math.max(0.0, damageableHealth - modifiedDamage);
+        if (remainingHealth == initialHealth) return ActionResult.DENIED;
+        if (component == null) {
+            if (remainingHealth == 0.0) return removeService.remove(citadel);
+            componentManager.putComponent(Health.class, citadel.getWorld(), citadel.getX(), citadel.getY(), citadel.getZ(),
+                    new Health(remainingHealth));
+            return ActionResult.SUCCESS;
+        }
         boolean edited = citadel.editComponent(Health.class, health -> {
             health.health = remainingHealth;
             return Unit.INSTANCE;
@@ -146,11 +199,15 @@ public final class HealthService implements LifecycleService {
         return damage(citadel, action.getDamage(), action.getContext());
     }
 
-    private static void requireValidHealth(Health component) {
-        if (!Double.isFinite(component.maxHealth) || component.maxHealth <= 0.0
-                || !Double.isFinite(component.health) || component.health < 0.0
-                || component.health > component.maxHealth) {
-            throw new IllegalStateException("Health must be finite and between zero and its positive maximum");
+    @Nullable
+    private static Key definitionKey(CitadelHandle citadel) {
+        CitadelKind kind = citadel.getComponent(CitadelKind.class);
+        return kind == null ? null : kind.getDefinitionKey();
+    }
+
+    private static void requireValidHealth(double health) {
+        if (!Double.isFinite(health) || health < 0.0) {
+            throw new IllegalStateException("Health must be finite and non-negative");
         }
     }
 }

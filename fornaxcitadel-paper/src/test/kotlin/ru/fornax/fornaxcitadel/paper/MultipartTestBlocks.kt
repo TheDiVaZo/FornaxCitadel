@@ -13,7 +13,7 @@ import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
+import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -123,7 +123,7 @@ internal fun PaperTestFixture.placeExact(
     val position = block.testPosition()
     val draft = MutableCitadelDraft(position)
     draft.addComponent(CitadelKind::class.java, CitadelKind(type))
-    HealthInitializer(100.0).initialize(context(installer), draft)
+    draft.addComponent(Health::class.java, Health(100.0))
     assertEquals(ActionResult.SUCCESS, manager.createCitadel(draft))
     return assertNotNull(manager.findCitadel(worldId, block.x, block.y, block.z))
 }

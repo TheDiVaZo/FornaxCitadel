@@ -138,17 +138,15 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
         }
 
         private fun readDuration(value: Any?, path: String): Long {
-            require(value is Number) { "$path must be a positive whole number of seconds" }
+            require(value is Number) { "$path must be a non-negative whole number of seconds" }
             val seconds = try {
                 BigDecimal(value.toString()).longValueExact()
             } catch (exception: NumberFormatException) {
-                throw IllegalArgumentException("$path must be a positive whole number of seconds", exception)
+                throw IllegalArgumentException("$path must be a non-negative whole number of seconds", exception)
             } catch (exception: ArithmeticException) {
-                throw IllegalArgumentException("$path must be a positive whole number of seconds fitting in Long", exception)
+                throw IllegalArgumentException("$path must be a non-negative whole number of seconds fitting in Long", exception)
             }
-            require(seconds > 0 && seconds <= Long.MAX_VALUE / 1000) {
-                "$path must be positive and fit in milliseconds without overflow"
-            }
+            require(seconds >= 0) { "$path must be non-negative" }
             return seconds
         }
     }
@@ -183,9 +181,7 @@ data class HealthSettings(val max: Double) {
 
 data class MaturingSettings(val durationSeconds: Long, val initialDamageMultiplier: Double) {
     init {
-        require(durationSeconds > 0 && durationSeconds <= Long.MAX_VALUE / 1000) {
-            "maturing.duration-seconds must be positive and fit in milliseconds without overflow"
-        }
+        require(durationSeconds >= 0) { "maturing.duration-seconds must be non-negative" }
         require(initialDamageMultiplier.isFinite() && initialDamageMultiplier >= 1.0) {
             "maturing.initial-damage-multiplier must be finite and at least 1"
         }

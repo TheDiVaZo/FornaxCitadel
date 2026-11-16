@@ -14,6 +14,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -32,7 +33,8 @@ class PaperCreativeBreakingTest {
         for (type in listOf(PaperCitadelTypes.REINFORCED, PaperCitadelTypes.MATURING,
             PaperCitadelTypes.INVULNERABLE, protectedHealth)) {
             PaperTestFixture(permissions = true).use { fixture ->
-                fixture.module.registerDefinition(CitadelDefinition(protectedHealth, listOf(HealthInitializer(100.0))))
+                fixture.module.health.registerDefinition(protectedHealth, HealthDefinition(100.0))
+                fixture.module.registerDefinition(CitadelDefinition(protectedHealth, listOf(HealthInitializer(fixture.module.health))))
                 fixture.installer.permissions.add("fornaxcitadel.admin")
                 fixture.place(type)
                 val target = assertNotNull(fixture.target())

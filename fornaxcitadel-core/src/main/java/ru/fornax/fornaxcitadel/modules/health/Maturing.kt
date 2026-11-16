@@ -6,37 +6,16 @@ import java.io.DataInput
 import java.io.DataOutput
 
 /**
- * Persisted maturation parameters captured at placement. Start time uses Unix epoch milliseconds.
- * Progress is derived from the clock without updating this component or Health, including while unloaded.
+ * Only the placement time is persisted, in Unix epoch milliseconds.
+ * The definition key is already stored in CitadelKind; its current settings determine progress.
  */
-class Maturing(
-    var startedAtMillis: Long = 0L,
-    var maturationDurationMillis: Long = 1L,
-    var initialDamageMultiplier: Double = 1.0
-) : Component() {
-    init {
-        validate()
-    }
-
-    internal fun validate() {
-        require(maturationDurationMillis > 0) { "Maturation duration must be positive" }
-        require(initialDamageMultiplier.isFinite() && initialDamageMultiplier >= 1.0) {
-            "Initial damage multiplier must be finite and at least one"
-        }
-    }
-
+class Maturing(var startedAtMillis: Long = 0L) : Component() {
     override fun write(output: DataOutput) {
-        validate()
         output.writeLong(startedAtMillis)
-        output.writeLong(maturationDurationMillis)
-        output.writeDouble(initialDamageMultiplier)
     }
 
     override fun read(input: DataInput) {
         startedAtMillis = input.readLong()
-        maturationDurationMillis = input.readLong()
-        initialDamageMultiplier = input.readDouble()
-        validate()
     }
 
     companion object {

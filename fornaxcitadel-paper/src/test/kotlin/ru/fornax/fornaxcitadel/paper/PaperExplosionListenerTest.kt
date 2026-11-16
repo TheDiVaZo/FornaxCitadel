@@ -45,6 +45,25 @@ import kotlin.test.assertTrue
 
 class PaperExplosionListenerTest {
     @Test
+    fun `zero explosion damage leaves healthless block for vanilla destruction unless invulnerable`() {
+        for (protected in listOf(false, true)) {
+            PaperTestFixture(permissions = true, explosionPowers = ExplosionPowerSettings(
+                defaultBlockPower = 0.0f, blockPowers = emptyMap())).use { f ->
+                val type = if (protected) PaperCitadelTypes.INVULNERABLE else PaperCitadelTypes.REINFORCED
+                f.installer.permissions.add("fornaxcitadel.admin")
+                f.place(type)
+                f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+                f.module.health.unregisterDefinition(type)
+                val event = f.blockExplosion(f.block())
+                dispatch(f.explosionListener, event, f.plugin)
+                assertEquals(protected, f.module.citadels.findProtecting(f.position) != null)
+                assertEquals(if (protected) emptyList() else listOf(f.block()), event.blockList())
+                assertEquals(0, f.vanillaBlockChanges)
+            }
+        }
+    }
+
+    @Test
     fun `entity and block explosion damage receive maturation exactly once in core`() {
         for (entityExplosion in listOf(true, false)) {
             PaperTestFixture(explosionPowers = ExplosionPowerSettings(
@@ -69,7 +88,7 @@ class PaperExplosionListenerTest {
 
                 assertEquals(listOf(5.0), sourceDamage)
                 assertEquals(20.0, fixture.health())
-                assertEquals(40.0, target.getComponent(Health::class.java)?.maxHealth)
+                assertEquals(40.0, fixture.module.health.maxHealth(target))
                 assertEquals(0, fixture.vanillaBlockChanges)
             }
         }

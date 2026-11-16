@@ -43,7 +43,7 @@ class PaperBreakingListenerTest {
             dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
 
             assertEquals(32.0, fixture.health())
-            assertEquals(40.0, target.getComponent(Health::class.java)?.maxHealth)
+            assertEquals(40.0, fixture.module.health.maxHealth(target))
             assertEquals(listOf(2.0), sourceDamage)
             assertEquals(1, modifierCalls)
             fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
@@ -51,8 +51,6 @@ class PaperBreakingListenerTest {
             val restored = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
             val maturing = assertNotNull(restored.getComponent(Maturing::class.java))
             assertEquals(Long.MAX_VALUE, maturing.startedAtMillis)
-            assertEquals(600_000L, maturing.maturationDurationMillis)
-            assertEquals(4.0, maturing.initialDamageMultiplier)
             assertEquals(32.0, fixture.health())
 
             dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)

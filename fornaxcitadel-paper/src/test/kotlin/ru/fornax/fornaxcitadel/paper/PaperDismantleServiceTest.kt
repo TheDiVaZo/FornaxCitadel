@@ -10,7 +10,6 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
-import ru.fornax.fornaxcitadel.core.citadel.ReinforcementItem
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -102,7 +101,8 @@ class PaperDismantleServiceTest {
     @Test
     fun `missing or failing material adapters preserve the reinforcement and block`() {
         for (providerPresent in listOf(false, true)) {
-            PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(0.0)).use { fixture ->
+            PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(0.0),
+                citadelSettings = typesWithItem(Key("external", "broken_refund"))).use { fixture ->
                 val key = Key("external", "broken_refund")
                 if (providerPresent) fixture.materials.register(key.namespace, TestMaterialRegistry(object : MaterialAdapter {
                     override fun getKey() = key
@@ -143,6 +143,7 @@ class PaperDismantleServiceTest {
         for (initiallyFull in listOf(false, true)) {
             var rolls = 0
             PaperTestFixture(dismantleSettings = DismantleSettings(0.5),
+                citadelSettings = typesWithItem(Key("custom", "health_changing_refund")),
                 dismantleRandom = { rolls++; 0.75 }).use { fixture ->
                 val key = Key("custom", "health_changing_refund")
                 fixture.placeWithItem(key)
@@ -150,7 +151,7 @@ class PaperDismantleServiceTest {
                 if (!initiallyFull) assertTrue(original.editComponent(Health::class.java) { it.health = 99.0 })
                 val changeHealth = {
                     assertTrue(original.editComponent(Health::class.java) {
-                        it.health = if (initiallyFull) 99.0 else it.maxHealth
+                        it.health = if (initiallyFull) 99.0 else fixture.module.health.maxHealth(original)!!
                     })
                 }
                 fixture.materials.register(key.namespace, TestMaterialRegistry(object : MaterialAdapter {
@@ -205,7 +206,8 @@ class PaperDismantleServiceTest {
 
     @Test
     fun `replacement made during material preparation is never removed or refunded using the old handle`() {
-        PaperTestFixture(dismantleSettings = DismantleSettings(1.0)).use { fixture ->
+        PaperTestFixture(dismantleSettings = DismantleSettings(1.0),
+            citadelSettings = typesWithItem(Key("custom", "replacing_refund"))).use { fixture ->
             val key = Key("custom", "replacing_refund")
             fixture.placeWithItem(key)
             val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
@@ -218,7 +220,7 @@ class PaperDismantleServiceTest {
                     val replacement = MutableCitadelDraft(fixture.position).apply {
                         addComponent(CitadelKind::class.java, CitadelKind(PaperCitadelTypes.REINFORCED))
                         addComponent(CitadelOwner::class.java, CitadelOwner(fixture.stranger.id))
-                        HealthInitializer(7.0).initialize(fixture.context(fixture.stranger), this)
+                        addComponent(Health::class.java, Health(7.0))
                     }
                     assertEquals(ActionResult.SUCCESS, fixture.manager.createCitadel(replacement))
                     return TestItemStack(Material.IRON_INGOT, amount)
@@ -260,7 +262,8 @@ class PaperDismantleServiceTest {
     @Test
     fun `original custom material and owner survive reload and creative placement also refunds`() {
         for (mode in listOf(GameMode.SURVIVAL, GameMode.CREATIVE)) {
-            PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
+            PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0),
+                citadelSettings = typesWithItem(Key("custom", "original_reinforcement"))).use { fixture ->
                 val adapter = TestMaterialAdapter(Key("custom", "original_reinforcement"))
                 fixture.materials.register("custom", TestMaterialRegistry(adapter))
                 fixture.placementService.registerMaterial(adapter.getKey(), PaperCitadelTypes.REINFORCED)
@@ -272,7 +275,7 @@ class PaperDismantleServiceTest {
                 fixture.loadChunk(0, 0)
                 val restored = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
                 assertEquals(fixture.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
-                assertEquals(adapter.getKey(), restored.getComponent(ReinforcementItem::class.java)?.materialKey)
+                assertEquals(adapter.getKey(), fixture.citadelTypes.itemKey(restored))
 
                 assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
                 val returned = fixture.droppedItems.single().second
@@ -288,8 +291,7 @@ class PaperDismantleServiceTest {
             val (lower, upper) = fixture.door()
             // Existing linked protection is independent of the current solid-block placement filter.
             assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(
-                fixture.context(fixture.installer), upper.testPosition(), PaperCitadelTypes.REINFORCED,
-                Key("minecraft", "iron_ingot"))))
+                fixture.context(fixture.installer), upper.testPosition(), PaperCitadelTypes.REINFORCED)))
             val original = assertNotNull(fixture.module.citadels.findProtecting(upper.testPosition()))
             assertEquals(lower.testPosition(), original.position)
 
@@ -304,7 +306,7 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `legacy reinforcement has no implicit owner and dismantle lifecycle leaves external validators alone`() {
+    fun `unowned reinforcement requires authorization and lifecycle leaves external validators alone`() {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.placeExact(fixture.block())
             val action = fixture.action()
@@ -319,7 +321,7 @@ class PaperDismantleServiceTest {
             fixture.dismantleService.enable()
             fixture.dismantleService.enable()
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
-            assertTrue(fixture.droppedItems.isEmpty())
+            assertEquals(Material.IRON_INGOT, fixture.droppedItems.single().second.type)
             assertTrue(coordinator.unregisterValidator(grant))
         }
     }
@@ -329,7 +331,8 @@ class PaperDismantleServiceTest {
 
     private fun PaperTestFixture.placeWithItem(key: Key?) {
         assertEquals(ActionResult.SUCCESS, module.actions.execute(
-            PlaceAction(context(installer), position, PaperCitadelTypes.REINFORCED, key)))
+            PlaceAction(context(installer), position, PaperCitadelTypes.REINFORCED)))
+        if (key == null) manager.removeComponent(CitadelKind::class.java, worldId, position.x, position.y, position.z)
     }
 
     private fun PaperTestFixture.validate(check: (DismantleAction) -> ActionValidator.Result): ActionValidator<DismantleAction> =

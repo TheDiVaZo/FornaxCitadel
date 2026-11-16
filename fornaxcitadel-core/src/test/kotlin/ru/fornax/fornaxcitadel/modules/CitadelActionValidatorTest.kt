@@ -97,8 +97,10 @@ class CitadelActionValidatorTest {
     fun `missing health passes validation and is handled by the damage service`() {
         Fixture().use { fixture ->
             val target = fixture.create(withHealth = false)
+            var calculations = 0
             fixture.module.health.registerModifier(DamageModifier { _, _, _ ->
-                error("Missing health and explicit destruction must not calculate damage")
+                calculations++
+                0.0
             })
 
             val damage = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
@@ -108,10 +110,13 @@ class CitadelActionValidatorTest {
             assertEquals(Result.Neutral, validators.validate(destroy))
             fixture.approve()
             assertEquals(Result.Success, validators.validate(damage))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(damage))
-            assertTrue(target.isCurrent)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(destroy))
+            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(damage))
             assertFalse(target.isCurrent)
+            assertEquals(1, calculations)
+            val replacement = fixture.create(withHealth = false)
+            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(destroy))
+            assertFalse(replacement.isCurrent)
+            assertEquals(1, calculations)
         }
     }
 
@@ -194,7 +199,7 @@ class CitadelActionValidatorTest {
         fun create(position: CitadelPosition = POSITION, withHealth: Boolean = true): CitadelHandle {
             val draft = MutableCitadelDraft(position).apply {
                 addComponent(CitadelKind::class.java, CitadelKind(TYPE))
-                if (withHealth) HealthInitializer(20.0).initialize(ActionContext.SYSTEM, this)
+                if (withHealth) addComponent(ru.fornax.fornaxcitadel.modules.health.Health::class.java, ru.fornax.fornaxcitadel.modules.health.Health(20.0))
             }
             assertEquals(ActionResult.SUCCESS, manager.createCitadel(draft))
             return assertNotNull(manager.findCitadel(position.world, position.x, position.y, position.z))
