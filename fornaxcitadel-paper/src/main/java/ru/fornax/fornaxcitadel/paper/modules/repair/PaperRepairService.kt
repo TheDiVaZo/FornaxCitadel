@@ -7,7 +7,6 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.paper.action.ActionRegistration
@@ -16,7 +15,7 @@ import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.consumeOneFromMainHand
 import ru.fornax.fornaxcitadel.paper.material.hasMaterial
 
-/** Repairs authorized reinforcement, claiming unowned targets through a child action first. */
+/** Restores an authorized, owned reinforcement to its current maximum health. */
 class PaperRepairService(
     private val module: CitadelModule,
     private val citadelTypes: PaperCitadelTypes,
@@ -29,14 +28,14 @@ class PaperRepairService(
     override fun enable() = registration.enable()
     override fun disable() = registration.disable()
 
-    /** Runs inside the action processor; a claim must finish before the repair commits. */
+    /** Executes a validated action; external requests must enter through module.actions. */
     fun repair(action: RepairAction): ActionResult {
         if (!registration.isEnabled) return ActionResult.DENIED
         val player = (action.context.source as? PlayerSource)?.player ?: return ActionResult.DENIED
         val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
             "Validated repair target is unavailable"
         }
-        val owner = citadel.getComponent(CitadelOwner::class.java)?.playerId
+        val owner = citadel.getComponent(CitadelOwner::class.java)?.playerId ?: return ActionResult.DENIED
         val kind = citadel.getComponent(CitadelKind::class.java)?.definitionKey
         val component = citadel.getComponent(Health::class.java)
         val health = module.health.currentHealth(citadel) ?: return ActionResult.DENIED
@@ -57,9 +56,6 @@ class PaperRepairService(
             citadel.getComponent(CitadelKind::class.java)?.definitionKey != kind ||
             citadel.getComponent(Health::class.java) !== component ||
             module.health.currentHealth(citadel) != health || module.health.maxHealth(citadel) != maximum) {
-            return ActionResult.DENIED
-        }
-        if (owner == null && module.actions.executeChild(ClaimAction(action.context, action.position)) != ActionResult.SUCCESS) {
             return ActionResult.DENIED
         }
         check(citadel.editComponent(Health::class.java) { it.health = maximum }) {

@@ -306,9 +306,9 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `unowned reinforcement permits dismantling and lifecycle leaves external validators alone`() {
+    fun `dismantle lifecycle leaves external validators alone and restores owner approval`() {
         PaperTestFixture(permissions = true).use { fixture ->
-            fixture.placeExact(fixture.block())
+            fixture.place()
             val action = fixture.action()
             val coordinator = fixture.module.actions.validatorCoordinator
             assertSame(ActionValidator.Result.Success, coordinator.validate(action))

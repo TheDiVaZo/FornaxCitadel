@@ -76,7 +76,6 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
-import ru.fornax.fornaxcitadel.paper.modules.claim.PaperClaimService
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.upgrade.PaperUpgradeService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -300,7 +299,6 @@ internal class PaperTestFixture(
         }
     }
     val dismantleService = PaperDismantleService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
-    val claimService = PaperClaimService(module)
     val repairService = PaperRepairService(module, citadelTypes, materials)
     val upgradeService = PaperUpgradeService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
     val breakingService = PaperBreakingService(plugin, module, citadelTypes, playerDamage, messages, creativeModeEnabled)
@@ -324,7 +322,6 @@ internal class PaperTestFixture(
         if (initializeModule) module.enable()
         if (initializeSystems) {
             dismantleService.enable()
-            claimService.enable()
             repairService.enable()
             upgradeService.enable()
             placementService.enable()
@@ -483,7 +480,6 @@ internal class PaperTestFixture(
         breakingService.disable()
         repairService.disable()
         upgradeService.disable()
-        claimService.disable()
         dismantleService.disable()
         placementService.disable()
         module.disable()

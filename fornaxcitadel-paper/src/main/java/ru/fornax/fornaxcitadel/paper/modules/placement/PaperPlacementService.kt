@@ -8,14 +8,12 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
@@ -103,13 +101,8 @@ class PaperPlacementService @JvmOverloads constructor(
                     messageGroup = "repair"
                     val health = module.health.currentHealth(citadel)
                     val maximum = module.health.maxHealth(citadel)
-                    if (health == null || maximum == null || health >= maximum) {
-                        if (citadel.getComponent(CitadelOwner::class.java) != null) return
-                        messageGroup = "claim"
-                        ClaimAction(context, position)
-                    } else {
-                        RepairAction(context, position)
-                    }
+                    if (health == null || maximum == null || health >= maximum) return
+                    RepairAction(context, position)
                 } else {
                     val destination = definitionsByMaterial[materialKey] ?: return
                     messageGroup = "upgrade"

@@ -8,7 +8,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
@@ -28,22 +27,19 @@ import kotlin.test.assertSame
 class PaperActionServicesTest {
     @Test
     fun `conflicting processor survives failed service enable and disable then service can retry`() {
-        for (kind in listOf("claim", "repair", "upgrade", "dismantle")) {
+        for (kind in listOf("repair", "upgrade", "dismantle")) {
             PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings()).use { f ->
                 f.place()
                 val target = assertNotNull(f.module.citadels.findProtecting(f.position))
                 val destination = Key("fornaxcitadel", "reinforced_heavy")
                 f.installer.held = f.reinforcementStack(if (kind == "upgrade") destination else PaperCitadelTypes.REINFORCED)
                 if (kind == "repair") target.editComponent(Health::class.java) { it.health = 5.0 }
-                if (kind == "claim") f.manager.removeComponent(CitadelOwner::class.java, f.worldId, 1, 64, 2)
                 val service: LifecycleService = when (kind) {
-                    "claim" -> f.claimService
                     "repair" -> f.repairService
                     "upgrade" -> f.upgradeService
                     else -> f.dismantleService
                 }
                 val action: ActionData = when (kind) {
-                    "claim" -> ClaimAction(f.context(f.installer), f.position)
                     "repair" -> RepairAction(f.context(f.installer), f.position)
                     "upgrade" -> UpgradeAction(f.context(f.installer), f.position, destination)
                     else -> DismantleAction(f.context(f.installer), f.position)
@@ -101,17 +97,21 @@ class PaperActionServicesTest {
             )
             val neutral = List(3) { ActionValidator.Result.Neutral }
             val success = List(3) { ActionValidator.Result.Success }
+            val rejected = List(3) { ActionValidator.Result.Rejected }
             assertEquals<List<ActionValidator.Result>>(success, results(f.context(f.installer)))
             assertEquals<List<ActionValidator.Result>>(neutral, results(f.context(f.stranger)))
             assertEquals<List<ActionValidator.Result>>(neutral, results(ActionContext.SYSTEM))
             f.manager.removeComponent(CitadelOwner::class.java, f.worldId, 1, 64, 2)
-            assertEquals<List<ActionValidator.Result>>(success, results(f.context(f.stranger)))
+            assertEquals<List<ActionValidator.Result>>(rejected, results(f.context(f.installer)))
+            assertEquals<List<ActionValidator.Result>>(rejected, results(f.context(f.stranger)))
+            assertEquals<List<ActionValidator.Result>>(rejected, results(ActionContext.SYSTEM))
             f.manager.removeCitadel(assertNotNull(f.module.citadels.findProtecting(f.position)))
             assertEquals<List<ActionValidator.Result>>(neutral, results(f.context(f.installer)))
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             assertEquals(listOf(ActionValidator.Result.Neutral, ActionValidator.Result.Rejected, ActionValidator.Result.Neutral),
                 results(f.context(f.installer)))
-            assertEquals<List<ActionValidator.Result>>(neutral, results(ActionContext.SYSTEM))
+            assertEquals(listOf(ActionValidator.Result.Neutral, ActionValidator.Result.Rejected, ActionValidator.Result.Neutral),
+                results(ActionContext.SYSTEM))
         }
     }
 }

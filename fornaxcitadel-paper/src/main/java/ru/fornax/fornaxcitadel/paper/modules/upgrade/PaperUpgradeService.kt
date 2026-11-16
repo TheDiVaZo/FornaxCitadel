@@ -10,7 +10,6 @@ import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableExcepti
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
-import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
@@ -44,11 +43,12 @@ class PaperUpgradeService @JvmOverloads constructor(
     override fun enable() = registration.enable()
     override fun disable() = registration.disable()
 
-    /** Runs inside the action processor; a claim must finish before the upgrade commits. */
+    /** Executes a validated action; external requests must enter through module.actions. */
     fun upgrade(action: UpgradeAction): ActionResult {
         if (!registration.isEnabled || !plugin.server.isPrimaryThread) return ActionResult.DENIED
         val player = (action.context.source as? PlayerSource)?.player ?: return ActionResult.DENIED
         val citadel = module.citadels.findProtecting(action.position) ?: return ActionResult.DENIED
+        val oldOwner = citadel.getComponent(CitadelOwner::class.java)?.playerId ?: return ActionResult.DENIED
         val oldKey = citadel.getComponent(CitadelKind::class.java)?.definitionKey
         if (oldKey == action.definitionKey) return ActionResult.DENIED
         val comparison = comparison(citadel, action.definitionKey) ?: return ActionResult.DENIED
@@ -61,7 +61,6 @@ class PaperUpgradeService @JvmOverloads constructor(
         val oldHealth = citadel.getComponent(Health::class.java)?.health
         if (oldHealth != null && (!oldHealth.isFinite() || oldHealth < 0.0)) return ActionResult.DENIED
         val oldMaximum = module.health.maxHealth(citadel)
-        val oldOwner = citadel.getComponent(CitadelOwner::class.java)?.playerId
         val oldStartedAt = citadel.getComponent(Maturing::class.java)?.startedAtMillis
         val position = citadel.position
         val world = plugin.server.getWorld(position.world) ?: return ActionResult.DENIED
@@ -103,9 +102,6 @@ class PaperUpgradeService @JvmOverloads constructor(
             return ActionResult.DENIED
         }
 
-        if (oldOwner == null && module.actions.executeChild(ClaimAction(action.context, action.position)) != ActionResult.SUCCESS) {
-            return ActionResult.DENIED
-        }
         val manager = module.actions.componentManager
         manager.putComponent(CitadelKind::class.java, position.world, position.x, position.y, position.z,
             CitadelKind(action.definitionKey))

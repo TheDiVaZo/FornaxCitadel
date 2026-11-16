@@ -6,7 +6,6 @@ import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
@@ -23,7 +22,7 @@ class CitadelActionValidator(
 
     override fun validate(action: ActionData): ActionValidator.Result {
         if (action !is PlaceAction && action !is DamageAction && action !is RemoveAction &&
-            action !is DismantleAction && action !is RepairAction && action !is UpgradeAction && action !is ClaimAction) return ActionValidator.Result.Neutral
+            action !is DismantleAction && action !is RepairAction && action !is UpgradeAction) return ActionValidator.Result.Neutral
         if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) {
             return ActionValidator.Result.Rejected
         }

@@ -26,10 +26,10 @@ permissions:
     description: Нанесение урона укреплению
     default: true
   fornaxcitadel.dismantle:
-    description: Снятие собственного или бесхозного укрепления с блока
+    description: Снятие собственного укрепления с блока
     default: true
   fornaxcitadel.repair:
-    description: Починка, приватизация и улучшение укрепления материалом
+    description: Починка и улучшение укрепления материалом
     default: true
   fornaxcitadel.info:
     description: Просмотр укрепления под прицелом

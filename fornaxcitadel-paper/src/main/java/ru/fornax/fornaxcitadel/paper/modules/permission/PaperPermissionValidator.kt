@@ -3,7 +3,6 @@ package ru.fornax.fornaxcitadel.paper.modules.permission
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
@@ -31,7 +30,6 @@ class PaperPermissionValidator(
             is DamageAction -> "fornaxcitadel.damage"
             is DismantleAction -> "fornaxcitadel.dismantle"
             is RepairAction -> "fornaxcitadel.repair"
-            is ClaimAction -> "fornaxcitadel.repair"
             is UpgradeAction -> "fornaxcitadel.repair"
             is RemoveAction -> "fornaxcitadel.admin"
             else -> return ActionValidator.Result.Neutral
@@ -50,7 +48,7 @@ class PaperPermissionValidator(
         if (destination != null && citadelTypes.requiresAdmin(destination) && !canAdminister(action.context)) {
             return ActionValidator.Result.Rejected
         }
-        return if (action is DamageAction || action is DismantleAction || action is RepairAction || action is UpgradeAction || action is ClaimAction) ActionValidator.Result.Neutral
+        return if (action is DamageAction || action is DismantleAction || action is RepairAction || action is UpgradeAction) ActionValidator.Result.Neutral
         else ActionValidator.Result.Success
     }
 }

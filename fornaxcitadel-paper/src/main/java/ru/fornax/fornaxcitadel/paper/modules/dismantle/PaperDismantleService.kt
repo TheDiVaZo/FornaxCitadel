@@ -36,14 +36,14 @@ class PaperDismantleService @JvmOverloads constructor(
      */
     fun dismantle(action: DismantleAction): ActionResult {
         if (!registration.isEnabled) return ActionResult.DENIED
+        val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
+            "Validated dismantle target is unavailable"
+        }
+        val owner = citadel.getComponent(CitadelOwner::class.java)?.playerId ?: return ActionResult.DENIED
         val world = checkNotNull(plugin.server.getWorld(action.citadelW)) {
             "Validated dismantle world is unavailable"
         }
         val block = world.getBlockAt(action.citadelX, action.citadelY, action.citadelZ)
-        val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
-            "Validated dismantle target is unavailable"
-        }
-        val owner = citadel.getComponent(CitadelOwner::class.java)?.playerId
         val health = citadel.getComponent(Health::class.java)
         val maximum = module.health.maxHealth(citadel)
         val refundChance = refunds.chance(health == null || maximum != null && health.health >= maximum)

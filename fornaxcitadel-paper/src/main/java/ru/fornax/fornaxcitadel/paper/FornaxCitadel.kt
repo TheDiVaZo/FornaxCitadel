@@ -29,7 +29,6 @@ import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
-import ru.fornax.fornaxcitadel.paper.modules.claim.PaperClaimService
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.upgrade.PaperUpgradeService
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
@@ -57,8 +56,6 @@ class FornaxCitadel : JavaPlugin() {
     lateinit var placement: PaperPlacementService
         private set
     lateinit var dismantle: PaperDismantleService
-        private set
-    lateinit var claim: PaperClaimService
         private set
     lateinit var repair: PaperRepairService
         private set
@@ -129,7 +126,6 @@ class FornaxCitadel : JavaPlugin() {
                 }
             }
             dismantle = PaperDismantleService(this, module, citadelTypes, materials, settings.dismantle).also(services::add)
-            claim = PaperClaimService(module).also(services::add)
             repair = PaperRepairService(module, citadelTypes, materials).also(services::add)
             upgrade = PaperUpgradeService(this, module, citadelTypes, materials, settings.dismantle).also(services::add)
             val breaking = PaperBreakingService(this, module, citadelTypes, playerDamage, messages,

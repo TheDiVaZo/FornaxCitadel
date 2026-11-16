@@ -10,7 +10,6 @@ import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry.ActionMeta
-import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.HealthService
@@ -26,7 +25,7 @@ import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
  * call [enable] to attach processors and prerequisite validators and [disable] to detach them.
  *
  * Register read-only authorization checks on [actions.validatorCoordinator]. Damage, explicit
- * destruction, administrative removal, dismantling, repair, claiming and upgrade require a validator's Success; a rejection always wins.
+ * destruction, administrative removal, dismantling, repair and upgrade require a validator's Success; a rejection always wins.
  * This module validates target availability and placement prerequisites before execution.
  * These prerequisite checks never grant authorization. Definitions configure initial components;
  * source keys are attribution.
@@ -52,7 +51,6 @@ class CitadelModule @JvmOverloads constructor(
         actionMetaRegistry.register(DamageAction.KEY, ActionMeta(false))
         actionMetaRegistry.register(DismantleAction.KEY, ActionMeta(false))
         actionMetaRegistry.register(RepairAction.KEY, ActionMeta(false))
-        actionMetaRegistry.register(ClaimAction.KEY, ActionMeta(false))
         actionMetaRegistry.register(UpgradeAction.KEY, ActionMeta(false))
     }
     val place = PlaceService(actions, definitions)

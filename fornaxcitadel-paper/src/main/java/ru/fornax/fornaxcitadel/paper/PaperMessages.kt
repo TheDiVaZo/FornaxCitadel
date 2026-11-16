@@ -57,7 +57,7 @@ class PaperMessages private constructor(
             val format = format(value(configuration, "format"))
             val templates = linkedMapOf<String, Component>()
             val channels = linkedMapOf<String, Channel>()
-            for (group in listOf("placement", "breaking", "repair", "upgrade", "claim")) {
+            for (group in listOf("placement", "breaking", "repair", "upgrade")) {
                 val section = requireNotNull(configuration.getConfigurationSection(group)) {
                     "$group must be a mapping"
                 }

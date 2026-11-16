@@ -20,16 +20,6 @@ placement:
     text: '<red>Не удалось выполнить действие. Сообщите администратору.</red>'
     channel: ACTION_BAR
 
-claim:
-  success:
-    text: '<green>Теперь вы владелец этого укрепления.</green>'
-    channel: ACTION_BAR
-  denied:
-    text: '<red>Не удалось приватизировать укрепление.</red>'
-    channel: ACTION_BAR
-  error:
-    text: '<red>Ошибка при приватизации укрепления.</red>'
-    channel: ACTION_BAR
 repair:
   success:
     text: '<green>Укрепление восстановлено.</green>'

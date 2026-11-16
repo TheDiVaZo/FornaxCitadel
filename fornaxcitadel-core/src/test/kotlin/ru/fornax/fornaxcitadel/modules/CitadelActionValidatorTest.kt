@@ -26,7 +26,6 @@ import ru.fornax.fornaxcitadel.modules.health.DamageModifier
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
-import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import java.util.UUID
@@ -229,7 +228,7 @@ class CitadelActionValidatorTest {
 
         fun recordExecutions() {
             val processors = module.actions.processorCoordinator
-            for (key in listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY, ClaimAction.KEY)) {
+            for (key in listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY)) {
                 processors.getProcessor(key)?.let(processors::unregisterProcessor)
                 processors.registerProcessor(object : ActionProcessor<ActionData>() {
                     override val actionClass = ActionData::class.java
@@ -269,7 +268,6 @@ class CitadelActionValidatorTest {
             RemoveAction(ActionContext.SYSTEM, position),
             DismantleAction(ActionContext.SYSTEM, position),
             RepairAction(ActionContext.SYSTEM, position),
-            ClaimAction(ActionContext.SYSTEM, position),
             UpgradeAction(ActionContext.SYSTEM, position, TYPE)
         )
     }
