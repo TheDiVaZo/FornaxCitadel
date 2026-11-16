@@ -1,8 +1,11 @@
 package ru.fornax.fornaxcitadel.paper.modules.upgrade
 
+import org.bukkit.block.Block
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
+import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -59,11 +62,7 @@ class PaperUpgradeService @JvmOverloads constructor(
         val oldHealth = citadel.getComponent(Health::class.java)?.health
         if (oldHealth != null && (!oldHealth.isFinite() || oldHealth < 0.0)) return ActionResult.DENIED
         val oldMaximum = module.health.maxHealth(citadel)
-        val position = citadel.position
-        val world = plugin.server.getWorld(position.world) ?: return ActionResult.DENIED
-        if (!world.isChunkLoaded(position.x shr 4, position.z shr 4)) return ActionResult.DENIED
-        val block = world.getBlockAt(position.x, position.y, position.z)
-        if (block.isEmpty) return ActionResult.DENIED
+        val block = findLoadedBlock(citadel.position) ?: return ActionResult.DENIED
         if (materials.getTypeOrNull(held)?.getKey() != itemKey) return ActionResult.DENIED
         val currentHealth = module.health.currentHealth(citadel)
         val refundChance = refunds.chance(currentHealth != null && oldMaximum != null && currentHealth >= oldMaximum)
@@ -76,19 +75,31 @@ class PaperUpgradeService @JvmOverloads constructor(
         val dropRefund = refund != null && refunds.shouldDrop(refundChance)
         val startedAt = clock.millis()
 
+        applyUpgrade(citadel, action.definitionKey, comparison.newHealth, startedAt)
+        player.consumeOneFromMainHand(held)
+        if (dropRefund) block.world.dropItemNaturally(block.location.add(0.5, 0.5, 0.5), checkNotNull(refund))
+        return ActionResult.SUCCESS
+    }
+
+    private fun findLoadedBlock(position: CitadelPosition): Block? {
+        val world = plugin.server.getWorld(position.world) ?: return null
+        if (!world.isChunkLoaded(position.x shr 4, position.z shr 4)) return null
+        val block = world.getBlockAt(position.x, position.y, position.z)
+        return block.takeUnless { it.isEmpty }
+    }
+
+    private fun applyUpgrade(citadel: CitadelHandle, destination: Key, maximum: Double?, startedAtMillis: Long) {
+        val position = citadel.position
         val manager = module.actions.componentManager
         manager.putComponent(CitadelKind::class.java, position.world, position.x, position.y, position.z,
-            CitadelKind(action.definitionKey))
-        if (comparison.newHealth == null) {
+            CitadelKind(destination))
+        if (maximum == null) {
             manager.removeComponent(Health::class.java, position.world, position.x, position.y, position.z)
         } else {
-            manager.putComponent(Health::class.java, position.world, position.x, position.y, position.z,
-                Health(comparison.newHealth))
+            manager.putComponent(Health::class.java, position.world, position.x, position.y, position.z, Health(maximum))
         }
-        manager.putComponent(Maturing::class.java, position.world, position.x, position.y, position.z, Maturing(startedAt))
-        player.consumeOneFromMainHand(held)
-        if (dropRefund) world.dropItemNaturally(block.location.add(0.5, 0.5, 0.5), checkNotNull(refund))
-        return ActionResult.SUCCESS
+        manager.putComponent(Maturing::class.java, position.world, position.x, position.y, position.z,
+            Maturing(startedAtMillis))
     }
 
     private fun comparison(citadel: ReadableHandle, destination: Key): UpgradeComparison? {
