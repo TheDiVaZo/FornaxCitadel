@@ -1,6 +1,5 @@
 package ru.fornax.fornaxcitadel.paper.modules.placement
 
-import org.bukkit.GameMode
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import org.bukkit.event.Event
@@ -23,6 +22,7 @@ import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.PaperMessages
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.material.consumeOneFromMainHand
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
 
@@ -159,10 +159,7 @@ class PaperPlacementService @JvmOverloads constructor(
                 messages.sendGameplay(player, "placement.denied")
                 return
             }
-            if (player.gameMode != GameMode.CREATIVE) {
-                held.amount--
-                player.inventory.setItemInMainHand(if (held.amount == 0) null else held)
-            }
+            player.consumeOneFromMainHand(held)
             messages.sendGameplay(player, "placement.success")
         } catch (exception: Exception) {
             plugin.logger.log(Level.SEVERE, "Could not place a citadel", exception)

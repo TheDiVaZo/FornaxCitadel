@@ -10,9 +10,10 @@ import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
-import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
+import ru.fornax.fornaxcitadel.paper.action.ActionRegistration
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.material.consumeOneFromMainHand
 import ru.fornax.fornaxcitadel.paper.material.hasMaterial
 
 /** Repairs authorized reinforcement, claiming unowned targets through a child action first. */
@@ -21,35 +22,16 @@ class PaperRepairService(
     private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry
 ) : LifecycleService {
-    private val validator = OwnerRepairValidator(module.citadels)
-    private val processor = object : ActionProcessor<RepairAction>() {
-        override val actionClass = RepairAction::class.java
-        override val actionKey = RepairAction.KEY
-        override fun execute(action: RepairAction) = repair(action)
-    }
-    private var enabled = false
+    private val registration = ActionRegistration(
+        module.actions, RepairAction::class.java, RepairAction.KEY, OwnerRepairValidator(module.citadels), ::repair
+    )
 
-    override fun enable() {
-        if (enabled) return
-        module.actions.processorCoordinator.registerProcessor(processor)
-        try {
-            module.actions.validatorCoordinator.registerValidator(validator)
-            enabled = true
-        } catch (failure: Throwable) {
-            module.actions.processorCoordinator.unregisterProcessor(processor)
-            throw failure
-        }
-    }
-
-    override fun disable() {
-        module.actions.validatorCoordinator.unregisterValidator(validator)
-        module.actions.processorCoordinator.unregisterProcessor(processor)
-        enabled = false
-    }
+    override fun enable() = registration.enable()
+    override fun disable() = registration.disable()
 
     /** Runs inside the action processor; a claim must finish before the repair commits. */
     fun repair(action: RepairAction): ActionResult {
-        if (!enabled) return ActionResult.DENIED
+        if (!registration.isEnabled) return ActionResult.DENIED
         val player = (action.context.source as? PlayerSource)?.player ?: return ActionResult.DENIED
         val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
             "Validated repair target is unavailable"
@@ -83,10 +65,7 @@ class PaperRepairService(
         check(citadel.editComponent(Health::class.java) { it.health = maximum }) {
             "Validated repair target changed during commit"
         }
-        if (player.gameMode != GameMode.CREATIVE) {
-            held.amount--
-            player.inventory.setItemInMainHand(if (held.amount == 0) null else held)
-        }
+        player.consumeOneFromMainHand(held)
         return ActionResult.SUCCESS
     }
 }

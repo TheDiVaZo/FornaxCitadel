@@ -8,7 +8,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
+import ru.fornax.fornaxcitadel.paper.action.ActionRegistration
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import java.util.logging.Level
 import kotlin.random.Random
@@ -23,38 +23,19 @@ class PaperDismantleService @JvmOverloads constructor(
     random: () -> Double = { Random.nextDouble() }
 ) : LifecycleService {
     private val refunds = ReinforcementRefunds(materials, settings, random)
-    private val validator = OwnerDismantleValidator(module.citadels)
-    private val processor = object : ActionProcessor<DismantleAction>() {
-        override val actionClass = DismantleAction::class.java
-        override val actionKey = DismantleAction.KEY
-        override fun execute(action: DismantleAction) = dismantle(action)
-    }
-    private var enabled = false
+    private val registration = ActionRegistration(
+        module.actions, DismantleAction::class.java, DismantleAction.KEY, OwnerDismantleValidator(module.citadels), ::dismantle
+    )
 
-    override fun enable() {
-        if (enabled) return
-        module.actions.processorCoordinator.registerProcessor(processor)
-        try {
-            module.actions.validatorCoordinator.registerValidator(validator)
-            enabled = true
-        } catch (failure: Throwable) {
-            module.actions.processorCoordinator.unregisterProcessor(processor)
-            throw failure
-        }
-    }
-
-    override fun disable() {
-        module.actions.validatorCoordinator.unregisterValidator(validator)
-        module.actions.processorCoordinator.unregisterProcessor(processor)
-        enabled = false
-    }
+    override fun enable() = registration.enable()
+    override fun disable() = registration.disable()
 
     /**
      * Executes an action whose source and target have already passed core and platform validation.
      * Direct callers must uphold those prerequisites; external requests must enter through module.actions.
      */
     fun dismantle(action: DismantleAction): ActionResult {
-        if (!enabled) return ActionResult.DENIED
+        if (!registration.isEnabled) return ActionResult.DENIED
         val world = checkNotNull(plugin.server.getWorld(action.citadelW)) {
             "Validated dismantle world is unavailable"
         }

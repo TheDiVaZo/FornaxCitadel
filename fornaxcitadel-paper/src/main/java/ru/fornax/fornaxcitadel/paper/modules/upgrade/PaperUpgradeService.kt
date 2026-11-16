@@ -14,9 +14,10 @@ import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
-import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
+import ru.fornax.fornaxcitadel.paper.action.ActionRegistration
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.material.consumeOneFromMainHand
 import ru.fornax.fornaxcitadel.paper.material.hasMaterial
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.ReinforcementRefunds
@@ -36,35 +37,16 @@ class PaperUpgradeService @JvmOverloads constructor(
     private val clock: Clock = Clock.systemUTC()
 ) : LifecycleService {
     private val refunds = ReinforcementRefunds(materials, settings, random)
-    private val validator = OwnerUpgradeValidator(module.citadels)
-    private val processor = object : ActionProcessor<UpgradeAction>() {
-        override val actionClass = UpgradeAction::class.java
-        override val actionKey = UpgradeAction.KEY
-        override fun execute(action: UpgradeAction) = upgrade(action)
-    }
-    private var enabled = false
+    private val registration = ActionRegistration(
+        module.actions, UpgradeAction::class.java, UpgradeAction.KEY, OwnerUpgradeValidator(module.citadels), ::upgrade
+    )
 
-    override fun enable() {
-        if (enabled) return
-        module.actions.processorCoordinator.registerProcessor(processor)
-        try {
-            module.actions.validatorCoordinator.registerValidator(validator)
-            enabled = true
-        } catch (failure: Throwable) {
-            module.actions.processorCoordinator.unregisterProcessor(processor)
-            throw failure
-        }
-    }
-
-    override fun disable() {
-        module.actions.validatorCoordinator.unregisterValidator(validator)
-        module.actions.processorCoordinator.unregisterProcessor(processor)
-        enabled = false
-    }
+    override fun enable() = registration.enable()
+    override fun disable() = registration.disable()
 
     /** Runs inside the action processor; a claim must finish before the upgrade commits. */
     fun upgrade(action: UpgradeAction): ActionResult {
-        if (!enabled || !plugin.server.isPrimaryThread) return ActionResult.DENIED
+        if (!registration.isEnabled || !plugin.server.isPrimaryThread) return ActionResult.DENIED
         val player = (action.context.source as? PlayerSource)?.player ?: return ActionResult.DENIED
         val citadel = module.citadels.findProtecting(action.position) ?: return ActionResult.DENIED
         val oldKey = citadel.getComponent(CitadelKind::class.java)?.definitionKey
@@ -134,10 +116,7 @@ class PaperUpgradeService @JvmOverloads constructor(
                 Health(comparison.newHealth))
         }
         manager.putComponent(Maturing::class.java, position.world, position.x, position.y, position.z, Maturing(startedAt))
-        if (player.gameMode != GameMode.CREATIVE) {
-            currentItem.amount--
-            player.inventory.setItemInMainHand(if (currentItem.amount == 0) null else currentItem)
-        }
+        player.consumeOneFromMainHand(currentItem)
         if (dropRefund) world.dropItemNaturally(block.location.add(0.5, 0.5, 0.5), checkNotNull(refund))
         return ActionResult.SUCCESS
     }
