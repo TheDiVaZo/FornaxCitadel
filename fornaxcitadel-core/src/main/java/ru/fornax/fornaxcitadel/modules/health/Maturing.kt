@@ -9,7 +9,9 @@ import java.io.DataOutput
  * Only the placement time is persisted, in Unix epoch milliseconds.
  * The definition key is already stored in CitadelKind; its current settings determine progress.
  */
-class Maturing(var startedAtMillis: Long = 0L) : Component() {
+class Maturing(override var startedAtMillis: Long = 0L) : Component<ReadableMaturing>(), ReadableMaturing {
+    override val readable: ReadableMaturing get() = this
+
     override fun write(output: DataOutput) {
         output.writeLong(startedAtMillis)
     }

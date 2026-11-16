@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.component.ReadableComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
@@ -309,7 +310,8 @@ class CitadelFacadeTest {
 
     private class SpecializedDamage(position: CitadelPosition, amount: Double) : DamageAction(CONTEXT, position, amount)
 
-    private class UnregisteredComponent : Component() {
+    private class UnregisteredComponent : Component<ReadableComponent>(), ReadableComponent {
+        override val readable: ReadableComponent get() = this
         override fun write(output: DataOutput) = Unit
         override fun read(input: DataInput) = Unit
     }

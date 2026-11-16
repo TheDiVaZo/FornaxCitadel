@@ -3,8 +3,10 @@ package ru.fornax.fornaxcitadel.core.systems.observation
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.testing.ReadableTestValue
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
@@ -35,12 +37,12 @@ class ObservationReentrancyTest {
             val system = object : ObservationSystem<String> {
                 override val requiredComponents = setOf(ValueComponent::class.java)
 
-                override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+                override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
                     assertTrue(resources.add(citadel.runtimeId), "New resources must follow the previous detach")
                     events.add(citadel.runtimeId to "enter")
                 }
 
-                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
+                override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
                     assertTrue(citadel.runtimeId in resources, "Old cleanup must not destroy the new session")
                 }
 
@@ -85,7 +87,7 @@ class ObservationReentrancyTest {
             val system = object : ObservationSystem<String> {
                 override val requiredComponents = setOf(ValueComponent::class.java)
 
-                override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+                override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
                     val component = checkNotNull(citadel.getComponent(ValueComponent::class.java))
                     enters++
                     // Fail promptly if reconciliation regresses to an endless enter/replace loop.
@@ -97,7 +99,7 @@ class ObservationReentrancyTest {
                     )
                 }
 
-                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
+                override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
                     assertTrue(citadel.runtimeId in resources)
                 }
 
@@ -142,11 +144,11 @@ class ObservationReentrancyTest {
             val system = object : ObservationSystem<String> {
                 override val requiredComponents = setOf(ValueComponent::class.java)
 
-                override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+                override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
                     if (viewer == "replacement") replacementEnters.add(citadel.runtimeId)
                 }
 
-                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
+                override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
                     assertEquals(listOf("replacement"), viewers)
                     ticks.add(citadel.runtimeId)
                 }
@@ -188,7 +190,7 @@ class ObservationReentrancyTest {
             val system = object : ObservationSystem<String> {
                 override val requiredComponents = setOf(ValueComponent::class.java)
 
-                override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+                override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
                     events.add("enter:${citadel.x}:$viewer")
                     if (viewer == "alice") {
                         if (citadel.runtimeId == first.runtimeId) {
@@ -204,7 +206,7 @@ class ObservationReentrancyTest {
                     events.add("leave:${citadel.position.x}:$viewer")
                 }
 
-                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
+                override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
                     audiences.add(viewers)
                 }
             }
@@ -236,7 +238,7 @@ class ObservationReentrancyTest {
             fixture.service.registerSystem(object : ObservationSystem<String> {
                 override val requiredComponents = setOf(ValueComponent::class.java)
 
-                override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+                override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
                     if (replaceComponent && citadel.runtimeId == first.runtimeId) {
                         replaceComponent = false
                         fixture.manager.putComponent(
@@ -245,12 +247,12 @@ class ObservationReentrancyTest {
                     }
                 }
 
-                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) = Unit
+                override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) = Unit
             })
             fixture.service.registerSystem(object : ObservationSystem<String> {
                 override val requiredComponents = setOf(ValueComponent::class.java)
 
-                override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+                override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
                     events.add("enter:${citadel.x}")
                     if (interrupt) {
                         interrupt = false
@@ -267,7 +269,7 @@ class ObservationReentrancyTest {
                     events.add("detach:${citadel.position.x}")
                 }
 
-                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
+                override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
                     events.add("tick:${citadel.x}")
                 }
             })
@@ -355,7 +357,8 @@ class ObservationReentrancyTest {
         }
     }
 
-    private class ValueComponent(val value: Int) : Component() {
+    private class ValueComponent(override val value: Int) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun read(input: DataInput) = error("Observation does not deserialize components")
         override fun write(output: DataOutput) { output.writeInt(value) }
     }

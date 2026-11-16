@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.modules.health
 
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 
 /**
@@ -10,5 +10,5 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
  * Health may still be absent before the first hit; use HealthService.currentHealth for effective HP.
  */
 fun interface DamageModifier {
-    fun getDamage(context: ActionContext, citadel: CitadelHandle, currentDamage: Double): Double
+    fun getDamage(context: ActionContext, citadel: ReadableHandle, currentDamage: Double): Double
 }

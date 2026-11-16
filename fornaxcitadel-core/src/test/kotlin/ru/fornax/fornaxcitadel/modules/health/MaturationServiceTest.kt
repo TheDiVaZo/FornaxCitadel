@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.modules.health
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
@@ -168,7 +168,7 @@ class MaturationServiceTest {
     @Test
     fun `multipliers compose and registration and removal use instance identity`() {
         data class Factor(val value: Double) : MaturationMultiplier {
-            override fun getMultiplier(citadel: CitadelHandle) = value
+            override fun getMultiplier(citadel: ReadableHandle) = value
         }
         val fixture = HealthFixture()
         fixture.clock.timeMillis = 2_000L

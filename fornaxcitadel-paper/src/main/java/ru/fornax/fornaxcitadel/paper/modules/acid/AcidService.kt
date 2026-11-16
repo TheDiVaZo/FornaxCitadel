@@ -10,6 +10,7 @@ import ru.fornax.fornaxcitadel.core.citadel.isOwnerOrUnowned
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
@@ -187,7 +188,7 @@ class AcidService(
         private val SOURCE = Key("paper", "acid")
         private val FACES = listOf(BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST)
         private fun position(block: Block) = CitadelPosition(block.world.uid, block.x, block.y, block.z)
-        private fun same(left: CitadelHandle, right: CitadelHandle) = left.position == right.position && left.runtimeId == right.runtimeId
+        private fun same(left: ReadableHandle, right: ReadableHandle) = left.position == right.position && left.runtimeId == right.runtimeId
     }
 }
 
@@ -201,6 +202,6 @@ enum class AcidFailure(val message: String) {
 sealed interface AcidResult {
     data class Failed(val reason: AcidFailure) : AcidResult
     data class Activated(val targets: Int) : AcidResult
-    data class Information(val type: AcidType, val reinforcement: CitadelHandle, val owner: UUID?, val tier: Int?,
+    data class Information(val type: AcidType, val reinforcement: ReadableHandle, val owner: UUID?, val tier: Int?,
                            val mature: Boolean, val availableTargets: Int, val selectedTargets: Int) : AcidResult
 }

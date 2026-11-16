@@ -7,22 +7,22 @@ import java.util.Collections
 
 class TypeManager {
     private val typeLock = Any()
-    private val typeMap = mutableMapOf<Class<out Component>, ComponentType<out Component>>()
-    private val typesByKey = mutableMapOf<Key, ComponentType<out Component>>()
-    private val typeList = mutableListOf<ComponentType<out Component>>()
-    private val typesById = Byte2ObjectOpenHashMap<ComponentType<out Component>>()
+    private val typeMap = mutableMapOf<Class<out Component<*>>, ComponentType<out Component<*>>>()
+    private val typesByKey = mutableMapOf<Key, ComponentType<out Component<*>>>()
+    private val typeList = mutableListOf<ComponentType<out Component<*>>>()
+    private val typesById = Byte2ObjectOpenHashMap<ComponentType<out Component<*>>>()
 
     private var nextFlag = 1L
     private var genTypeID: Byte = 0
 
     @Suppress("UNCHECKED_CAST")
-    fun <T : Component> getType(componentClass: Class<T>): ComponentType<T>? {
+    fun <T : Component<*>> getType(componentClass: Class<T>): ComponentType<T>? {
         return synchronized(typeLock) {
             typeMap[componentClass] as ComponentType<T>?
         }
     }
 
-    fun getType(key: Key): ComponentType<out Component>? {
+    fun getType(key: Key): ComponentType<out Component<*>>? {
         return synchronized(typeLock) {
             typesByKey[key]
         }
@@ -30,9 +30,9 @@ class TypeManager {
 
     internal fun getTypes(
         keys: Collection<Key>
-    ): Map<Key, ComponentType<out Component>> {
+    ): Map<Key, ComponentType<out Component<*>>> {
         return synchronized(typeLock) {
-            val result = LinkedHashMap<Key, ComponentType<out Component>>()
+            val result = LinkedHashMap<Key, ComponentType<out Component<*>>>()
             for (key in keys) {
                 typesByKey[key]?.let { result[key] = it }
             }
@@ -41,7 +41,7 @@ class TypeManager {
     }
 
     @Suppress("UNCHECKED_CAST")
-    fun <T : Component> registerType(
+    fun <T : Component<*>> registerType(
         key: Key,
         componentClass: Class<T>
     ): ComponentType<T> {

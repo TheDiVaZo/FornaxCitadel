@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.modules.health
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.time.Clock
 import java.util.logging.Logger
@@ -36,7 +36,7 @@ class MaturationService @JvmOverloads constructor(
         return true
     }
 
-    internal fun definition(citadel: CitadelHandle): MaturationDefinition? {
+    internal fun definition(citadel: ReadableHandle): MaturationDefinition? {
         val key = citadel.getComponent(CitadelKind::class.java)?.definitionKey
         return definitions[key] ?: run {
             if (warnedKeys.add(key)) logger.warning(
@@ -46,12 +46,12 @@ class MaturationService @JvmOverloads constructor(
         }
     }
 
-    fun progress(citadel: CitadelHandle): Double {
+    fun progress(citadel: ReadableHandle): Double {
         if (citadel.getComponent(Maturing::class.java) == null) return 1.0
         return progress(citadel, definition(citadel) ?: return 1.0)
     }
 
-    internal fun progress(citadel: CitadelHandle, definition: MaturationDefinition): Double {
+    internal fun progress(citadel: ReadableHandle, definition: MaturationDefinition): Double {
         val maturing = citadel.getComponent(Maturing::class.java) ?: return 1.0
         if (definition.duration.isZero) return 1.0
         // Converting seconds/nanos separately avoids Duration.toMillis()/toNanos() overflow.
@@ -70,5 +70,5 @@ class MaturationService @JvmOverloads constructor(
         return (elapsed / duration).coerceIn(0.0, 1.0)
     }
 
-    fun isMature(citadel: CitadelHandle): Boolean = progress(citadel) >= 1.0
+    fun isMature(citadel: ReadableHandle): Boolean = progress(citadel) >= 1.0
 }

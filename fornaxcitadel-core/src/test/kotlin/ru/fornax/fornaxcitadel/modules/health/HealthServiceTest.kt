@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.modules.health
 
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
@@ -133,7 +133,7 @@ class HealthServiceTest {
     @Test
     fun `unregistering compares instances rather than modifier equality`() {
         class EqualModifier(private val addition: Double) : DamageModifier {
-            override fun getDamage(context: ActionContext, citadel: CitadelHandle, currentDamage: Double): Double =
+            override fun getDamage(context: ActionContext, citadel: ReadableHandle, currentDamage: Double): Double =
                 currentDamage + addition
 
             override fun equals(other: Any?): Boolean = other is EqualModifier

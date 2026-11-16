@@ -1,12 +1,12 @@
 package ru.fornax.fornaxcitadel.modules.remove
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 
 /** Checks removal prerequisites without granting authorization or loading chunks. */
-class RemoveActionValidator(private val citadels: CitadelFacade) : ActionValidator<RemoveAction> {
+class RemoveActionValidator(private val citadels: ReadableCitadelFacade) : ActionValidator<RemoveAction> {
     override val actionClass = RemoveAction::class.java
 
     override fun validate(action: RemoveAction): ActionValidator.Result {

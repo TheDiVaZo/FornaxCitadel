@@ -1,13 +1,13 @@
 package ru.fornax.fornaxcitadel.paper.modules.dismantle
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 
 /** Checks dismantling prerequisites without granting authorization or loading chunks. */
-class DismantleActionValidator(private val citadels: CitadelFacade) : ActionValidator<DismantleAction> {
+class DismantleActionValidator(private val citadels: ReadableCitadelFacade) : ActionValidator<DismantleAction> {
     override val actionClass = DismantleAction::class.java
 
     override fun validate(action: DismantleAction): ActionValidator.Result {

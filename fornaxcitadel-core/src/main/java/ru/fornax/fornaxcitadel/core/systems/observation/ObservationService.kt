@@ -1,7 +1,8 @@
 package ru.fornax.fornaxcitadel.core.systems.observation
 
 import ru.fornax.fornaxcitadel.core.component.Component
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.component.ReadableComponent
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.scheduler.ScheduledTask
@@ -136,10 +137,10 @@ class ObservationService<V> @JvmOverloads constructor(
         return registration
     }
 
-    private fun publish(registration: ViewerRegistration, citadels: Iterable<CitadelHandle>) {
+    private fun publish(registration: ViewerRegistration, citadels: Iterable<ReadableHandle>) {
         if (!isActive(registration)) return
         // Materialize before changing anything: iterators can fail or refer to a mutable collection.
-        val snapshot = LinkedHashMap<ObservationTarget, CitadelHandle>()
+        val snapshot = LinkedHashMap<ObservationTarget, ReadableHandle>()
         for (citadel in citadels) {
             if (componentManager.isCurrent(citadel)) {
                 snapshot.putIfAbsent(ObservationTarget(citadel.position, citadel.runtimeId), citadel)
@@ -163,7 +164,7 @@ class ObservationService<V> @JvmOverloads constructor(
 
     private fun replaceTargets(
         registration: ViewerRegistration,
-        snapshot: Map<ObservationTarget, CitadelHandle>
+        snapshot: Map<ObservationTarget, ReadableHandle>
     ) {
         for (key in registration.observed.keys) {
             if (key !in snapshot) {
@@ -397,7 +398,7 @@ class ObservationService<V> @JvmOverloads constructor(
         return snapshot
     }
 
-    private fun createBinding(system: SystemRegistration, handle: CitadelHandle): SystemBinding? {
+    private fun createBinding(system: SystemRegistration, handle: ReadableHandle): SystemBinding? {
         if (!isCurrent(handle)) return null
         val components = system.componentBuffer
         // Binding creation runs only during flushing, which prevents nested use of this buffer.
@@ -412,7 +413,7 @@ class ObservationService<V> @JvmOverloads constructor(
     }
 
     private fun matchesBinding(
-        system: SystemRegistration, handle: CitadelHandle, binding: SystemBinding
+        system: SystemRegistration, handle: ReadableHandle, binding: SystemBinding
     ): Boolean {
         // Empty requirements still need a live entity; equality of component values is insufficient.
         if (!isCurrent(handle)) return false
@@ -422,7 +423,7 @@ class ObservationService<V> @JvmOverloads constructor(
         return true
     }
 
-    private fun readComponent(handle: CitadelHandle, componentClass: Class<out Component>): Component? {
+    private fun readComponent(handle: ReadableHandle, componentClass: Class<out Component<*>>): ReadableComponent? {
         return try {
             handle.getComponent(componentClass)
         } catch (failure: Exception) {
@@ -431,7 +432,7 @@ class ObservationService<V> @JvmOverloads constructor(
         }
     }
 
-    private fun isCurrent(handle: CitadelHandle): Boolean = try {
+    private fun isCurrent(handle: ReadableHandle): Boolean = try {
         componentManager.isCurrent(handle)
     } catch (failure: Exception) {
         report("check citadel at ${handle.position}", failure)
@@ -460,9 +461,9 @@ class ObservationService<V> @JvmOverloads constructor(
         var active = true
         var starting = true
         var subscription: ObservationSubscription? = null
-        var pending: Map<ObservationTarget, CitadelHandle>? = null
+        var pending: Map<ObservationTarget, ReadableHandle>? = null
         var publicationQueued = false
-        val observed = LinkedHashMap<ObservationTarget, CitadelHandle>()
+        val observed = LinkedHashMap<ObservationTarget, ReadableHandle>()
 
         override fun close() {
             if (!active) return
@@ -472,7 +473,7 @@ class ObservationService<V> @JvmOverloads constructor(
         }
     }
 
-    private inner class TargetEntry(val key: ObservationTarget, val handle: CitadelHandle) {
+    private inner class TargetEntry(val key: ObservationTarget, val handle: ReadableHandle) {
         val dirtySlot = dirtySlotFor(key)
         val viewers = LinkedHashMap<UUID, ViewerRegistration>()
     }
@@ -480,13 +481,13 @@ class ObservationService<V> @JvmOverloads constructor(
     private inner class SystemRegistration(val system: ObservationSystem<V>) {
         // A private ordered copy keeps the requirements and bound instances aligned.
         val requiredComponents = system.requiredComponents.toList()
-        val componentBuffer = ArrayList<Component>(requiredComponents.size)
+        val componentBuffer = ArrayList<ReadableComponent>(requiredComponents.size)
         var active = true
         var ready = false
         val bindings = LinkedHashMap<ObservationTarget, SystemBinding>()
     }
 
-    private inner class SystemBinding(val components: List<Component>) {
+    private inner class SystemBinding(val components: List<ReadableComponent>) {
         val viewers = LinkedHashMap<UUID, ViewerRegistration>()
         var cachedAudience: List<V>? = null
     }

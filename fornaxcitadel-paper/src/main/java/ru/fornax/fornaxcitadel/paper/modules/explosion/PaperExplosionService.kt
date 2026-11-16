@@ -10,7 +10,7 @@ import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
@@ -176,7 +176,7 @@ class PaperExplosionService @JvmOverloads constructor(
         module.remove.remove(citadel)
     }
 
-    private class ExplosionTarget(val citadel: CitadelHandle, val originalPosition: CitadelPosition) {
+    private class ExplosionTarget(val citadel: ReadableHandle, val originalPosition: CitadelPosition) {
         val blocks = mutableListOf<Block>()
     }
 

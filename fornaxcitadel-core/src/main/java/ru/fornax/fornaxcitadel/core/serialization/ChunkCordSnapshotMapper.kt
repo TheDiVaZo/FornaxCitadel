@@ -28,8 +28,8 @@ internal sealed interface OpaqueComponentResolution {
 
     data class Decoded(
         override val candidate: OpaqueComponentCandidate,
-        val type: ComponentType<out Component>,
-        val component: Component
+        val type: ComponentType<out Component<*>>,
+        val component: Component<*>
     ) : OpaqueComponentResolution
 
     data class Unknown(
@@ -226,7 +226,7 @@ class ChunkCordSnapshotMapper(
         entity: CitadelEntity,
         decoded: ComponentDecodeResult.Decoded
     ) {
-        val typedType = decoded.type as ComponentType<Component>
+        val typedType = decoded.type as ComponentType<Component<*>>
         chunk.putComponent(
             entity,
             typedType,

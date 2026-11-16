@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.paper.action
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -9,7 +9,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 /** Rejects unowned targets; other authorizers may grant access to another player's reinforcement. */
 internal class OwnerActionValidator<T : ActionData>(
     override val actionClass: Class<T>,
-    private val citadels: CitadelFacade,
+    private val citadels: ReadableCitadelFacade,
     private val unavailableResult: ActionValidator.Result = ActionValidator.Result.Neutral
 ) : ActionValidator<T> {
     override fun validate(action: T): ActionValidator.Result {

@@ -1,6 +1,8 @@
 package ru.fornax.fornaxcitadel.core.storage
 
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.component.ReadableComponent
+import ru.fornax.fornaxcitadel.testing.ReadableTestValue
 import ru.fornax.fornaxcitadel.core.component.OpaqueComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
@@ -1502,8 +1504,9 @@ class ChunkBackendLifecycleCoordinatorTest {
     }
 
     private class IntComponent(
-        var value: Int = 0
-    ) : Component() {
+        override var value: Int = 0
+    ) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         var writeFailure: RuntimeException? = null
 
         override fun write(output: DataOutput) {
@@ -1517,8 +1520,9 @@ class ChunkBackendLifecycleCoordinatorTest {
     }
 
     private class CorruptibleComponent(
-        var value: Int = 0
-    ) : Component() {
+        override var value: Int = 0
+    ) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun write(output: DataOutput) {
             output.writeInt(value)
         }
@@ -1528,7 +1532,8 @@ class ChunkBackendLifecycleCoordinatorTest {
         }
     }
 
-    private class UnknownComponent : Component() {
+    private class UnknownComponent : Component<ReadableComponent>(), ReadableComponent {
+        override val readable: ReadableComponent get() = this
         override fun write(output: DataOutput) = Unit
 
         override fun read(input: DataInput) = Unit

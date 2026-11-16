@@ -3,6 +3,7 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.GameMode
 import org.bukkit.entity.Player
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -55,7 +56,7 @@ class PlayerDamageModifierTest {
         val inputs = mutableListOf<Double>()
         fun modifier(name: String, priority: Priority) = object : PlayerDamageModifier {
             override fun priority(): Priority = priority
-            override fun getDamage(player: Player, citadel: CitadelHandle, currentDamage: Double): Double {
+            override fun getDamage(player: Player, citadel: ReadableHandle, currentDamage: Double): Double {
                 visited.add(name)
                 inputs.add(currentDamage)
                 return currentDamage + 1.0

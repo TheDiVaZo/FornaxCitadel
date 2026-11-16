@@ -3,8 +3,10 @@ package ru.fornax.fornaxcitadel.core.systems.observation
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.testing.ReadableTestValue
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
@@ -209,7 +211,7 @@ class ObservationRequirementsTest {
     @Test
     fun `requirements are copied at registration and only reread after unregistering`() {
         Fixture().use { fixture ->
-            val declared = linkedSetOf<Class<out Component>>(Primary::class.java)
+            val declared = linkedSetOf<Class<out Component<*>>>(Primary::class.java)
             val target = fixture.create(secondary = null)
             val system = RecordingSystem(declared)
             fixture.start(system)
@@ -285,19 +287,19 @@ class ObservationRequirementsTest {
     }
 
     private class RecordingSystem(
-        override val requiredComponents: Set<Class<out Component>>
+        override val requiredComponents: Set<Class<out Component<*>>>
     ) : ObservationSystem<String> {
         val events = mutableListOf<String>()
         val tickedIds = mutableListOf<Int>()
-        var onEnter: ((CitadelHandle, String) -> Unit)? = null
-        var onTick: ((CitadelHandle) -> Unit)? = null
+        var onEnter: ((ReadableHandle, String) -> Unit)? = null
+        var onTick: ((ReadableHandle) -> Unit)? = null
 
-        override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+        override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
             events.add("enter:${citadel.x}:$viewer")
             onEnter?.invoke(citadel, viewer)
         }
 
-        override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
+        override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
             events.add("tick:${citadel.x}")
             tickedIds.add(citadel.runtimeId)
             onTick?.invoke(citadel)
@@ -340,11 +342,11 @@ class ObservationRequirementsTest {
             return checkNotNull(manager.findCitadel(WORLD, x, 0, 0))
         }
 
-        fun <C : Component> put(target: CitadelHandle, type: Class<C>, component: C) {
+        fun <C : Component<*>> put(target: ReadableHandle, type: Class<C>, component: C) {
             manager.putComponent(type, WORLD, target.x, target.y, target.z, component)
         }
 
-        fun <C : Component> remove(target: CitadelHandle, type: Class<C>) {
+        fun <C : Component<*>> remove(target: ReadableHandle, type: Class<C>) {
             manager.removeComponent(type, WORLD, target.x, target.y, target.z)
         }
 
@@ -386,22 +388,26 @@ class ObservationRequirementsTest {
         }
     }
 
-    private data class Primary(var value: Int = 0) : Component() {
+    private data class Primary(override var value: Int = 0) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun read(input: DataInput) { value = input.readInt() }
         override fun write(output: DataOutput) { output.writeInt(value) }
     }
 
-    private data class Secondary(var value: Int = 0) : Component() {
+    private data class Secondary(override var value: Int = 0) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun read(input: DataInput) { value = input.readInt() }
         override fun write(output: DataOutput) { output.writeInt(value) }
     }
 
-    private data class Extra(var value: Int = 0) : Component() {
+    private data class Extra(override var value: Int = 0) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun read(input: DataInput) { value = input.readInt() }
         override fun write(output: DataOutput) { output.writeInt(value) }
     }
 
-    private data class LateSecondary(var value: Int = 0) : Component() {
+    private data class LateSecondary(override var value: Int = 0) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun read(input: DataInput) { value = input.readInt() }
         override fun write(output: DataOutput) { output.writeInt(value) }
     }
@@ -410,6 +416,6 @@ class ObservationRequirementsTest {
         val WORLD = UUID(91L, 92L)
         val ALICE = UUID(93L, 94L)
         val BOB = UUID(95L, 96L)
-        val BOTH: Set<Class<out Component>> = linkedSetOf(Primary::class.java, Secondary::class.java)
+        val BOTH: Set<Class<out Component<*>>> = linkedSetOf(Primary::class.java, Secondary::class.java)
     }
 }

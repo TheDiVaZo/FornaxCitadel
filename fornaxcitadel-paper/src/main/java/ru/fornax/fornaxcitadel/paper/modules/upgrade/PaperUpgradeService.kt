@@ -4,7 +4,7 @@ import org.bukkit.GameMode
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -118,7 +118,7 @@ class PaperUpgradeService @JvmOverloads constructor(
         return ActionResult.SUCCESS
     }
 
-    private fun comparison(citadel: CitadelHandle, destination: Key): UpgradeComparison? {
+    private fun comparison(citadel: ReadableHandle, destination: Key): UpgradeComparison? {
         if (module.definitions.find(destination) == null) return null
         val newLevel = citadelTypes.level(destination) ?: return null
         val oldKey = citadel.getComponent(CitadelKind::class.java)?.definitionKey

@@ -2,7 +2,7 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import org.bukkit.Material
 import org.bukkit.Server
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
@@ -11,7 +11,7 @@ import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 /** Restricts reinforcement to solid block materials, excluding every piston part. */
 class ReinforceableBlockValidator @JvmOverloads constructor(
     private val server: Server,
-    private val citadels: CitadelFacade? = null
+    private val citadels: ReadableCitadelFacade? = null
 ) : ActionValidator<ActionData> {
     override val actionClass = ActionData::class.java
 

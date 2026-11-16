@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.core.storage
 
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.testing.ReadableTestValue
 import ru.fornax.fornaxcitadel.core.component.OpaqueComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -357,8 +358,9 @@ class ChunkCordTest {
     }
 
     private class TestComponent(
-        var value: Int = 0
-    ) : Component() {
+        override var value: Int = 0
+    ) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun write(output: DataOutput) {
             output.writeInt(value)
         }

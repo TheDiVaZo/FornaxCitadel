@@ -6,7 +6,10 @@ import java.io.DataInput
 import java.io.DataOutput
 
 /** Persisted reference to gameplay rules; distinct from the registered class of a component. */
-class CitadelKind(var definitionKey: Key = Key("fornaxcitadel", "unknown")) : Component() {
+class CitadelKind(override var definitionKey: Key = Key("fornaxcitadel", "unknown")) :
+    Component<ReadableCitadelKind>(), ReadableCitadelKind {
+    override val readable: ReadableCitadelKind get() = this
+
     override fun write(output: DataOutput) {
         output.writeUTF(definitionKey.namespace)
         output.writeUTF(definitionKey.key)

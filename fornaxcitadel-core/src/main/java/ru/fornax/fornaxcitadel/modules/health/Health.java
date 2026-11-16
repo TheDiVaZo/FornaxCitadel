@@ -9,7 +9,7 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 /** Persisted current HP. Maximum health is resolved from the type's live profile. */
-public class Health extends Component {
+public class Health extends Component<ReadableHealth> implements ReadableHealth {
     public static final Key KEY = new Key("fornaxcitadel", "health");
 
     protected Health() {}
@@ -18,7 +18,21 @@ public class Health extends Component {
         this.health = health;
     }
 
-    public double health;
+    private double health;
+
+    @Override
+    public double getHealth() {
+        return health;
+    }
+
+    public void setHealth(double health) {
+        this.health = health;
+    }
+
+    @Override
+    public @NonNull ReadableHealth getReadable() {
+        return this;
+    }
 
     @Override
     protected void write(@NonNull DataOutput output) throws IOException {

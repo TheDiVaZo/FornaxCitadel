@@ -3,8 +3,10 @@ package ru.fornax.fornaxcitadel.core.systems.observation
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.testing.ReadableTestValue
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
@@ -802,8 +804,8 @@ class ObservationServiceTest {
     }
 
     private data class Viewer(val observation: ControlledObservation, val subscription: ObservationSubscription)
-    private data class Enter(val handle: CitadelHandle, val component: ValueComponent, val viewer: String)
-    private data class Tick(val handle: CitadelHandle, val component: ValueComponent, val viewers: List<String>)
+    private data class Enter(val handle: ReadableHandle, val component: ReadableTestValue, val viewer: String)
+    private data class Tick(val handle: ReadableHandle, val component: ReadableTestValue, val viewers: List<String>)
 
     private class RecordingSystem : ObservationSystem<String> {
         override val requiredComponents = setOf(ValueComponent::class.java)
@@ -811,18 +813,18 @@ class ObservationServiceTest {
         val ticks = mutableListOf<Tick>()
         val leaves = mutableListOf<Pair<ObservationTarget, String>>()
         val detaches = mutableListOf<ObservationTarget>()
-        var onEnter: ((CitadelHandle, ValueComponent, String) -> Unit)? = null
-        var onTick: ((CitadelHandle, ValueComponent, List<String>) -> Unit)? = null
+        var onEnter: ((ReadableHandle, ReadableTestValue, String) -> Unit)? = null
+        var onTick: ((ReadableHandle, ReadableTestValue, List<String>) -> Unit)? = null
         var onLeave: ((ObservationTarget, String) -> Unit)? = null
         var onDetached: ((ObservationTarget) -> Unit)? = null
 
-        override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+        override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
             val component = checkNotNull(citadel.getComponent(ValueComponent::class.java))
             enters.add(Enter(citadel, component, viewer))
             onEnter?.invoke(citadel, component, viewer)
         }
 
-        override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
+        override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
             val component = checkNotNull(citadel.getComponent(ValueComponent::class.java))
             ticks.add(Tick(citadel, component, viewers))
             onTick?.invoke(citadel, component, viewers)
@@ -866,7 +868,8 @@ class ObservationServiceTest {
         }
     }
 
-    private class ValueComponent(val value: Int) : Component() {
+    private class ValueComponent(override val value: Int) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun read(input: DataInput) = error("Observation does not deserialize components")
         override fun write(output: DataOutput) { output.writeInt(value) }
     }

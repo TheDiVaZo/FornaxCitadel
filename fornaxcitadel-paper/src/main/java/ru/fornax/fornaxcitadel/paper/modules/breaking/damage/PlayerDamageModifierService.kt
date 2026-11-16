@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.paper.modules.breaking.damage
 
 import org.bukkit.entity.Player
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 
 /** Computes damage for one player and target on the owning game thread. */
 class PlayerDamageModifierService {
@@ -13,7 +13,7 @@ class PlayerDamageModifierService {
         }
     }
 
-    fun getDamage(citadel: CitadelHandle, player: Player): Double {
+    fun getDamage(citadel: ReadableHandle, player: Player): Double {
         val currentModifiers = modifiers
         var damage = 1.0
         for (modifier in currentModifiers) {

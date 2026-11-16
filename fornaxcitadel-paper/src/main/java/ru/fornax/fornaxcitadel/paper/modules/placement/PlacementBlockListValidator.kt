@@ -2,7 +2,7 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import org.bukkit.Server
 import org.bukkit.block.Block
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -16,7 +16,7 @@ class PlacementBlockListValidator @JvmOverloads constructor(
     private val materials: MaterialRegistry,
     val listType: BlockListType,
     blocks: Set<Key>,
-    private val citadels: CitadelFacade? = null
+    private val citadels: ReadableCitadelFacade? = null
 ) : ActionValidator<ActionData> {
     private val blocks = blocks.toSet()
     override val actionClass = ActionData::class.java

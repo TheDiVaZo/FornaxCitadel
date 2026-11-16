@@ -2,7 +2,7 @@ package ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers
 
 import org.bukkit.Statistic
 import org.bukkit.entity.Player
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier
 import java.time.Clock
 import java.time.Duration
@@ -25,7 +25,7 @@ class NerfingNewcomersModifier @JvmOverloads constructor(
         require(playTimeSince > 0) { "Play time threshold must be positive" }
     }
 
-    override fun getDamage(player: Player, citadel: CitadelHandle, currentDamage: Double): Double {
+    override fun getDamage(player: Player, citadel: ReadableHandle, currentDamage: Double): Double {
         val ageProgress = (clock.millis().toDouble() - player.firstPlayed.toDouble()) / firstJoinMillis.toDouble()
         val playProgress = player.getStatistic(Statistic.PLAY_ONE_MINUTE).toDouble() / playTimeSince.toDouble()
         val progress = max(ageProgress, playProgress).coerceIn(0.1, 1.0)

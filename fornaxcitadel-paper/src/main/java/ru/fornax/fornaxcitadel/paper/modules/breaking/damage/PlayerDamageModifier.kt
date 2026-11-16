@@ -1,13 +1,13 @@
 package ru.fornax.fornaxcitadel.paper.modules.breaking.damage
 
 import org.bukkit.entity.Player
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 
 /** Read-only damage calculation. Do not mutate or retain the live citadel or its components. */
 fun interface PlayerDamageModifier : Comparable<PlayerDamageModifier> {
     fun priority(): Priority = Priority.NORMAL
 
-    fun getDamage(player: Player, citadel: CitadelHandle, currentDamage: Double): Double
+    fun getDamage(player: Player, citadel: ReadableHandle, currentDamage: Double): Double
 
     override fun compareTo(other: PlayerDamageModifier): Int = priority().value.compareTo(other.priority().value)
 

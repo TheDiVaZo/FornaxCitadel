@@ -1,13 +1,13 @@
 package ru.fornax.fornaxcitadel.paper.modules.repair
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 
 /** Checks repair prerequisites without granting authorization or loading chunks. */
-class RepairActionValidator(private val citadels: CitadelFacade) : ActionValidator<RepairAction> {
+class RepairActionValidator(private val citadels: ReadableCitadelFacade) : ActionValidator<RepairAction> {
     override val actionClass = RepairAction::class.java
 
     override fun validate(action: RepairAction): ActionValidator.Result {

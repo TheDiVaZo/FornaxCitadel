@@ -3,12 +3,12 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 import org.bukkit.Server
 import org.bukkit.block.Block
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 
 /** Validators never load a world or chunk just to inspect a placement target. */
-internal fun Server.findLoadedPlacementBlock(action: ActionData, citadels: CitadelFacade? = null): Block? {
+internal fun Server.findLoadedPlacementBlock(action: ActionData, citadels: ReadableCitadelFacade? = null): Block? {
     if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) return null
     val position = try {
         citadels?.getResponsiblePosition(action.position) ?: action.position

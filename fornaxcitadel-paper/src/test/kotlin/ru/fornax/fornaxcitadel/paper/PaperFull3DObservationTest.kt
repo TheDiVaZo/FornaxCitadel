@@ -14,7 +14,7 @@ import org.bukkit.event.world.WorldUnloadEvent
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -437,7 +437,7 @@ class PaperFull3DObservationTest {
                 ActionContext.SYSTEM, paper.position, type)))
         }
 
-        fun observe() = mutableListOf<List<CitadelHandle>>().also { publications ->
+        fun observe() = mutableListOf<List<ReadableHandle>>().also { publications ->
             provider.observe(paper.installer.player, ObservationPublisher { publications.add(it.toList()) })
         }
 

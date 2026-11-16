@@ -12,8 +12,8 @@ import java.io.IOException
 
 sealed interface ComponentDecodeResult {
     data class Decoded(
-        val type: ComponentType<out Component>,
-        val component: Component
+        val type: ComponentType<out Component<*>>,
+        val component: Component<*>
     ) : ComponentDecodeResult
 
     data object Unknown : ComponentDecodeResult
@@ -32,7 +32,7 @@ object ComponentSerializer {
 
     fun encode(
         type: ComponentType<*>,
-        component: Component
+        component: Component<*>
     ): ComponentSnapshot {
         if (!type.componentClass.isInstance(component)) {
             throw IllegalArgumentException(
@@ -82,7 +82,7 @@ object ComponentSerializer {
     }
 
     @Throws(IOException::class)
-    fun <T : Component> decode(
+    fun <T : Component<*>> decode(
         component: ComponentSnapshot,
         type: ComponentType<T>
     ): T {
@@ -97,7 +97,7 @@ object ComponentSerializer {
 
     fun decodeSafely(
         component: ComponentSnapshot,
-        type: ComponentType<out Component>?
+        type: ComponentType<out Component<*>>?
     ): ComponentDecodeResult {
         if (type == null) return ComponentDecodeResult.Unknown
 
@@ -132,13 +132,13 @@ object ComponentSerializer {
     @Suppress("UNCHECKED_CAST")
     @Throws(IOException::class)
     private fun createUntypedComponent(
-        type: ComponentType<out Component>
-    ): Component {
-        return createComponent(type as ComponentType<Component>)
+        type: ComponentType<out Component<*>>
+    ): Component<*> {
+        return createComponent(type as ComponentType<Component<*>>)
     }
 
     @Throws(IOException::class)
-    private fun <T : Component> createComponent(type: ComponentType<T>): T {
+    private fun <T : Component<*>> createComponent(type: ComponentType<T>): T {
         try {
             val constructor = type.componentClass.getDeclaredConstructor()
             if (!constructor.canAccess(null)) {

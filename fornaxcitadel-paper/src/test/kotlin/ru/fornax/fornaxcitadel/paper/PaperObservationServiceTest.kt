@@ -6,7 +6,7 @@ import org.bukkit.event.Event
 import org.bukkit.event.EventHandler
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.observation.Observation
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationPublisher
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
@@ -89,7 +89,7 @@ class PaperObservationServiceTest {
                     }
                 }
 
-                override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<Player>) {
+                override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<Player>) {
                     audiences.add(viewers.map { it.uniqueId })
                 }
             })
@@ -167,7 +167,7 @@ class PaperObservationServiceTest {
 
     private class RecordingObservation : Observation<Player> {
         val sessions = mutableListOf<Session>()
-        var initial = emptyList<CitadelHandle>()
+        var initial = emptyList<ReadableHandle>()
         var reject: UUID? = null
 
         override fun observe(viewer: Player, publisher: ObservationPublisher): ObservationSubscription {

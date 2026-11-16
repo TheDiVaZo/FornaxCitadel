@@ -1,8 +1,15 @@
 package ru.fornax.fornaxcitadel.core.facade
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.citadel.ReadableCitadelKind
+import ru.fornax.fornaxcitadel.core.citadel.ReadableCitadelOwner
+import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.ReadableHealth
+import ru.fornax.fornaxcitadel.modules.health.ReadableMaturing
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.component.ReadableComponent
+import ru.fornax.fornaxcitadel.testing.ReadableTestValue
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
@@ -30,6 +37,84 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ComponentManagerTest {
+    @Test
+    fun `read facade returns live components without dirtying and observes edits`() {
+        val fixture = Fixture()
+        fixture.load()
+        val original = fixture.put(10)
+        val writable = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        val queries: ReadableCitadelFacade = CitadelFacade(fixture.manager)
+        val reader: ReadableHandle = assertNotNull(queries.findProtecting(writable.position))
+        fixture.manager.saveAll().join()
+
+        val component: ReadableTestValue = assertNotNull(reader.getComponent(ValueComponent::class.java))
+        val unknownType: Class<out Component<*>> = ValueComponent::class.java
+        val unknown: ReadableComponent = assertNotNull(reader.getComponent(unknownType))
+        assertSame(original, component)
+        assertSame(component, unknown)
+        assertEquals(writable.position, reader.position)
+        assertEquals(writable.runtimeId, reader.runtimeId)
+        assertTrue(reader.isCurrent)
+        assertFalse(fixture.chunk().isDirty)
+
+        assertTrue(writable.editComponent(ValueComponent::class.java) { it.value = 25 })
+
+        assertEquals(25, component.value)
+        assertSame(component, reader.getComponent(ValueComponent::class.java))
+        assertTrue(fixture.chunk().isDirty)
+        fixture.manager.saveAll().join()
+        assertEquals(25, fixture.savedValue())
+    }
+
+    @Test
+    fun `Java clients infer readable component types and retain typed mutation callbacks`() {
+        val fixture = Fixture()
+        fixture.load()
+        fixture.manager.registerComponent(Health.KEY, Health::class.java)
+        val health = Health(30.0)
+        fixture.putComponent(Health::class.java, WORLD, 0, 0, 0, health)
+        val writable = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        val reader: ReadableHandle = writable
+        fixture.manager.saveAll().join()
+
+        val component: ReadableHealth = assertNotNull(ReadonlyJavaClient.readHealth(reader))
+        assertSame(health, component)
+        assertSame(component, ReadonlyJavaClient.readUnknown(reader, Health::class.java))
+        assertFalse(fixture.chunk().isDirty)
+
+        assertTrue(ReadonlyJavaClient.editHealth(writable, 12.0))
+
+        assertEquals(12.0, component.health)
+        assertTrue(fixture.chunk().isDirty)
+    }
+
+    @Test
+    fun `read contracts do not expose mutations or serialization`() {
+        val readTypes = listOf(
+            ReadableComponent::class.java,
+            ReadableHealth::class.java,
+            ReadableCitadelOwner::class.java,
+            ReadableCitadelKind::class.java,
+            ReadableMaturing::class.java,
+            ReadableHandle::class.java,
+            ReadableCitadelFacade::class.java
+        )
+        val mutators = setOf(
+            "setHealth", "setPlayerId", "setDefinitionKey", "setStartedAtMillis",
+            "editComponent", "markDirty", "createCitadel", "removeCitadel", "putComponent",
+            "safeRead", "safeReadChecked", "safeWrite", "safeWriteChecked", "toByteArray"
+        )
+        for (type in readTypes) {
+            assertTrue(type.methods.none { it.name in mutators }, "Read contract exposes a mutator: ${type.name}")
+            assertTrue(type.methods.none { !it.isSynthetic && it.returnType == ComponentManager::class.java },
+                "Read contract exposes writable storage to Java: ${type.name}")
+        }
+        assertEquals(ReadableComponent::class.java,
+            ReadableHandle::class.java.getMethod("getComponent", Class::class.java).returnType)
+        assertEquals(ReadableHandle::class.java,
+            ReadableCitadelFacade::class.java.getMethod("findProtecting", CitadelPosition::class.java).returnType)
+    }
+
     @Test
     fun `draft creation publishes all components and consumes the draft`() {
         val fixture = Fixture()
@@ -67,7 +152,7 @@ class ComponentManagerTest {
             draft.addComponent(ValueComponent::class.java, ValueComponent(99))
         }
         @Suppress("UNCHECKED_CAST")
-        val incorrectClass = OtherComponent::class.java as Class<Component>
+        val incorrectClass = OtherComponent::class.java as Class<Component<*>>
         assertFailsWith<IllegalArgumentException> {
             draft.addComponent(incorrectClass, original)
         }
@@ -238,7 +323,7 @@ class ComponentManagerTest {
         fixture.putComponent(ValueComponent::class.java, otherWorld, -32, -64, 16, ValueComponent(4))
         fixture.manager.saveAll().join()
         val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(WORLD, -2, 1)))
-        val visited = mutableListOf<Pair<Triple<Int, Int, Int>, ValueComponent>>()
+        val visited = mutableListOf<Pair<Triple<Int, Int, Int>, ReadableTestValue>>()
 
         fixture.manager.forEachComponentOfType(ValueComponent::class.java, WORLD, -2, 1) { citadelId, x, y, z, component ->
             assertEquals(assertNotNull(chunk.getCitadel(x and 15, y, z and 15)).id, citadelId)
@@ -254,7 +339,7 @@ class ComponentManagerTest {
     @Test
     fun `iteration skips unloaded and empty chunks and positions without the selected type`() {
         val fixture = Fixture()
-        val action: (Int, Int, Int, Int, ValueComponent) -> Unit = { _, _, _, _, _ ->
+        val action: (Int, Int, Int, Int, ReadableTestValue) -> Unit = { _, _, _, _, _ ->
             error("No matching component should be visited")
         }
 
@@ -402,7 +487,7 @@ class ComponentManagerTest {
     @Test
     fun `height range iteration skips unloaded and empty chunks and ranges without the selected type`() {
         val fixture = Fixture()
-        val action: (Int, Int, Int, Int, ValueComponent) -> Unit = { _, _, _, _, _ ->
+        val action: (Int, Int, Int, Int, ReadableTestValue) -> Unit = { _, _, _, _, _ ->
             error("No matching component should be visited")
         }
 
@@ -505,9 +590,9 @@ class ComponentManagerTest {
     fun `direct mutation is only saved after explicitly marking the live instance dirty`() {
         val fixture = Fixture()
         fixture.load()
-        fixture.put(1)
+        val component = fixture.put(1)
         fixture.manager.saveAll().join()
-        val component = assertNotNull(fixture.current())
+        assertSame(component, fixture.current())
         assertFalse(fixture.chunk().isDirty)
 
         component.value = 2
@@ -674,7 +759,7 @@ class ComponentManagerTest {
             putComponent(ValueComponent::class.java, WORLD, 0, 0, 0, it)
         }
 
-        fun <T : Component> putComponent(
+        fun <T : Component<*>> putComponent(
             componentClass: Class<T>, world: UUID, x: Int, y: Int, z: Int, component: T
         ): T? {
             if (manager.findCitadel(world, x, y, z) == null) {
@@ -683,7 +768,7 @@ class ComponentManagerTest {
             return manager.putComponent(componentClass, world, x, y, z, component)
         }
 
-        fun current(): ValueComponent? = manager.getComponent(ValueComponent::class.java, WORLD, 0, 0, 0)
+        fun current(): ReadableTestValue? = manager.getComponent(ValueComponent::class.java, WORLD, 0, 0, 0)
 
         fun chunk() = checkNotNull(storage.getIfChunkLoaded(WXZCord(WORLD, 0, 0)))
 
@@ -731,7 +816,8 @@ class ComponentManagerTest {
         }
     }
 
-    private class ValueComponent(var value: Int = 0) : Component() {
+    private class ValueComponent(override var value: Int = 0) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         var writeFailure: RuntimeException? = null
 
         override fun write(output: DataOutput) {
@@ -744,7 +830,8 @@ class ComponentManagerTest {
         }
     }
 
-    private class OtherComponent : Component() {
+    private class OtherComponent : Component<ReadableComponent>(), ReadableComponent {
+        override val readable: ReadableComponent get() = this
         override fun write(output: DataOutput) = Unit
         override fun read(input: DataInput) = Unit
     }

@@ -15,14 +15,14 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 class CitadelFacade @JvmOverloads constructor(
     internal val componentManager: ComponentManager,
     private val resolver: CitadelResolver = DirectCitadelResolver(componentManager)
-) {
-    fun getResponsiblePosition(position: CitadelPosition): CitadelPosition {
+) : ReadableCitadelFacade {
+    override fun getResponsiblePosition(position: CitadelPosition): CitadelPosition {
         requireAvailable(position)
         return resolver.getResponsiblePosition(position).also(::requireAvailable)
     }
 
     /** Null means no reinforcement; unavailable data is reported separately. */
-    fun findProtecting(position: CitadelPosition): CitadelHandle? {
+    override fun findProtecting(position: CitadelPosition): CitadelHandle? {
         if (!isSupported(position)) return null
         requireAvailable(position)
         val handle = resolver.getReinforcementProtecting(position) ?: return null

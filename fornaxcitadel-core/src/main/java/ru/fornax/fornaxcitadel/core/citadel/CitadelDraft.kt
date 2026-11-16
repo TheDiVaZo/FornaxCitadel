@@ -11,8 +11,8 @@ interface CitadelDraft : ICitadelReference {
     override val y get() = position.y
     override val z get() = position.z
 
-    fun <T : Component> getComponent(componentClass: Class<T>): T?
-    fun <T : Component> addComponent(componentClass: Class<T>, component: T)
+    fun <T : Component<*>> getComponent(componentClass: Class<T>): T?
+    fun <T : Component<*>> addComponent(componentClass: Class<T>, component: T)
 }
 
 /**
@@ -20,15 +20,15 @@ interface CitadelDraft : ICitadelReference {
  * consumes this draft; instances transferred to storage must then follow the live access rules.
  */
 class MutableCitadelDraft(override val position: CitadelPosition) : CitadelDraft {
-    private val components = LinkedHashMap<Class<out Component>, Component>()
+    private val components = LinkedHashMap<Class<out Component<*>>, Component<*>>()
     private var committed = false
 
-    override fun <T : Component> getComponent(componentClass: Class<T>): T? {
+    override fun <T : Component<*>> getComponent(componentClass: Class<T>): T? {
         checkOpen()
         return components[componentClass]?.let(componentClass::cast)
     }
 
-    override fun <T : Component> addComponent(componentClass: Class<T>, component: T) {
+    override fun <T : Component<*>> addComponent(componentClass: Class<T>, component: T) {
         checkOpen()
         require(componentClass.isInstance(component)) {
             "Component ${component.javaClass.name} does not match ${componentClass.name}"
@@ -39,7 +39,7 @@ class MutableCitadelDraft(override val position: CitadelPosition) : CitadelDraft
         components[componentClass] = component
     }
 
-    internal fun componentsForCommit(): List<Pair<Class<out Component>, Component>> {
+    internal fun componentsForCommit(): List<Pair<Class<out Component<*>>, Component<*>>> {
         checkOpen()
         return components.entries.map { it.key to it.value }
     }

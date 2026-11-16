@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.core.systems.observation
 
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 
 /** A publication endpoint scoped to one viewer registration, not to a reusable viewer UUID. */
 fun interface ObservationPublisher {
@@ -11,5 +11,5 @@ fun interface ObservationPublisher {
      * previous set unchanged. Publications after closing the registration are ignored.
      * Publications from system callbacks are applied after the current dispatch finishes.
      */
-    fun publish(citadels: Iterable<CitadelHandle>)
+    fun publish(citadels: Iterable<ReadableHandle>)
 }

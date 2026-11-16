@@ -2,7 +2,7 @@ package ru.fornax.fornaxcitadel.paper.modules.health
 
 import org.bukkit.GameMode
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -13,7 +13,7 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 
 /** Authorizes configured damage and creative destruction for every action source. */
 class PaperDamageValidator(
-    private val citadels: CitadelFacade,
+    private val citadels: ReadableCitadelFacade,
     private val citadelTypes: PaperCitadelTypes,
     private val creativeModeEnabled: Boolean
 ) : ActionValidator<DamageAction> {

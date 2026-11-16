@@ -1,11 +1,11 @@
 package ru.fornax.fornaxcitadel.modules.health
 
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 
 /** Amplifies damage to reproduce a linearly growing effective maximum without changing stored HP. */
 class MaturingDamageModifier(private val maturation: MaturationService) : DamageModifier {
-    override fun getDamage(context: ActionContext, citadel: CitadelHandle, currentDamage: Double): Double {
+    override fun getDamage(context: ActionContext, citadel: ReadableHandle, currentDamage: Double): Double {
         require(currentDamage.isFinite() && currentDamage >= 0.0) {
             "Damage must be finite and non-negative"
         }

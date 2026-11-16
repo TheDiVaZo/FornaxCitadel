@@ -3,7 +3,7 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
@@ -29,9 +29,9 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
 
     fun level(key: Key): Int? = name(key)?.let { configured.getValue(it).lvl }
 
-    fun itemKey(citadel: CitadelHandle): Key? = citadel.getComponent(CitadelKind::class.java)?.definitionKey?.let(::itemKey)
+    fun itemKey(citadel: ReadableHandle): Key? = citadel.getComponent(CitadelKind::class.java)?.definitionKey?.let(::itemKey)
 
-    fun level(citadel: CitadelHandle): Int? = citadel.getComponent(CitadelKind::class.java)?.definitionKey?.let(::level)
+    fun level(citadel: ReadableHandle): Int? = citadel.getComponent(CitadelKind::class.java)?.definitionKey?.let(::level)
 
     fun damagePolicy(key: Key): CitadelDamagePolicy? = name(key)?.let { configured.getValue(it).damagePolicy }
 

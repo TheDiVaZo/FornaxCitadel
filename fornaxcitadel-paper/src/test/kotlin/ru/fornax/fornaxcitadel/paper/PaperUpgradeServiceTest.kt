@@ -14,6 +14,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.component.ReadableComponent
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -506,8 +507,13 @@ class PaperUpgradeServiceTest {
             override fun validate(action: UpgradeAction) = check(action)
         }.also(module.actions.validatorCoordinator::registerValidator)
 
-    class Marker : Component() {
-        var value = 0
+    interface ReadableMarker : ReadableComponent {
+        val value: Int
+    }
+
+    class Marker : Component<ReadableMarker>(), ReadableMarker {
+        override val readable: ReadableMarker get() = this
+        override var value = 0
         override fun write(output: DataOutput) = output.writeInt(value)
         override fun read(input: DataInput) { value = input.readInt() }
     }

@@ -4,9 +4,11 @@ import kotlin.Unit;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind;
+import ru.fornax.fornaxcitadel.core.citadel.ReadableCitadelKind;
 import ru.fornax.fornaxcitadel.core.facade.ActionManager;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager;
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle;
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
@@ -65,7 +67,7 @@ public final class HealthService implements LifecycleService {
     public boolean unregisterDefinition(@NotNull Key key) { return definitions.remove(key) != null; }
 
     @Nullable
-    public Double maxHealth(@NotNull CitadelHandle citadel) {
+    public Double maxHealth(@NotNull ReadableHandle citadel) {
         Key key = definitionKey(citadel);
         HealthDefinition definition = key == null ? null : findDefinition(key);
         return definition == null ? null : definition.getMaxHealth();
@@ -76,10 +78,10 @@ public final class HealthService implements LifecycleService {
      * Does not create a component, clamp saved HP or dirty storage. Unavailable/foreign handles return null.
      */
     @Nullable
-    public Double currentHealth(@NotNull CitadelHandle citadel) {
+    public Double currentHealth(@NotNull ReadableHandle citadel) {
         if (!componentManager.isCurrent(citadel)) return null;
-        Health component = citadel.getComponent(Health.class);
-        if (component != null) return component.health;
+        ReadableHealth component = citadel.getComponent(Health.class);
+        if (component != null) return component.getHealth();
         return maxHealth(citadel);
     }
 
@@ -152,7 +154,7 @@ public final class HealthService implements LifecycleService {
             throw new IllegalArgumentException("Damage must be finite and non-negative: " + damage);
         }
         if (!componentManager.isCurrent(citadel)) return ActionResult.DENIED;
-        Health component = citadel.getComponent(Health.class);
+        ReadableHealth component = citadel.getComponent(Health.class);
         Double initialHealth = currentHealth(citadel);
         if (initialHealth != null) requireValidHealth(initialHealth);
         Key originalKey = definitionKey(citadel);
@@ -188,11 +190,11 @@ public final class HealthService implements LifecycleService {
             return ActionResult.SUCCESS;
         }
         boolean edited = citadel.editComponent(Health.class, health -> {
-            health.health = remainingHealth;
+            health.setHealth(remainingHealth);
             return Unit.INSTANCE;
         });
         if (!edited || citadel.getComponent(Health.class) != component) return ActionResult.DENIED;
-        if (component.health == 0.0) {
+        if (component.getHealth() == 0.0) {
             return removeService.remove(citadel);
         }
         return ActionResult.SUCCESS;
@@ -210,8 +212,8 @@ public final class HealthService implements LifecycleService {
     }
 
     @Nullable
-    private static Key definitionKey(CitadelHandle citadel) {
-        CitadelKind kind = citadel.getComponent(CitadelKind.class);
+    private static Key definitionKey(ReadableHandle citadel) {
+        ReadableCitadelKind kind = citadel.getComponent(CitadelKind.class);
         return kind == null ? null : kind.getDefinitionKey();
     }
 

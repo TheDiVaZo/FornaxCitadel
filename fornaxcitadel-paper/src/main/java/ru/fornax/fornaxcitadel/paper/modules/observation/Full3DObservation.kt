@@ -15,7 +15,7 @@ import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.observation.Observation
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationPublisher
@@ -202,7 +202,7 @@ class Full3DObservation @JvmOverloads constructor(
         }
     }
 
-    private fun scan(cell: Cell): List<CitadelHandle> {
+    private fun scan(cell: Cell): List<ReadableHandle> {
         val horizontal = settings.horizontalRadiusChunks.toLong()
         val vertical = settings.verticalRadiusSections.toLong()
         val minX = maxOf(Short.MIN_VALUE.toLong(), cell.x.toLong() - horizontal)
@@ -214,7 +214,7 @@ class Full3DObservation @JvmOverloads constructor(
         val maxY = minOf(Int.MAX_VALUE.toLong(),
             (cell.y.toLong() + vertical + 1) * 16 - 1)
         if (minX > maxX || minZ > maxZ || minY > maxY) return emptyList()
-        val result = ArrayList<CitadelHandle>()
+        val result = ArrayList<ReadableHandle>()
         for (x in minX.toInt()..maxX.toInt()) {
             for (z in minZ.toInt()..maxZ.toInt()) {
                 manager.forEachCitadel(cell.world, x, z, minY.toInt(), maxY.toInt(), result::add)

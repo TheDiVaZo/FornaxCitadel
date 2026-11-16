@@ -5,7 +5,7 @@ import org.bukkit.event.Cancellable
 import org.bukkit.event.Event
 import org.bukkit.event.HandlerList
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import java.util.Collections
 
 /** Synchronous pre-destruction event. Targets cannot be added, replaced or reordered by listeners. */
@@ -13,7 +13,7 @@ class AcidBlockActivateEvent(
     val player: Player,
     val acidPosition: CitadelPosition,
     val acidType: AcidType,
-    val acidReinforcement: CitadelHandle,
+    val acidReinforcement: ReadableHandle,
     targets: List<AcidTarget>
 ) : Event(), Cancellable {
     val targets: List<AcidTarget> = Collections.unmodifiableList(targets.toList())
@@ -27,4 +27,4 @@ class AcidBlockActivateEvent(
     }
 }
 
-data class AcidTarget(val position: CitadelPosition, val reinforcement: CitadelHandle)
+data class AcidTarget(val position: CitadelPosition, val reinforcement: ReadableHandle)

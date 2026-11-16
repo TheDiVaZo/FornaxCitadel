@@ -170,7 +170,7 @@ class ChunkCord(val location: WXZCord) {
         citadels.forEachCitadelInYRange(firstY, lastY, action)
     }
 
-    fun <T : Component> getComponent(
+    fun <T : Component<*>> getComponent(
         entity: CitadelEntity,
         type: ComponentType<T>
     ): T? {
@@ -178,7 +178,7 @@ class ChunkCord(val location: WXZCord) {
         return components.getComponent(packedPosition, type)
     }
 
-    fun <T : Component> putComponent(
+    fun <T : Component<*>> putComponent(
         entity: CitadelEntity,
         type: ComponentType<T>,
         component: T
@@ -196,7 +196,7 @@ class ChunkCord(val location: WXZCord) {
         return previous
     }
 
-    fun <T : Component> removeComponent(
+    fun <T : Component<*>> removeComponent(
         entity: CitadelEntity,
         type: ComponentType<T>
     ): T? {
@@ -217,13 +217,13 @@ class ChunkCord(val location: WXZCord) {
 
     fun forEachComponent(
         entity: CitadelEntity,
-        action: (ComponentType<*>, Component) -> Unit
+        action: (ComponentType<*>, Component<*>) -> Unit
     ) {
         val packedPosition = requireCurrentPosition(entity)
         components.forEachComponent(packedPosition, action)
     }
 
-    fun <T : Component> forEachComponentOfType(
+    fun <T : Component<*>> forEachComponentOfType(
         type: ComponentType<T>,
         action: (CitadelEntity, T) -> Unit
     ) {
@@ -236,7 +236,7 @@ class ChunkCord(val location: WXZCord) {
      * the storage bounds. Do not structurally modify the chunk during iteration.
      * Reading does not mark dirty; call [markDirty] after mutating a component's fields.
      */
-    fun <T : Component> forEachComponentOfType(
+    fun <T : Component<*>> forEachComponentOfType(
         type: ComponentType<T>,
         y: Int,
         yDelta: Int,
@@ -282,8 +282,8 @@ class ChunkCord(val location: WXZCord) {
 
     internal fun replaceOpaqueComponent(
         candidate: OpaqueComponentCandidate,
-        type: ComponentType<out Component>,
-        component: Component
+        type: ComponentType<out Component<*>>,
+        component: Component<*>
     ): Boolean {
         require(candidate.key == type.key) {
             "Opaque key ${candidate.key} does not match component type ${type.key}"
@@ -337,12 +337,12 @@ class ChunkCord(val location: WXZCord) {
     @Suppress("UNCHECKED_CAST")
     private fun putUntypedComponent(
         entity: CitadelEntity,
-        type: ComponentType<out Component>,
-        component: Component
+        type: ComponentType<out Component<*>>,
+        component: Component<*>
     ) {
         putComponent(
             entity,
-            type as ComponentType<Component>,
+            type as ComponentType<Component<*>>,
             component
         )
     }
@@ -530,7 +530,7 @@ class ChunkCord(val location: WXZCord) {
 
     private class ComponentsData {
 
-        private class ComponentsStore<T : Component>(
+        private class ComponentsStore<T : Component<*>>(
             val type: ComponentType<T>
         ) {
             private val owners = ArrayList<CitadelEntity>()
@@ -612,7 +612,7 @@ class ChunkCord(val location: WXZCord) {
             arrayOfNulls(TypeManager.MAX_COMPONENT_COUNT)
 
         @Suppress("UNCHECKED_CAST")
-        private fun <T : Component> getStore(
+        private fun <T : Component<*>> getStore(
             type: ComponentType<T>
         ): ComponentsStore<T>? {
             require(type.id.toInt() in componentsType.indices)
@@ -626,7 +626,7 @@ class ChunkCord(val location: WXZCord) {
             return store as ComponentsStore<T>
         }
 
-        private fun <T : Component> getOrCreateStore(
+        private fun <T : Component<*>> getOrCreateStore(
             type: ComponentType<T>
         ): ComponentsStore<T> {
             return getStore(type)
@@ -635,14 +635,14 @@ class ChunkCord(val location: WXZCord) {
                 }
         }
 
-        fun <T : Component> getComponent(
+        fun <T : Component<*>> getComponent(
             packedPosition: Int,
             type: ComponentType<T>
         ): T? {
             return getStore(type)?.get(packedPosition)
         }
 
-        fun <T : Component> putComponent(
+        fun <T : Component<*>> putComponent(
             packedPosition: Int,
             entity: CitadelEntity,
             type: ComponentType<T>,
@@ -659,7 +659,7 @@ class ChunkCord(val location: WXZCord) {
             )
         }
 
-        fun <T : Component> removeComponent(
+        fun <T : Component<*>> removeComponent(
             packedPosition: Int,
             type: ComponentType<T>
         ): T? {
@@ -689,7 +689,7 @@ class ChunkCord(val location: WXZCord) {
 
         fun forEachComponent(
             packedPosition: Int,
-            action: (ComponentType<*>, Component) -> Unit
+            action: (ComponentType<*>, Component<*>) -> Unit
         ) {
             for (store in componentsType) {
                 if (store == null) continue
@@ -699,7 +699,7 @@ class ChunkCord(val location: WXZCord) {
             }
         }
 
-        fun <T : Component> forEachOfType(
+        fun <T : Component<*>> forEachOfType(
             type: ComponentType<T>,
             action: (CitadelEntity, T) -> Unit
         ) {

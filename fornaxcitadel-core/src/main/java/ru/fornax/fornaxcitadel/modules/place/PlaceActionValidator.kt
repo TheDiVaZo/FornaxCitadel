@@ -2,13 +2,13 @@ package ru.fornax.fornaxcitadel.modules.place
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 
 /** Checks placement prerequisites without granting authorization or loading chunks. */
 class PlaceActionValidator(
-    private val citadels: CitadelFacade,
+    private val citadels: ReadableCitadelFacade,
     private val definitions: CitadelDefinitionRegistry
 ) : ActionValidator<PlaceAction> {
     override val actionClass = PlaceAction::class.java

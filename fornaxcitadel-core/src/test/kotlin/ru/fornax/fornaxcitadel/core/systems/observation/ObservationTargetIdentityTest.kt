@@ -3,8 +3,10 @@ package ru.fornax.fornaxcitadel.core.systems.observation
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.component.ReadableComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
@@ -109,13 +111,13 @@ class ObservationTargetIdentityTest {
         override val requiredComponents = setOf(ValueComponent::class.java)
         val events = mutableListOf<Event>()
 
-        override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: String) {
+        override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
             assertEquals(citadel.position, target.position)
             assertEquals(citadel.runtimeId, target.runtimeId)
             events.add(Event("enter:$viewer", target))
         }
 
-        override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<String>) {
+        override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
             assertEquals(citadel.position, target.position)
             assertEquals(citadel.runtimeId, target.runtimeId)
             events.add(Event("tick:${viewers.joinToString(",")}", target))
@@ -156,7 +158,7 @@ class ObservationTargetIdentityTest {
             service.enable()
         }
 
-        fun observe(citadel: CitadelHandle, viewer: String = "alice", viewerId: UUID = ALICE): Observer {
+        fun observe(citadel: ReadableHandle, viewer: String = "alice", viewerId: UUID = ALICE): Observer {
             lateinit var publisher: ObservationPublisher
             val subscription = service.registerViewer(viewerId, viewer, Observation { _, sink ->
                 publisher = sink
@@ -183,7 +185,8 @@ class ObservationTargetIdentityTest {
         override fun closeAndSaveAll(): CompletableFuture<Void> = CompletableFuture.completedFuture(null)
     }
 
-    private class ValueComponent : Component() {
+    private class ValueComponent : Component<ReadableComponent>(), ReadableComponent {
+        override val readable: ReadableComponent get() = this
         override fun read(input: DataInput) = Unit
         override fun write(output: DataOutput) = Unit
     }

@@ -1,13 +1,13 @@
 package ru.fornax.fornaxcitadel.core.systems.observation
 
 import ru.fornax.fornaxcitadel.core.component.Component
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 
 /**
  * Processes observed citadels containing all [requiredComponents]. Systems may share requirements.
  * Intended primarily for presentation, but gameplay operations are allowed through the usual
  * core APIs. Calls depend on viewers being present; their count is not a measure of game time.
- * Components are live and owner-thread confined: use editComponent/markDirty for mutations.
+ * Components are live and owner-thread confined. Request gameplay changes through the action APIs.
  * Keep transient display resources in the system, not in persistent components.
  * All callbacks share the service's existing [ObservationTarget] instance across systems and
  * viewers while the citadel remains observed. Repeated publications and component replacement
@@ -21,16 +21,16 @@ interface ObservationSystem<V> {
      * Register the types with the component manager before observing them. The service copies this
      * set on system registration; unregister and register again to change the requirements.
      */
-    val requiredComponents: Set<Class<out Component>>
+    val requiredComponents: Set<Class<out Component<*>>>
 
-    fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: V) {}
+    fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: V) {}
 
     /**
      * Once per matching active citadel per scheduled pass, with a stable, unmodifiable audience.
-     * Requirements are checked before the call; read needed components through [CitadelHandle].
+     * Requirements are checked before the call; read needed components through [ReadableHandle].
      * [target] identifies [citadel] and can be reused as the key for this system's runtime state.
      */
-    fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<V>)
+    fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<V>)
 
     /** Releases this viewer's resources without requiring an available component or live handle. */
     fun onViewerLeave(citadel: ObservationTarget, viewer: V) {}

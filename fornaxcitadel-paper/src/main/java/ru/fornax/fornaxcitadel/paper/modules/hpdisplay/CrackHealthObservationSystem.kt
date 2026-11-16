@@ -4,7 +4,7 @@ import org.bukkit.Chunk
 import org.bukkit.Location
 import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationSystem
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationTarget
 import ru.fornax.fornaxcitadel.modules.health.Health
@@ -24,11 +24,11 @@ class CrackHealthObservationSystem(private val plugin: Plugin, private val healt
 
     private val overlays = HashMap<ObservationTarget, MutableMap<UUID, Overlay>>()
 
-    override fun onViewerEnter(citadel: CitadelHandle, target: ObservationTarget, viewer: Player) {
+    override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: Player) {
         update(citadel, target, listOf(viewer), force = true)
     }
 
-    override fun tick(citadel: CitadelHandle, target: ObservationTarget, viewers: List<Player>) {
+    override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<Player>) {
         update(citadel, target, viewers, force = false)
     }
 
@@ -45,7 +45,7 @@ class CrackHealthObservationSystem(private val plugin: Plugin, private val healt
         }
     }
 
-    private fun update(citadel: CitadelHandle, target: ObservationTarget, viewers: List<Player>, force: Boolean) {
+    private fun update(citadel: ReadableHandle, target: ObservationTarget, viewers: List<Player>, force: Boolean) {
         checkMainThread()
         val component = citadel.getComponent(Health::class.java)
         val maximum = health.maxHealth(citadel)

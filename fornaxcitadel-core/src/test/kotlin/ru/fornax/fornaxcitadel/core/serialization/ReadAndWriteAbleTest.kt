@@ -1,6 +1,8 @@
 package ru.fornax.fornaxcitadel.core.serialization
 
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.component.ReadableComponent
+import ru.fornax.fornaxcitadel.testing.ReadableTestValue
 import ru.fornax.fornaxcitadel.core.component.OpaqueComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
@@ -567,8 +569,9 @@ class ReadAndWriteAbleTest {
     }
 
     private class IntComponent(
-        var value: Int = 0
-    ) : Component() {
+        override var value: Int = 0
+    ) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         var writeFailure: Exception? = null
 
         override fun write(output: DataOutput) {
@@ -581,15 +584,17 @@ class ReadAndWriteAbleTest {
         }
     }
 
-    private class OtherComponent : Component() {
+    private class OtherComponent : Component<ReadableComponent>(), ReadableComponent {
+        override val readable: ReadableComponent get() = this
         override fun write(output: DataOutput) = Unit
 
         override fun read(input: DataInput) = Unit
     }
 
     private class CorruptibleComponent(
-        var value: Int = 0
-    ) : Component() {
+        override var value: Int = 0
+    ) : Component<ReadableTestValue>(), ReadableTestValue {
+        override val readable: ReadableTestValue get() = this
         override fun write(output: DataOutput) {
             output.writeInt(value)
         }
@@ -601,7 +606,8 @@ class ReadAndWriteAbleTest {
 
     private class RequiredArgumentComponent(
         private val value: Int
-    ) : Component() {
+    ) : Component<ReadableComponent>(), ReadableComponent {
+        override val readable: ReadableComponent get() = this
         override fun write(output: DataOutput) {
             output.writeInt(value)
         }
