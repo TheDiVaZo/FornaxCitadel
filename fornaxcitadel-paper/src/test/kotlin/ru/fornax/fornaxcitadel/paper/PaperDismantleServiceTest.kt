@@ -306,13 +306,12 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `unowned reinforcement requires authorization and lifecycle leaves external validators alone`() {
+    fun `unowned reinforcement permits dismantling and lifecycle leaves external validators alone`() {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.placeExact(fixture.block())
             val action = fixture.action()
             val coordinator = fixture.module.actions.validatorCoordinator
-            assertSame(ActionValidator.Result.Neutral, coordinator.validate(action))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            assertSame(ActionValidator.Result.Success, coordinator.validate(action))
             val grant = fixture.validate { ActionValidator.Result.Success }
             fixture.dismantleService.disable()
             fixture.dismantleService.disable()

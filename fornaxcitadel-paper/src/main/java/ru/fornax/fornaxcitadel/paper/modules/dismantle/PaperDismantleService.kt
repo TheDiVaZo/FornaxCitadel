@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.paper.modules.dismantle
 
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
@@ -61,6 +62,7 @@ class PaperDismantleService @JvmOverloads constructor(
         val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
             "Validated dismantle target is unavailable"
         }
+        val owner = citadel.getComponent(CitadelOwner::class.java)?.playerId
         val health = citadel.getComponent(Health::class.java)
         val maximum = module.health.maxHealth(citadel)
         val refundChance = if (health == null || maximum != null && health.health >= maximum) 1.0 else settings.refundChance
@@ -76,7 +78,7 @@ class PaperDismantleService @JvmOverloads constructor(
                 return ActionResult.DENIED
             }
         } else null
-        if (!citadel.isCurrent) return ActionResult.DENIED
+        if (!citadel.isCurrent || citadel.getComponent(CitadelOwner::class.java)?.playerId != owner) return ActionResult.DENIED
         val dropLocation = block.location.add(0.5, 0.5, 0.5)
         val result = module.remove.remove(citadel)
         if (result == ActionResult.SUCCESS && refund != null &&

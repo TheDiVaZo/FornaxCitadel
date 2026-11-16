@@ -9,12 +9,14 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.paper.PaperMessages
@@ -23,7 +25,7 @@ import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.logging.Level
 
-/** Resolves reinforcement item use into placement or repair through core actions. */
+/** Resolves reinforcement item use into placement, repair or claiming through core actions. */
 class PaperPlacementService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
@@ -95,15 +97,24 @@ class PaperPlacementService @JvmOverloads constructor(
             val position = CitadelPosition(block.world.uid, block.x, block.y, block.z)
             val citadel = if (block.supportsCitadelData()) module.citadels.findProtecting(position) else null
             if (citadel != null) {
-                messageGroup = "repair"
-                val health = module.health.currentHealth(citadel) ?: return
-                val maximum = module.health.maxHealth(citadel) ?: return
-                if (health >= maximum || citadelTypes.itemKey(citadel) != materialKey) return
+                val context = ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY))
+                val action = if (citadelTypes.itemKey(citadel) == materialKey) {
+                    messageGroup = "repair"
+                    val health = module.health.currentHealth(citadel)
+                    val maximum = module.health.maxHealth(citadel)
+                    if (health == null || maximum == null || health >= maximum) {
+                        if (citadel.getComponent(CitadelOwner::class.java) != null) return
+                        messageGroup = "claim"
+                        ClaimAction(context, position)
+                    } else {
+                        RepairAction(context, position)
+                    }
+                } else {
+                    return
+                }
                 denyUse(event)
-                val result = module.actions.execute(RepairAction(
-                    ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY)), position
-                ))
-                messages.sendGameplay(player, if (result == ActionResult.SUCCESS) "repair.success" else "repair.denied")
+                val result = module.actions.execute(action)
+                messages.sendGameplay(player, if (result == ActionResult.SUCCESS) "$messageGroup.success" else "$messageGroup.denied")
                 return
             }
             if (materialKey !in definitionsByMaterial) return

@@ -8,6 +8,7 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.claim.ClaimAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 
@@ -29,6 +30,7 @@ class PaperPermissionValidator(
             is DamageAction -> "fornaxcitadel.damage"
             is DismantleAction -> "fornaxcitadel.dismantle"
             is RepairAction -> "fornaxcitadel.repair"
+            is ClaimAction -> "fornaxcitadel.repair"
             is RemoveAction -> "fornaxcitadel.admin"
             else -> return ActionValidator.Result.Neutral
         }
@@ -40,7 +42,7 @@ class PaperPermissionValidator(
                 return ActionValidator.Result.Rejected
             }
         }
-        return if (action is DamageAction || action is DismantleAction || action is RepairAction) ActionValidator.Result.Neutral
+        return if (action is DamageAction || action is DismantleAction || action is RepairAction || action is ClaimAction) ActionValidator.Result.Neutral
         else ActionValidator.Result.Success
     }
 }

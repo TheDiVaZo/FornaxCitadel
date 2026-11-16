@@ -288,17 +288,17 @@ class PaperRepairServiceTest {
     }
 
     @Test
-    fun `missing owner needs another authorizer and repair lifecycle preserves external validators`() {
+    fun `missing owner grants repair and repair lifecycle preserves external validators`() {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.place()
             fixture.damage()
             fixture.installer.held = fixture.reinforcementStack()
             fixture.manager.removeComponent(CitadelOwner::class.java, fixture.worldId, 1, 64, 2)
             val action = fixture.action()
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            assertSame(ActionValidator.Result.Success, fixture.module.actions.validatorCoordinator.validate(action))
             val grant = fixture.validate { ActionValidator.Result.Success }
             repeat(2) { fixture.repairService.disable() }
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            assertSame(ActionValidator.Result.Success, fixture.module.actions.validatorCoordinator.validate(action))
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
             repeat(2) { fixture.repairService.enable() }
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))

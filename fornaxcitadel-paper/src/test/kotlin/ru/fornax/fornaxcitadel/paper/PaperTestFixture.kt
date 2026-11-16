@@ -71,6 +71,7 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
+import ru.fornax.fornaxcitadel.paper.modules.claim.PaperClaimService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
@@ -266,6 +267,7 @@ internal class PaperTestFixture(
         }
     }
     val dismantleService = PaperDismantleService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
+    val claimService = PaperClaimService(module)
     val repairService = PaperRepairService(module, citadelTypes, materials)
     val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
     val explosionService = PaperExplosionService(plugin, module, explosionPowers)
@@ -285,6 +287,7 @@ internal class PaperTestFixture(
         if (initializeModule) module.enable()
         if (initializeSystems) {
             dismantleService.enable()
+            claimService.enable()
             repairService.enable()
             placementService.enable()
             breakingService.enable()
@@ -407,6 +410,7 @@ internal class PaperTestFixture(
         explosionService.disable()
         breakingService.disable()
         repairService.disable()
+        claimService.disable()
         dismantleService.disable()
         placementService.disable()
         module.disable()
@@ -547,6 +551,8 @@ internal class TestItemStack(private val material: Material, amount: Int) : Item
     override fun getItemMeta(): ItemMeta = metadata
     override fun getPersistentDataContainer(): PersistentDataContainer = data.container
     override fun isEmpty(): Boolean = count == 0 || material == Material.AIR
+    override fun equals(other: Any?): Boolean = other is TestItemStack && material == other.material && count == other.count && data.values == other.data.values
+    override fun hashCode(): Int = 31 * (31 * material.hashCode() + count) + data.values.hashCode()
     public override fun clone(): ItemStack = TestItemStack(material, count).also { it.data.values.putAll(data.values) }
 }
 

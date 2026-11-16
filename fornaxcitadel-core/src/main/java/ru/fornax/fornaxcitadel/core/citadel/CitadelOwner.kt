@@ -7,7 +7,7 @@ import java.io.DataInput
 import java.io.DataOutput
 import java.util.UUID
 
-/** The player recorded when reinforcement was placed; absent on actorless and legacy placements. */
+/** The player who placed or claimed the reinforcement; absence means it is unowned. */
 class CitadelOwner(var playerId: UUID = UUID(0, 0)) : Component() {
     override fun write(output: DataOutput) {
         writeUUID(playerId, output)
