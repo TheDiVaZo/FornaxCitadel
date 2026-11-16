@@ -37,7 +37,8 @@ class PaperUpgradeService @JvmOverloads constructor(
 ) : LifecycleService {
     private val refunds = ReinforcementRefunds(materials, settings, random)
     private val registration = ActionRegistration(
-        module.actions, UpgradeAction::class.java, UpgradeAction.KEY, OwnerUpgradeValidator(module.citadels), ::upgrade
+        module.actions, UpgradeAction::class.java, UpgradeAction.KEY,
+        listOf(UpgradeActionValidator(module.citadels, module.definitions), OwnerUpgradeValidator(module.citadels)), ::upgrade
     )
 
     override fun enable() = registration.enable()

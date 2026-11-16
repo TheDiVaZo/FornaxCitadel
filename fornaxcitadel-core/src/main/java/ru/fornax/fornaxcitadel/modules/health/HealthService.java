@@ -22,7 +22,7 @@ import java.util.Objects;
 
 /**
  * Applies authorized, modified damage on the owning game thread. Use currentHealth for read-only HP queries.
- * When assembled without CitadelModule, configure action metadata, prerequisite and authorization validators.
+ * Enabling registers damage prerequisites. Configure action metadata and authorization when assembled without CitadelModule.
  * Direct calls do not notify action handlers.
  */
 public final class HealthService implements LifecycleService {
@@ -33,6 +33,7 @@ public final class HealthService implements LifecycleService {
     private final Map<Key, HealthDefinition> definitions = new HashMap<>();
     private List<DamageModifier> modifiers = List.of();
     private final DamageProcessor processor = new DamageProcessor(this);
+    private final DamageActionValidator validator;
 
     public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService) {
         this(actions, removeService, Clock.systemUTC());
@@ -41,6 +42,7 @@ public final class HealthService implements LifecycleService {
     public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
                          @NotNull Clock clock) {
         this.actions = Objects.requireNonNull(actions, "actions");
+        this.validator = new DamageActionValidator(actions.getCitadels());
         this.componentManager = actions.getComponentManager();
         this.removeService = Objects.requireNonNull(removeService, "removeService");
         componentManager.registerComponent(Health.KEY, Health.class);
@@ -84,10 +86,18 @@ public final class HealthService implements LifecycleService {
     @Override
     public void enable() {
         actions.getProcessorCoordinator().registerProcessor(processor);
+        try {
+            actions.getValidatorCoordinator().registerValidator(validator);
+        } catch (Throwable failure) {
+            actions.getValidatorCoordinator().unregisterValidator(validator);
+            actions.getProcessorCoordinator().unregisterProcessor(processor);
+            throw failure;
+        }
     }
 
     @Override
     public void disable() {
+        actions.getValidatorCoordinator().unregisterValidator(validator);
         actions.getProcessorCoordinator().unregisterProcessor(processor);
     }
 

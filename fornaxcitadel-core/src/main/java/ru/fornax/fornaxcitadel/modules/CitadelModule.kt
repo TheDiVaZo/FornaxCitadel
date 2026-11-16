@@ -26,7 +26,7 @@ import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
  *
  * Register read-only authorization checks on [actions.validatorCoordinator]. Damage, explicit
  * destruction, administrative removal, dismantling, repair and upgrade require a validator's Success; a rejection always wins.
- * This module validates target availability and placement prerequisites before execution.
+ * Enabled services validate target availability and placement prerequisites before execution.
  * These prerequisite checks never grant authorization. Definitions configure initial components;
  * source keys are attribution.
  *
@@ -57,12 +57,10 @@ class CitadelModule @JvmOverloads constructor(
     val remove = RemoveService(actions)
     val health = HealthService(actions, remove)
     val actionQueue = ActionQueueService(actions, scheduler, maxActionsPerTick, actionFailureHandler)
-    private val actionValidator = CitadelActionValidator(citadels, definitions)
     private val services: List<LifecycleService> = listOf(remove, health, place, actionQueue)
 
     override fun enable() {
         try {
-            actions.validatorCoordinator.registerValidator(actionValidator)
             services.forEach { it.enable() }
         } catch (failure: Throwable) {
             try {
@@ -85,7 +83,6 @@ class CitadelModule @JvmOverloads constructor(
                 else if (previous !== cleanupFailure) previous.addSuppressed(cleanupFailure)
             }
         }
-        actions.validatorCoordinator.unregisterValidator(actionValidator)
         actions.clearPosted()
         failure?.let { throw it }
     }

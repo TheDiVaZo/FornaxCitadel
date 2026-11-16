@@ -22,7 +22,8 @@ class PaperRepairService(
     private val materials: MaterialRegistry
 ) : LifecycleService {
     private val registration = ActionRegistration(
-        module.actions, RepairAction::class.java, RepairAction.KEY, OwnerRepairValidator(module.citadels), ::repair
+        module.actions, RepairAction::class.java, RepairAction.KEY,
+        listOf(RepairActionValidator(module.citadels), OwnerRepairValidator(module.citadels)), ::repair
     )
 
     override fun enable() = registration.enable()

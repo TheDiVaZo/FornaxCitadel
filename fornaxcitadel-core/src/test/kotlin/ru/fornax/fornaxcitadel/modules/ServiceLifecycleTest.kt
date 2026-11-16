@@ -15,6 +15,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -46,6 +47,56 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ServiceLifecycleTest {
+    @Test
+    fun `standalone services attach and detach only their own prerequisite checks`() {
+        val fixture = Fixture()
+        fixture.prepare()
+        val approval = fixture.approveAll()
+        val requests = invalidRequests()
+        for ((service, request) in fixture.services.zip(requests)) {
+            assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(request))
+            repeat(2) { service.enable() }
+            assertEquals(ActionValidator.Result.Rejected, fixture.actions.validatorCoordinator.validate(request))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(request))
+            for (other in requests.filter { it !== request }) {
+                assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(other))
+            }
+            repeat(2) { service.disable() }
+            assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(request))
+        }
+        assertTrue(fixture.actions.validatorCoordinator.unregisterValidator(approval))
+        assertNull(fixture.find())
+    }
+
+    @Test
+    fun `standalone processor conflicts do not leak prerequisites or remove external registrations`() {
+        for (index in ACTION_KEYS.indices) {
+            val fixture = Fixture()
+            fixture.prepare()
+            val approval = fixture.approveAll()
+            val service = fixture.services[index]
+            val request = invalidRequests()[index]
+            val external = object : ActionProcessor<ActionData>() {
+                override val actionClass = ActionData::class.java
+                override val actionKey = request.type
+                override fun execute(action: ActionData) = ActionResult.SUCCESS
+            }
+            val processors = fixture.actions.processorCoordinator
+            processors.registerProcessor(external)
+            assertFailsWith<IllegalArgumentException> { service.enable() }
+            assertSame(external, processors.getProcessor(request.type))
+            assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(request))
+            service.disable()
+            assertSame(external, processors.getProcessor(request.type))
+            assertTrue(processors.unregisterProcessor(external))
+            service.enable()
+            assertEquals(ActionValidator.Result.Rejected, fixture.actions.validatorCoordinator.validate(request))
+            service.disable()
+            assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(request))
+            assertTrue(fixture.actions.validatorCoordinator.unregisterValidator(approval))
+        }
+    }
+
     @Test
     fun `constructors register component types before enabling any handlers`() {
         val fixture = Fixture()
@@ -297,10 +348,15 @@ class ServiceLifecycleTest {
         private val place = PlaceService(actions, definitions)
         private val remove = RemoveService(actions)
         val health = HealthService(actions, remove)
-        private val services: List<LifecycleService> = listOf(remove, health, place)
+        val services: List<LifecycleService> = listOf(remove, health, place)
 
         fun enable() = services.forEach { it.enable() }
         fun disable() = services.asReversed().forEach { it.disable() }
+
+        fun approveAll(): ActionValidator<ActionData> = object : ActionValidator<ActionData> {
+            override val actionClass = ActionData::class.java
+            override fun validate(action: ActionData) = ActionValidator.Result.Success
+        }.also(actions.validatorCoordinator::registerValidator)
 
         fun prepare() {
             definitions.register(CitadelDefinition(TYPE, initializers()))
@@ -346,6 +402,11 @@ class ServiceLifecycleTest {
         val ACTION_KEYS = listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY)
 
         fun placeAction() = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
+        fun invalidRequests(): List<ActionData> = listOf(
+            RemoveAction(ActionContext.SYSTEM, POSITION),
+            DamageAction(ActionContext.SYSTEM, POSITION, 1.0),
+            PlaceAction(ActionContext.SYSTEM, POSITION, Key("test", "unknown"))
+        )
         fun initializers(): List<CitadelInitializer> = listOf(
             CitadelInitializer { _, draft -> draft.addComponent(Health::class.java, Health(10.0)) },
             MaturingInitializer(Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))

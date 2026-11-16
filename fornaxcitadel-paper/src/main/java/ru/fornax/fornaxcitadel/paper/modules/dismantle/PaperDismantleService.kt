@@ -24,7 +24,8 @@ class PaperDismantleService @JvmOverloads constructor(
 ) : LifecycleService {
     private val refunds = ReinforcementRefunds(materials, settings, random)
     private val registration = ActionRegistration(
-        module.actions, DismantleAction::class.java, DismantleAction.KEY, OwnerDismantleValidator(module.citadels), ::dismantle
+        module.actions, DismantleAction::class.java, DismantleAction.KEY,
+        listOf(DismantleActionValidator(module.citadels), OwnerDismantleValidator(module.citadels)), ::dismantle
     )
 
     override fun enable() = registration.enable()

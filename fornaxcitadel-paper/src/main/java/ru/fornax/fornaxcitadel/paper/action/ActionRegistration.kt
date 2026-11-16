@@ -13,9 +13,10 @@ internal class ActionRegistration<T : ActionData>(
     private val actions: ActionManager,
     type: Class<T>,
     key: Key,
-    private val validator: ActionValidator<T>,
+    validators: List<ActionValidator<T>>,
     process: (T) -> ActionResult
 ) : LifecycleService {
+    private val validators = validators.toList()
     private val processor = object : ActionProcessor<T>() {
         override val actionClass = type
         override val actionKey = key
@@ -28,16 +29,17 @@ internal class ActionRegistration<T : ActionData>(
         if (isEnabled) return
         actions.processorCoordinator.registerProcessor(processor)
         try {
-            actions.validatorCoordinator.registerValidator(validator)
+            validators.forEach(actions.validatorCoordinator::registerValidator)
             isEnabled = true
         } catch (failure: Throwable) {
+            validators.asReversed().forEach(actions.validatorCoordinator::unregisterValidator)
             actions.processorCoordinator.unregisterProcessor(processor)
             throw failure
         }
     }
 
     override fun disable() {
-        actions.validatorCoordinator.unregisterValidator(validator)
+        validators.asReversed().forEach(actions.validatorCoordinator::unregisterValidator)
         actions.processorCoordinator.unregisterProcessor(processor)
         isEnabled = false
     }

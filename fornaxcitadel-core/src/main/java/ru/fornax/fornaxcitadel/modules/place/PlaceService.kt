@@ -9,7 +9,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
 /**
  * Trusted operation after prerequisite validation and authorization. Initializers must only modify their draft.
- * When assembled without CitadelModule, register prerequisite and authorization validators separately.
+ * Enabling registers placement prerequisites. Configure authorization separately when assembled without CitadelModule.
  * Direct calls do not notify action handlers.
  */
 class PlaceService(
@@ -18,6 +18,7 @@ class PlaceService(
 ) : LifecycleService {
     private val manager = actions.componentManager
     private val processor = PlaceProcessor(this)
+    private val validator = PlaceActionValidator(actions.citadels, definitions)
 
     init {
         manager.registerComponent(CitadelKind.KEY, CitadelKind::class.java)
@@ -26,9 +27,17 @@ class PlaceService(
 
     override fun enable() {
         actions.processorCoordinator.registerProcessor(processor)
+        try {
+            actions.validatorCoordinator.registerValidator(validator)
+        } catch (failure: Throwable) {
+            actions.validatorCoordinator.unregisterValidator(validator)
+            actions.processorCoordinator.unregisterProcessor(processor)
+            throw failure
+        }
     }
 
     override fun disable() {
+        actions.validatorCoordinator.unregisterValidator(validator)
         actions.processorCoordinator.unregisterProcessor(processor)
     }
 

@@ -44,6 +44,12 @@ class PaperActionServicesTest {
                     "upgrade" -> UpgradeAction(f.context(f.installer), f.position, destination)
                     else -> DismantleAction(f.context(f.installer), f.position)
                 }
+                val missingTarget = f.position.copy(x = 3)
+                val unavailableAction: ActionData = when (kind) {
+                    "repair" -> RepairAction(f.context(f.installer), missingTarget)
+                    "upgrade" -> UpgradeAction(f.context(f.installer), missingTarget, destination)
+                    else -> DismantleAction(f.context(f.installer), missingTarget)
+                }
                 service.disable()
                 val processors = f.module.actions.processorCoordinator
                 val validators = f.module.actions.validatorCoordinator
@@ -64,6 +70,7 @@ class PaperActionServicesTest {
                 validators.registerValidator(externalValidator)
 
                 assertFailsWith<IllegalArgumentException>(kind) { service.enable() }
+                assertSame(ActionValidator.Result.Success, validators.validate(unavailableAction), kind)
                 repeat(2) { service.disable() }
                 assertSame(externalProcessor, processors.getProcessor(action.type), kind)
                 assertEquals(ActionResult.SUCCESS, f.module.actions.execute(action), kind)
@@ -74,11 +81,13 @@ class PaperActionServicesTest {
 
                 processors.unregisterProcessor(externalProcessor)
                 repeat(2) { service.enable() }
+                assertSame(ActionValidator.Result.Rejected, validators.validate(unavailableAction), kind)
                 assertEquals(ActionResult.SUCCESS, f.module.actions.execute(action), kind)
                 assertEquals(1, externalExecutions, kind)
                 assertEquals(if (kind == "repair" || kind == "upgrade") 1 else 2, f.installer.held.amount, kind)
                 repeat(2) { service.disable() }
                 assertNull(processors.getProcessor(action.type), kind)
+                assertSame(ActionValidator.Result.Neutral, validators.validate(unavailableAction), kind)
             }
         }
     }

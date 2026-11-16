@@ -20,14 +20,11 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator.Result
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
+import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamageModifier
-import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
-import ru.fornax.fornaxcitadel.modules.repair.RepairAction
-import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,22 +33,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-class CitadelActionValidatorTest {
-    @Test
-    fun `upgrade requires a registered destination but not a known source definition`() {
-        Fixture(approve = true).use { fixture ->
-            val target = fixture.create()
-            target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "removed") }
-            fixture.recordExecutions()
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
-                UpgradeAction(ActionContext.SYSTEM, POSITION, Key("test", "unknown"))))
-            assertTrue(fixture.executed.isEmpty())
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
-                UpgradeAction(ActionContext.SYSTEM, POSITION, TYPE)))
-            assertEquals(1, fixture.executed.size)
-        }
-    }
-
+class CoreActionValidatorsTest {
     @Test
     fun `invalid core actions never reach a processor despite an earlier approval`() {
         Fixture(approve = true).use { fixture ->
@@ -159,7 +141,7 @@ class CitadelActionValidatorTest {
     }
 
     @Test
-    fun `module lifecycle removes only its prerequisite validator and restores it on enable`() {
+    fun `module lifecycle removes service prerequisites and restores them on enable`() {
         Fixture(enable = false).use { fixture ->
             val external = fixture.approve()
             val action = RemoveAction(ActionContext.SYSTEM, POSITION)
@@ -180,7 +162,7 @@ class CitadelActionValidatorTest {
         Fixture(enable = false).use { fixture ->
             fixture.approve()
             fixture.scheduler.timerFailure = IllegalStateException("Scheduling failed")
-            val action = DismantleAction(ActionContext.SYSTEM, POSITION)
+            val action = RemoveAction(ActionContext.SYSTEM, POSITION)
 
             assertFailsWith<IllegalStateException> { fixture.module.enable() }
             assertEquals(Result.Success, fixture.module.actions.validatorCoordinator.validate(action))
@@ -228,7 +210,7 @@ class CitadelActionValidatorTest {
 
         fun recordExecutions() {
             val processors = module.actions.processorCoordinator
-            for (key in listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY)) {
+            for (key in listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY)) {
                 processors.getProcessor(key)?.let(processors::unregisterProcessor)
                 processors.registerProcessor(object : ActionProcessor<ActionData>() {
                     override val actionClass = ActionData::class.java
@@ -265,10 +247,8 @@ class CitadelActionValidatorTest {
         fun targetActions(position: CitadelPosition): List<ActionData> = listOf(
             DamageAction(ActionContext.SYSTEM, position, 1.0),
             DamageAction(ActionContext.SYSTEM, position, 0.0, DamageAction.Mode.DESTROY),
-            RemoveAction(ActionContext.SYSTEM, position),
-            DismantleAction(ActionContext.SYSTEM, position),
-            RepairAction(ActionContext.SYSTEM, position),
-            UpgradeAction(ActionContext.SYSTEM, position, TYPE)
+            AcidDestroyAction(ActionContext.SYSTEM, position, POSITION, 0),
+            RemoveAction(ActionContext.SYSTEM, position)
         )
     }
 }

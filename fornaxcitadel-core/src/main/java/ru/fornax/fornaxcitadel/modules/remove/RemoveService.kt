@@ -7,7 +7,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
 /**
  * Removes core data after authorization. Minecraft block changes belong to a platform integration.
- * When assembled without CitadelModule, configure action metadata, prerequisite and authorization validators.
+ * Enabling registers removal prerequisites. Configure action metadata and authorization when assembled without CitadelModule.
  * Direct calls do not notify action handlers.
  */
 class RemoveService(
@@ -15,12 +15,21 @@ class RemoveService(
 ) : LifecycleService {
     private val manager = actions.componentManager
     private val processor = RemoveProcessor(this)
+    private val validator = RemoveActionValidator(actions.citadels)
 
     override fun enable() {
         actions.processorCoordinator.registerProcessor(processor)
+        try {
+            actions.validatorCoordinator.registerValidator(validator)
+        } catch (failure: Throwable) {
+            actions.validatorCoordinator.unregisterValidator(validator)
+            actions.processorCoordinator.unregisterProcessor(processor)
+            throw failure
+        }
     }
 
     override fun disable() {
+        actions.validatorCoordinator.unregisterValidator(validator)
         actions.processorCoordinator.unregisterProcessor(processor)
     }
 
