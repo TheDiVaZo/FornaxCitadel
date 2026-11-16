@@ -22,6 +22,57 @@ import kotlin.test.assertTrue
 
 class ActionManagerTest {
     @Test
+    fun `batch validates all actions before prepare and notifies only after one commit`() {
+        val fixture = Fixture()
+        val first = fixture.action()
+        val second = fixture.action(OTHER_KEY)
+        var committed = false
+        val notifications = mutableListOf<ActionData>()
+        fixture.actions.handlerCoordinator.registerHandler(handler(ActionData::class.java) {
+            assertTrue(committed)
+            notifications.add(it)
+            assertFailsWith<IllegalStateException> { fixture.actions.execute(first) }
+        })
+        assertEquals(ActionResult.SUCCESS, fixture.actions.executeBatch(listOf(first, second), {
+            assertFalse(committed)
+            assertFailsWith<IllegalStateException> { fixture.actions.execute(first) }
+            true
+        }, { committed = true }))
+        assertEquals(listOf(first, second), notifications)
+        assertTrue(fixture.executed.isEmpty())
+    }
+
+    @Test
+    fun `batch rejects before commit including authorization changed by preparation`() {
+        for (rejectBefore in listOf(false, true)) {
+            val fixture = Fixture()
+            var allowed = !rejectBefore
+            var preparations = 0
+            fixture.validate { if (allowed) Result.Success else Result.Rejected }
+            assertEquals(ActionResult.DENIED, fixture.actions.executeBatch(listOf(fixture.action()), {
+                preparations++
+                allowed = false
+                true
+            }, { error("A rejected batch must not commit") }))
+            assertEquals(if (rejectBefore) 0 else 1, preparations)
+            allowed = true
+            assertTrue(fixture.actions.isAllowed(fixture.action()))
+        }
+    }
+
+    @Test
+    fun `preparation failure releases the execution guard without notifications`() {
+        val fixture = Fixture()
+        var notifications = 0
+        fixture.actions.handlerCoordinator.registerHandler(handler(ActionData::class.java) { notifications++ })
+        assertFailsWith<IllegalArgumentException> {
+            fixture.actions.executeBatch(listOf(fixture.action()), { throw IllegalArgumentException("preparation") }, { error("commit") })
+        }
+        assertEquals(0, notifications)
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.action()))
+    }
+
+    @Test
     fun `the default executes actions without validators or with only neutral validators`() {
         for (validatorCount in listOf(0, 2)) {
             val fixture = Fixture()
