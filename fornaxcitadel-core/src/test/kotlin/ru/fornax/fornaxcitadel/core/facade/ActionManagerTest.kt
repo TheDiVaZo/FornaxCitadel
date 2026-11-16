@@ -22,6 +22,61 @@ import kotlin.test.assertTrue
 
 class ActionManagerTest {
     @Test
+    fun `nested execution authorization and draining are forbidden throughout dispatch`() {
+        for (stage in listOf("validator", "processor", "handler", "direct handler", "prepare", "commit")) {
+            val fixture = Fixture()
+            val action = fixture.action()
+            val nested = fixture.action(OTHER_KEY)
+            var checks = 0
+            fun checkNestedCalls() {
+                assertFailsWith<IllegalStateException>(stage) { fixture.actions.execute(nested) }
+                assertFailsWith<IllegalStateException>(stage) { fixture.actions.isAllowed(nested) }
+                assertFailsWith<IllegalStateException>(stage) { fixture.actions.drainPosted() }
+                assertFailsWith<IllegalStateException>(stage) {
+                    fixture.actions.executeBatch(listOf(nested), { true }, { error("Nested commit") })
+                }
+                checks++
+            }
+            when (stage) {
+                "validator" -> fixture.validate { checkNestedCalls(); Result.Success }
+                "processor" -> fixture.process = { checkNestedCalls(); ActionResult.SUCCESS }
+                "handler", "direct handler" -> fixture.actions.handlerCoordinator.registerHandler(
+                    handler(ActionData::class.java) { checkNestedCalls() })
+            }
+            when (stage) {
+                "direct handler" -> fixture.actions.handlerCoordinator.handle(action)
+                "prepare", "commit" -> assertEquals(ActionResult.SUCCESS, fixture.actions.executeBatch(listOf(action), {
+                    if (stage == "prepare") checkNestedCalls()
+                    true
+                }, { if (stage == "commit") checkNestedCalls() }))
+                else -> assertEquals(ActionResult.SUCCESS, fixture.actions.execute(action))
+            }
+            assertEquals(1, checks, stage)
+            assertFalse(nested in fixture.executed, stage)
+            assertTrue(fixture.actions.isAllowed(action), stage)
+        }
+    }
+
+    @Test
+    fun `batch commit failure preserves changes but suppresses notifications and releases the guard`() {
+        val fixture = Fixture()
+        var committed = false
+        val notifications = mutableListOf<ActionData>()
+        fixture.actions.handlerCoordinator.registerHandler(handler(ActionData::class.java, notifications::add))
+        assertFailsWith<IllegalStateException> {
+            fixture.actions.executeBatch(listOf(fixture.action()), { true }, {
+                committed = true
+                error("Unexpected commit failure")
+            })
+        }
+        assertTrue(committed)
+        assertTrue(notifications.isEmpty())
+        val retry = fixture.action()
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(retry))
+        assertEquals(listOf(retry), notifications)
+    }
+
+    @Test
     fun `batch validates all actions before prepare and notifies only after one commit`() {
         val fixture = Fixture()
         val first = fixture.action()
@@ -192,6 +247,27 @@ class ActionManagerTest {
         assertEquals(1, fixture.actions.drainPosted())
         assertEquals(2, validations)
         assertEquals(listOf(allowed), fixture.executed)
+    }
+
+    @Test
+    fun `drain limit leaves handler posted work for a subsequent drain`() {
+        val fixture = Fixture()
+        val first = fixture.action()
+        val later = fixture.action(OTHER_KEY)
+        val notifications = mutableListOf<ActionData>()
+        fixture.actions.handlerCoordinator.registerHandler(handler(ActionData::class.java) {
+            notifications.add(it)
+            if (it === first) fixture.actions.post(later)
+        })
+        fixture.actions.post(first)
+
+        assertEquals(1, fixture.actions.drainPosted(1))
+        assertEquals(listOf(first), fixture.executed)
+        assertEquals(listOf(first), notifications)
+        assertEquals(1, fixture.actions.drainPosted(1))
+        assertEquals(listOf(first, later), fixture.executed)
+        assertEquals(listOf(first, later), notifications)
+        assertEquals(0, fixture.actions.drainPosted())
     }
 
     @Test
