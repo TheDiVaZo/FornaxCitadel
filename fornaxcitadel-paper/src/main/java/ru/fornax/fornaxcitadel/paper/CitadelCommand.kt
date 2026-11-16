@@ -24,6 +24,8 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.Locale
 import java.util.logging.Level
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
 
 class CitadelCommand(
     private val plugin: Plugin,
@@ -34,6 +36,8 @@ class CitadelCommand(
     private val messages: PaperMessages,
     private val save: () -> Unit
 ) : CommandExecutor, TabCompleter {
+    var acid: AcidService? = null
+        internal set
     constructor(
         plugin: Plugin,
         manager: ComponentManager,
@@ -48,6 +52,7 @@ class CitadelCommand(
             val operation = args.firstOrNull()?.lowercase(Locale.ROOT)
             if (operation == null || operation == "help") {
                 sender.message("commands.help.info")
+                if (sender.hasPermission(ACID)) sender.message("commands.help.acid")
                 if (sender.hasPermission(DISMANTLE)) sender.message("commands.help.dismantle")
                 if (sender.hasPermission(ADMIN)) {
                     sender.message("commands.help.give")
@@ -63,6 +68,7 @@ class CitadelCommand(
             val permission = when (operation) {
                 "info" -> "fornaxcitadel.info"
                 "dismantle" -> DISMANTLE
+                "acid" -> if (args.getOrNull(1)?.equals("info", ignoreCase = true) == true) "fornaxcitadel.info" else ACID
                 else -> ADMIN
             }
             if (!sender.hasPermission(permission)) {
@@ -70,6 +76,7 @@ class CitadelCommand(
                 return true
             }
             when (operation) {
+                "acid" -> acid(sender, args)
                 "give" -> give(sender, args)
                 "save" -> {
                     if (args.size != 1) return usage(sender, "save")
@@ -85,6 +92,31 @@ class CitadelCommand(
             sender.message("commands.error")
         }
         return true
+    }
+
+    private fun acid(sender: CommandSender, args: Array<out String>) {
+        val information = args.size == 2 && args[1].equals("info", ignoreCase = true)
+        if (args.size != 1 && !information) { usage(sender, "acid"); return }
+        val player = sender as? Player ?: run { sender.message("commands.player-only"); return }
+        val service = acid ?: run { sender.message("commands.acid.disabled"); return }
+        val block = service.findTarget(player)
+        when (val result = if (information) service.inspect(player, block) else service.activate(player, block)) {
+            is AcidResult.Failed -> sender.message("commands.acid.${result.reason.message}")
+            is AcidResult.Activated -> sender.message("commands.acid.success", "count" to result.targets.toString())
+            is AcidResult.Information -> {
+                val owner = result.owner?.let { plugin.server.getPlayer(it)?.name ?: plugin.server.getOfflinePlayer(it).name ?: it.toString() }
+                    ?: messages.plainText("commands.acid.unknown-owner")
+                sender.message("commands.acid.info.type", "type" to result.type.id, "material" to result.type.material.name)
+                sender.message("commands.acid.info.owner", "owner" to owner)
+                sender.message("commands.acid.info.tier", "tier" to (result.tier?.toString() ?: messages.plainText("commands.acid.unknown-tier")))
+                sender.message("commands.acid.info.maximum", "count" to result.type.maxTargets.toString())
+                sender.message("commands.acid.info.multiplier", "multiplier" to result.type.maturationMultiplier.toString())
+                sender.message("commands.acid.info.status", "status" to messages.plainText(
+                    if (result.mature) "commands.acid.mature" else "commands.acid.maturing"))
+                sender.message("commands.acid.info.available", "count" to result.availableTargets.toString())
+                sender.message("commands.acid.info.selected", "count" to result.selectedTargets.toString())
+            }
+        }
     }
 
     private fun give(sender: CommandSender, args: Array<out String>) {
@@ -185,9 +217,11 @@ class CitadelCommand(
     override fun onTabComplete(sender: CommandSender, command: Command, alias: String, args: Array<out String>): List<String> {
         val candidates = when {
             args.size == 1 -> {
-                val operations = if (sender.hasPermission(ADMIN)) OPERATIONS else listOf("info", "dismantle", "help")
-                operations.filter { it != "dismantle" || sender.hasPermission(DISMANTLE) }
+                val operations = if (sender.hasPermission(ADMIN)) OPERATIONS else listOf("info", "dismantle", "acid", "help")
+                operations.filter { (it != "dismantle" || sender.hasPermission(DISMANTLE)) &&
+                    (it != "acid" || sender.hasPermission(ACID) || sender.hasPermission("fornaxcitadel.info")) }
             }
+            args.size == 2 && args[0].equals("acid", ignoreCase = true) && sender.hasPermission("fornaxcitadel.info") -> listOf("info")
             !sender.hasPermission(ADMIN) -> emptyList()
             args.size == 2 && args[0].lowercase(Locale.ROOT) in listOf("give", "place") -> citadelTypes.names
             args.size == 3 && args[0].equals("give", ignoreCase = true) -> plugin.server.onlinePlayers.map { it.name }
@@ -209,7 +243,8 @@ class CitadelCommand(
     private companion object {
         const val ADMIN = "fornaxcitadel.admin"
         const val DISMANTLE = "fornaxcitadel.dismantle"
+        const val ACID = "fornaxcitadel.acid"
         val COMMAND_SOURCE_KEY = Key("fornaxcitadel", "paper_command")
-        val OPERATIONS = listOf("give", "place", "remove", "dismantle", "info", "save", "help")
+        val OPERATIONS = listOf("give", "place", "remove", "dismantle", "acid", "info", "save", "help")
     }
 }

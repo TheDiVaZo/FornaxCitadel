@@ -10,6 +10,12 @@ import org.bukkit.Statistic
 import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
+import org.bukkit.block.BlockState
+import org.bukkit.block.Container
+import org.bukkit.inventory.Inventory
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidSettings
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidRegistry
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
 import org.bukkit.block.data.BlockData
 import org.bukkit.block.data.Directional
 import org.bukkit.entity.Player
@@ -70,8 +76,8 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
-import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.claim.PaperClaimService
+import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
@@ -120,7 +126,8 @@ internal class PaperTestFixture(
     creativeModeEnabled: Boolean = true,
     resolveMaterials: Boolean = true,
     dismantleSettings: DismantleSettings = DismantleSettings(),
-    dismantleRandom: () -> Double = { 0.0 }
+    dismantleRandom: () -> Double = { 0.0 },
+    acidSettings: AcidSettings? = null
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
@@ -139,6 +146,10 @@ internal class PaperTestFixture(
     val playerBreaks = mutableListOf<Pair<Player, Block>>()
     var beforeBreakEvent: (BlockBreakEvent) -> Unit = {}
     var afterBreakEvent: (BlockBreakEvent) -> Unit = {}
+    var beforeEvent: (Event) -> Unit = {}
+    var afterEvent: (Event) -> Unit = {}
+    val calledEvents = mutableListOf<Event>()
+    val inventories = mutableMapOf<Triple<Int, Int, Int>, Array<ItemStack?>>()
     val droppedItems = mutableListOf<Pair<Location, ItemStack>>()
     val scheduledTasks = mutableListOf<TestScheduledTask>()
     private var currentTick = 0L
@@ -173,8 +184,15 @@ internal class PaperTestFixture(
             }
             "getChunkAt" -> error("Tests must never auto-load a Bukkit chunk")
             "dropItemNaturally" -> {
-                droppedItems.add((args[0] as Location).clone() to (args[1] as ItemStack).clone())
-                paperProxy<org.bukkit.entity.Item>("dropped item") { call, _ -> unsupported(call) }
+                val entry = (args[0] as Location).clone() to (args[1] as ItemStack).clone()
+                droppedItems.add(entry)
+                paperProxy<org.bukkit.entity.Item>("dropped item") { call, _ ->
+                    when (call.name) {
+                        "remove" -> { droppedItems.remove(entry); null }
+                        "getItemStack" -> entry.second
+                        else -> unsupported(call)
+                    }
+                }
             }
             else -> unsupported(method)
         }
@@ -209,6 +227,14 @@ internal class PaperTestFixture(
     }
     private val pluginManager: PluginManager = paperProxy("plugin manager") { method, args ->
         when (method.name) {
+            "callEvent" -> {
+                val event = args[0] as Event
+                calledEvents.add(event)
+                beforeEvent(event)
+                if (event is BlockBreakEvent) dispatch(breakingListener, event, plugin)
+                afterEvent(event)
+                null
+            }
             "registerEvents" -> {
                 val listener = args[0] as Listener
                 val owner = args[1] as Plugin
@@ -256,9 +282,15 @@ internal class PaperTestFixture(
     }
     val playerDamage = PlayerDamageModifierService()
     // Vanilla item creation normally needs the running server's item factory; use the test stack at that boundary.
-    private val dismantleMaterials = object : MaterialRegistry by materials {
+    val dismantleMaterials = object : MaterialRegistry by materials {
         override fun getType(key: Key): MaterialAdapter? {
             val adapter = materials.getType(key) ?: return null
+            return wrap(adapter)
+        }
+        override fun getTypeOrNull(block: Block): MaterialAdapter? = materials.getTypeOrNull(block)?.let(::wrap)
+        override fun getType(block: Block): MaterialAdapter = checkNotNull(getTypeOrNull(block))
+        private fun wrap(adapter: MaterialAdapter): MaterialAdapter {
+            val key = adapter.getKey()
             if (key.namespace != "minecraft") return adapter
             return object : MaterialAdapter by adapter {
                 override fun createItemStack(amount: Int): ItemStack =
@@ -269,7 +301,10 @@ internal class PaperTestFixture(
     val dismantleService = PaperDismantleService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
     val claimService = PaperClaimService(module)
     val repairService = PaperRepairService(module, citadelTypes, materials)
-    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
+    val breakingService = PaperBreakingService(plugin, module, citadelTypes, playerDamage, messages, creativeModeEnabled)
+    val acidService = acidSettings?.let {
+        AcidService(plugin, module, citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it))
+    }
     val explosionService = PaperExplosionService(plugin, module, explosionPowers)
     val environmentService = PaperEnvironmentService(plugin, module)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
@@ -291,6 +326,7 @@ internal class PaperTestFixture(
             repairService.enable()
             placementService.enable()
             breakingService.enable()
+            acidService?.enable()
             explosionService.enable()
             environmentService.enable()
         }
@@ -335,8 +371,17 @@ internal class PaperTestFixture(
                     "getZ" -> z
                     "getType" -> blockMaterials[key] ?: Material.STONE
                     "getBlockData" -> blockData[key] ?: paperProxy<Directional>("piston facing") { property, _ ->
-                        if (property.name == "getFacing") BlockFace.SOUTH else unsupported(property)
+                        when (property.name) {
+                            "getFacing" -> BlockFace.SOUTH
+                            "getAsString" -> (blockMaterials[key] ?: Material.STONE).name
+                            else -> unsupported(property)
+                        }
                     }
+                    "getState" -> blockState(block(x, y, z), key)
+                    "setBlockData" -> { blockData[key] = args[0] as BlockData; null }
+                    "rayTrace" -> if (players.values.any { it.target === block(x, y, z) })
+                        org.bukkit.util.RayTraceResult(org.bukkit.util.Vector(x + 0.5, y + 0.5, z + 0.5), block(x, y, z), BlockFace.NORTH)
+                        else null
                     "isEmpty" -> (blockMaterials[key] ?: Material.STONE) in
                         listOf(Material.AIR, Material.CAVE_AIR, Material.VOID_AIR)
                     "isLiquid" -> false
@@ -347,10 +392,33 @@ internal class PaperTestFixture(
                         val distance = if (args.size == 2) args[1] as Int else 1
                         block(x + direction.modX * distance, y + direction.modY * distance, z + direction.modZ * distance)
                     } else block(x + args[0] as Int, y + args[1] as Int, z + args[2] as Int)
-                    "setType" -> { vanillaBlockChanges++; blockMaterials[key] = args[0] as Material; null }
+                    "setType" -> { vanillaBlockChanges++; blockMaterials[key] = args[0] as Material; blockData.remove(key); null }
                     else -> unsupported(method)
                 }
             }
+        }
+    }
+
+    private fun blockState(block: Block, key: Triple<Int, Int, Int>): BlockState {
+        val inventory = paperProxy<Inventory>("local inventory $key") { method, _ ->
+            when (method.name) {
+                "getContents" -> inventories[key] ?: emptyArray<ItemStack?>()
+                "clear" -> { inventories[key] = arrayOfNulls(inventories[key]?.size ?: 0); null }
+                else -> unsupported(method)
+            }
+        }
+        fun property(method: Method): Any? = when (method.name) {
+            "getInventory", "getBlockInventory", "getSnapshotInventory" -> inventory
+            "getType" -> block.type
+            "getBlockData" -> block.blockData
+            "getBlock" -> block
+            else -> unsupported(method)
+        }
+        return when {
+            block.blockData is org.bukkit.block.data.type.Chest -> paperProxy<org.bukkit.block.Chest>("chest state") { m, _ -> property(m) }
+            block.type == Material.CHISELED_BOOKSHELF -> paperProxy<TestInventoryBlockState>("bookshelf state") { m, _ -> property(m) }
+            key in inventories -> paperProxy<Container>("container state") { m, _ -> property(m) }
+            else -> paperProxy<BlockState>("block state") { m, _ -> property(m) }
         }
     }
 
@@ -406,6 +474,7 @@ internal class PaperTestFixture(
     }
 
     override fun close() {
+        acidService?.disable()
         environmentService.disable()
         explosionService.disable()
         breakingService.disable()
@@ -422,6 +491,8 @@ internal class PaperTestFixture(
     }
 }
 
+internal interface TestInventoryBlockState : BlockState, org.bukkit.inventory.BlockInventoryHolder
+
 internal class TestPlayer(val id: UUID, val name: String, private val world: World) {
     var online = true
     var location = Location(world, 0.0, 64.0, 0.0)
@@ -437,7 +508,7 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
     var held: ItemStack = TestItemStack(Material.AIR, 0)
     var target: Block? = null
     var targetLookups = 0
-    val permissions = mutableSetOf("fornaxcitadel.place", "fornaxcitadel.damage", "fornaxcitadel.dismantle", "fornaxcitadel.repair")
+    val permissions = mutableSetOf("fornaxcitadel.place", "fornaxcitadel.damage", "fornaxcitadel.dismantle", "fornaxcitadel.repair", "fornaxcitadel.acid")
     var breakBlockHandler: (Block) -> Boolean = { error("No player break handler installed") }
     val messages = mutableListOf<Any?>()
     val chatMessages = mutableListOf<Any?>()
@@ -460,6 +531,9 @@ internal class TestPlayer(val id: UUID, val name: String, private val world: Wor
             "getName" -> name
             "getWorld" -> location.world
             "getLocation" -> location.clone()
+            "getEyeLocation" -> location.clone().apply {
+                target?.let { direction = it.location.add(0.5, 0.5, 0.5).toVector().subtract(toVector()) }
+            }
             "getGameMode" -> gameMode
             "isSneaking" -> sneaking
             "getFirstPlayed" -> firstPlayed
@@ -616,7 +690,8 @@ internal fun unsupported(method: Method): Nothing = error("Unexpected Bukkit cal
 /** Uses Bukkit's own cancellation dispatch instead of bypassing EventHandler semantics. */
 internal fun dispatch(listener: Listener, event: Event, plugin: Plugin) {
     val methods = listener.javaClass.methods.filter {
-        it.isAnnotationPresent(EventHandler::class.java) && it.parameterTypes.contentEquals(arrayOf(event.javaClass))
+        it.isAnnotationPresent(EventHandler::class.java) && it.parameterCount == 1 &&
+            it.parameterTypes[0].isAssignableFrom(event.javaClass)
     }.sortedBy { it.getAnnotation(EventHandler::class.java).priority.ordinal }
     check(methods.isNotEmpty()) { "No handler for ${event.javaClass.simpleName}" }
     for (method in methods) {

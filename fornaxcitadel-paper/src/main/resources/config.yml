@@ -1,3 +1,32 @@
+# Manual acid activation; see docs/acid-blocks.md for configuration and integration rules.
+acid:
+  enabled: true
+  activation:
+    max-distance: 5
+  drops:
+    target-block: true
+    target-reinforcement: false
+    acid-block: false
+    acid-reinforcement: true
+  # Types are determined by the reinforced block's material, not reinforcement item.
+  # After restart these values also apply to existing blocks. No targets means no consumption.
+  types:
+    gold:
+      enabled: true
+      material: GOLD_BLOCK
+      max-targets: 1
+      maturation-multiplier: 2.0
+    diamond:
+      enabled: true
+      material: DIAMOND_BLOCK
+      max-targets: 2
+      maturation-multiplier: 3.0
+    netherite:
+      enabled: true
+      material: NETHERITE_BLOCK
+      max-targets: 6
+      maturation-multiplier: 4.0
+
 # Queue work is performed once per server tick on the main thread.
 actions:
   max-per-tick: 1024
@@ -61,11 +90,16 @@ explosions:
 # Item keys default to the minecraft namespace when omitted.
 # External providers register their own namespace (e.g. otherplugin:reinforcement).
 # Materials are resolved on use; providers may register after FornaxCitadel enables.
-# Every type requires a positive integer lvl, stored at placement independently of later config changes.
+# Every type requires a positive integer lvl; existing citadels use the current configured level.
+# item applies to placement, repair and reinforcement refunds, including previously placed citadels.
 # damage-policy defaults to allow; deny blocks ordinary damage from every source.
 # Authorized creative destruction and administrative removal can still remove these types.
-# Maximum health is fixed; maturing amplifies ordinary damage from every source.
-# Maturation settings are stored at placement; config changes affect newly placed citadels.
+# health.max is read from current settings; only actual HP is stored in a citadel.
+# Reducing max never changes HP on load: 80/50 becomes 49/50 only when taking 1 damage.
+# Increasing max does not heal. Maturing amplifies ordinary damage from every source.
+# Only placement time is stored; current maturation settings apply to existing citadels too.
+# Missing maturing or duration-seconds: 0 means instant maturity, including acid blocks.
+# Duration is a non-negative whole number of seconds. Changes take effect after restart.
 citadel-types:
   reinforced_light:
     item: minecraft:copper_ingot

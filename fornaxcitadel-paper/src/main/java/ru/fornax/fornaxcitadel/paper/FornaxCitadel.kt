@@ -29,8 +29,8 @@ import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
-import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.claim.PaperClaimService
+import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionValidationService
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
@@ -38,8 +38,12 @@ import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.CompletionException
 import java.util.concurrent.Executor
 import java.util.logging.Level
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidRegistry
 
 class FornaxCitadel : JavaPlugin() {
+    lateinit var acid: AcidService
+        private set
     /**
      * Register external material providers on the server's main thread after enable.
      * Configured item and block keys resolve on use, so providers may register later.
@@ -78,6 +82,7 @@ class FornaxCitadel : JavaPlugin() {
             }
             saveDefaultConfig()
             val settings = PaperSettings.read(config)
+            settings.acidConfigurationError?.let { logger.severe("Acid is disabled because its configuration is invalid: $it") }
             val messages = PaperMessages.load(this)
             val types = TypeManager()
             val scheduler = PaperScheduler(this).also { schedulerAdapter = it }
@@ -123,12 +128,14 @@ class FornaxCitadel : JavaPlugin() {
             dismantle = PaperDismantleService(this, module, citadelTypes, materials, settings.dismantle).also(services::add)
             claim = PaperClaimService(module).also(services::add)
             repair = PaperRepairService(module, citadelTypes, materials).also(services::add)
-            services.add(PaperBreakingService(this, module, playerDamage, messages,
-                settings.playerDamage.creativeModeEnabled))
+            val breaking = PaperBreakingService(this, module, citadelTypes, playerDamage, messages,
+                settings.playerDamage.creativeModeEnabled).also(services::add)
+            acid = AcidService(this, module, citadelTypes, materials, materialPlacement, breaking, AcidRegistry(settings.acid)).also(services::add)
             services.add(PaperExplosionService(this, module, settings.explosionPowers))
             services.add(PaperEnvironmentService(this, module))
 
             val commands = CitadelCommand(this, manager, module, materials, citadelTypes, messages, chunks::saveAll)
+            commands.acid = acid
             val command = requireNotNull(getCommand("citadel")) { "The citadel command is missing from plugin.yml" }
             command.description = messages.plainText("commands.description")
             command.usage = messages.plainText("commands.usage.help")

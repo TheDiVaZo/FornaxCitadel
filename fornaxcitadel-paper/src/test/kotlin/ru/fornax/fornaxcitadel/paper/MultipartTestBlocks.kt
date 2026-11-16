@@ -40,6 +40,7 @@ internal fun doorData(half: Bisected.Half, facing: BlockFace, material: Material
     paperProxy("door $half $facing") { method, _ ->
         when (method.name) {
             "getHalf" -> half
+            "getAsString" -> "$material:$half:$facing"
             "getFacing" -> facing
             "getMaterial" -> material
             "getHinge" -> Door.Hinge.LEFT
@@ -62,6 +63,7 @@ internal fun PaperTestFixture.bed(
         blockData(paperProxy<Bed>("bed $bedPart $facing") { method, _ ->
             when (method.name) {
                 "getPart" -> bedPart
+                "getAsString" -> "$material:$bedPart:$facing"
                 "getFacing" -> facing
                 "getMaterial" -> material
                 "isOccupied" -> false
@@ -104,16 +106,20 @@ internal fun PaperTestFixture.doubleChest(
     return left to right
 }
 
-internal fun chestData(type: Chest.Type, facing: BlockFace, material: Material = Material.CHEST): Chest =
-    paperProxy("chest $type $facing $material") { method, _ ->
+internal fun chestData(type: Chest.Type, facing: BlockFace, material: Material = Material.CHEST): Chest {
+    var current = type
+    return paperProxy("chest $type $facing $material") { method, args ->
         when (method.name) {
-            "getType" -> type
+            "getType" -> current
+            "setType" -> { current = args[0] as Chest.Type; null }
+            "getAsString" -> "$material:$current:$facing"
             "getFacing" -> facing
             "getMaterial" -> material
             "isWaterlogged" -> false
             else -> unsupported(method)
         }
     }
+}
 
 /** Simulates persisted legacy records independently of the current placement resolver. */
 internal fun PaperTestFixture.placeExact(

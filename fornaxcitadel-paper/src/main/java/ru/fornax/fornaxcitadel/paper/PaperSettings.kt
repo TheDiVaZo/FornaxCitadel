@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.configuration.ConfigurationSection
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidSettings
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
@@ -16,7 +17,9 @@ data class PaperSettings(
     val citadelTypes: CitadelTypesSettings = CitadelTypesSettings(),
     val placement: PlacementSettings = PlacementSettings(),
     val observation: PaperObservationSettings = PaperObservationSettings(),
-    val dismantle: DismantleSettings = DismantleSettings()
+    val dismantle: DismantleSettings = DismantleSettings(),
+    val acid: AcidSettings = AcidSettings(),
+    val acidConfigurationError: String? = null
 ) {
     init {
         require(postedActionLimit > 0) { "actions.max-per-tick must be positive" }
@@ -25,6 +28,8 @@ data class PaperSettings(
 
     companion object {
         fun read(config: ConfigurationSection): PaperSettings {
+            val acid = try { Result.success(AcidSettings.read(config)) }
+                catch (failure: IllegalArgumentException) { Result.failure(failure) }
             return PaperSettings(
                 postedActionLimit = config.getInt("actions.max-per-tick", 1024),
                 saveIntervalTicks = config.getLong("storage.save-interval-ticks", 1200),
@@ -33,7 +38,9 @@ data class PaperSettings(
                 citadelTypes = CitadelTypesSettings.read(config),
                 placement = PlacementSettings.read(config),
                 observation = PaperObservationSettings.read(config),
-                dismantle = DismantleSettings.read(config)
+                dismantle = DismantleSettings.read(config),
+                acid = acid.getOrElse { AcidSettings(enabled = false, types = emptyList()) },
+                acidConfigurationError = acid.exceptionOrNull()?.message
             )
         }
     }

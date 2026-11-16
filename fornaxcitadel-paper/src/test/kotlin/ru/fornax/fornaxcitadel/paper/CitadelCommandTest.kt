@@ -126,6 +126,7 @@ class CitadelCommandTest {
         PaperTestFixture(permissions = true).use { fixture ->
             val messages = PaperMessages.read(YamlConfiguration().apply {
                 set("commands.help.info", "Inspect help")
+                set("commands.help.acid", "Acid help")
                 set("commands.help.dismantle", "Dismantle help")
                 set("commands.help.give", "Give help")
                 set("commands.help.admin", "Admin help")
@@ -139,7 +140,7 @@ class CitadelCommandTest {
                 fixture.materials, fixture.citadelTypes, messages) {}
 
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("help"))
-            assertEquals(listOf("Inspect help", "Dismantle help"), fixture.installer.chatMessages.plainText())
+            assertEquals(listOf("Inspect help", "Acid help", "Dismantle help"), fixture.installer.chatMessages.plainText())
 
             fixture.installer.permissions.addAll(listOf("fornaxcitadel.admin", "fornaxcitadel.info"))
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", emptyArray())
@@ -149,7 +150,7 @@ class CitadelCommandTest {
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("give"))
 
             assertEquals(listOf(
-                "Inspect help", "Dismantle help", "Inspect help", "Dismantle help", "Give help", "Admin help",
+                "Inspect help", "Acid help", "Dismantle help", "Inspect help", "Acid help", "Dismantle help", "Give help", "Admin help",
                 "Available: reinforced, maturing, invulnerable",
                 "Usage info", "Usage place", "Usage remove", "Usage dismantle", "Usage save",
                 "Usage give reinforced|maturing|invulnerable"

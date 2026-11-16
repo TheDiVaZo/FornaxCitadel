@@ -1,5 +1,6 @@
 package ru.fornax.fornaxcitadel.paper.material
 
+import org.bukkit.Material
 import org.bukkit.block.Block
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -10,6 +11,11 @@ interface MaterialAdapter {
     fun isConsists(itemStack: ItemStack): Boolean
     fun isConsists(block: Block): Boolean
     fun createItemStack(amount: Int): ItemStack
+
+    /** Removes exactly these physical parts and provider state. The caller owns inventories, events and drops. */
+    fun breakBlocks(blocks: List<Block>) {
+        blocks.forEach { it.setType(Material.AIR, false) }
+    }
 
     /** Resolves on use so integrations can register their materials after configuration is read. */
     class Wrapper(private val key: Key, private val materialRegistry: MaterialRegistry) : MaterialAdapter {
@@ -28,5 +34,8 @@ interface MaterialAdapter {
             }
             return material.createItemStack(amount)
         }
+
+        override fun breakBlocks(blocks: List<Block>) =
+            checkNotNull(materialRegistry.getType(key)) { "Material $key is not registered" }.breakBlocks(blocks)
     }
 }

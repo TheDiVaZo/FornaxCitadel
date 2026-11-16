@@ -5,6 +5,7 @@ import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.block.BlockDamageEvent
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidBlockDissolveEvent
 
 /** Applies the breaking service's decisions to Bukkit mining events. */
 class PaperBreakingListener(private val service: PaperBreakingService) : Listener {
@@ -20,6 +21,7 @@ class PaperBreakingListener(private val service: PaperBreakingService) : Listene
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onBreak(event: BlockBreakEvent) {
+        if (event is AcidBlockDissolveEvent) return
         // Keep the physical block safe during the action and if even error reporting fails.
         event.isCancelled = true
         event.isCancelled = service.breakBlock(event.player, event.block)

@@ -11,6 +11,8 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidBlockDissolveEvent
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidType
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
@@ -23,6 +25,27 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperBreakingListenerTest {
+    @Test
+    fun `acid dissolution bypasses mining while an ordinary break still applies damage`() = PaperTestFixture().use { f ->
+        f.place()
+        val acid = AcidType("gold", Material.GOLD_BLOCK, 1, 2.0)
+        val dissolve = AcidBlockDissolveEvent(f.block(), f.installer.player, f.position, acid)
+
+        dispatch(f.breakingListener, dissolve, f.plugin)
+
+        assertFalse(dissolve.isCancelled)
+        assertEquals(100.0, f.health())
+        assertTrue(f.playerBreaks.isEmpty())
+        assertEquals(0, f.vanillaBlockChanges)
+
+        val ordinary = BlockBreakEvent(f.block(), f.installer.player)
+        dispatch(f.breakingListener, ordinary, f.plugin)
+
+        assertTrue(ordinary.isCancelled)
+        assertEquals(99.0, f.health())
+        assertEquals(0, f.vanillaBlockChanges)
+    }
+
     @Test
     fun `player modifiers precede one maturation multiplier and reload preserves fixed health`() {
         PaperTestFixture().use { fixture ->

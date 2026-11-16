@@ -16,6 +16,9 @@ commands:
     aliases: [fcitadel]
 
 permissions:
+  fornaxcitadel.acid:
+    description: Активация собственного или бесхозного кислотного блока
+    default: true
   fornaxcitadel.place:
     description: Установка укрепления предметом
     default: true

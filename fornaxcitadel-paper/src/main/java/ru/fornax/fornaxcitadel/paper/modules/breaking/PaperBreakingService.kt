@@ -2,13 +2,27 @@ package ru.fornax.fornaxcitadel.paper.modules.breaking
 
 import org.bukkit.GameMode
 import org.bukkit.block.Block
+import org.bukkit.inventory.BlockInventoryHolder
+import org.bukkit.inventory.Inventory
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
+import org.bukkit.event.block.BlockBreakEvent
+import org.bukkit.event.block.BlockDropItemEvent
+import org.bukkit.block.data.type.Bed
+import org.bukkit.block.data.type.Door
+import org.bukkit.block.data.type.Chest
+import org.bukkit.inventory.ItemStack
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
+import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.material.hasMaterial
+import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
@@ -23,6 +37,7 @@ import java.util.logging.Level
 class PaperBreakingService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
+    private val citadelTypes: PaperCitadelTypes,
     private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService(),
     private val messages: PaperMessages = PaperMessages.defaults(),
     private val creativeModeEnabled: Boolean = true
@@ -30,6 +45,101 @@ class PaperBreakingService @JvmOverloads constructor(
     private val manager = module.actions.componentManager
     private val listener = PaperBreakingListener(this)
     private var enabled = false
+
+    fun destructionParts(block: Block, placement: MaterialPlacementService): List<Block> {
+        requireAvailable(block)
+        val related = placement.getRule(block).getRelatedBlock(block)?.also(::requireAvailable)
+        return if ((block.blockData is Door || block.blockData is Bed) && related != null) listOf(block, related) else listOf(block)
+    }
+
+    /** Destroys one logical target. A veto preserves all its parts without affecting other targets. */
+    fun destroy(player: Player, block: Block, reinforcements: List<CitadelHandle>, actions: List<ActionData>,
+                materials: MaterialRegistry, placement: MaterialPlacementService,
+                dropBlock: Boolean, dropReinforcement: Boolean, validate: () -> Boolean,
+                createEvent: ((Block) -> BlockBreakEvent)? = null): ActionResult {
+        check(plugin.server.isPrimaryThread && enabled) { "Destruction requires the active server thread" }
+        var executingDestruction = false
+        try {
+            val parts = destructionParts(block, placement)
+            val data = parts.map { it.type to it.blockData.asString }
+            val material = materials.getType(block)
+            val survivor = if (block.blockData is Chest) placement.getRule(block).getRelatedBlock(block) else null
+            val partnerData = survivor?.also(::requireAvailable)?.blockData?.asString
+            fun current(): Boolean {
+                parts.forEach(::requireAvailable)
+                survivor?.let(::requireAvailable)
+                return enabled && validate() && reinforcements.all { it.isCurrent } &&
+                    parts.none { it.isEmpty } && parts.map { it.type to it.blockData.asString } == data &&
+                    materials.getTypeOrNull(block)?.getKey() == material.getKey() &&
+                    survivor?.blockData?.asString == partnerData &&
+                    parts.mapNotNull { module.citadels.findProtecting(it.citadelPosition()) }
+                        .map { it.position to it.runtimeId }.toSet() == reinforcements.map { it.position to it.runtimeId }.toSet()
+            }
+            var dropItem = dropBlock
+            return module.actions.executeBatch(actions, prepare = {
+                if (!current()) return@executeBatch false
+                if (createEvent != null) for (part in parts) {
+                    val event = createEvent(part)
+                    plugin.server.pluginManager.callEvent(event)
+                    if (event.isCancelled) return@executeBatch false
+                    dropItem = dropItem && event.isDropItems
+                }
+                current()
+            }, commit = {
+                executingDestruction = true
+                val state = block.state
+                val blockItem = if (dropItem) oneItem(material.createItemStack(1)) else null
+                val refunds = if (dropReinforcement) reinforcements.mapNotNull {
+                    citadelTypes.itemKey(it)
+                }.map { key ->
+                    oneItem(requireNotNull(materials.getType(key)) { "Missing reinforcement material $key" }.createItemStack(1))
+                } else emptyList()
+                val inventories = parts.mapNotNull(::inventory)
+                val contents = inventories.flatMap { it.contents.filterNotNull().filter(ItemStack::hasMaterial).map(ItemStack::clone) }
+                check(current()) { "Destruction target changed while creating items" }
+                reinforcements.forEach {
+                    check(module.remove.remove(it) == ActionResult.SUCCESS) { "Destruction target expired" }
+                }
+                inventories.forEach(Inventory::clear)
+                material.breakBlocks(parts)
+                check(parts.all { it.isEmpty }) { "Material provider did not remove its blocks" }
+                survivor?.let { other ->
+                    val chest = other.blockData as Chest
+                    chest.type = Chest.Type.SINGLE
+                    other.setBlockData(chest, false)
+                }
+                val location = block.location.add(0.5, 0.5, 0.5)
+                val entities = (contents + listOfNotNull(blockItem)).map { block.world.dropItemNaturally(location, it) }
+                if (entities.isNotEmpty()) {
+                    val event = BlockDropItemEvent(block, state, player, entities.toMutableList())
+                    plugin.server.pluginManager.callEvent(event)
+                    entities.filter { event.isCancelled || it !in event.items }.forEach { it.remove() }
+                }
+                refunds.forEach { block.world.dropItemNaturally(location, it) }
+            })
+        } catch (failure: CitadelResolutionUnavailableException) {
+            if (executingDestruction) throw IllegalStateException("Chunk became unavailable during destruction", failure)
+            return ActionResult.DENIED
+        }
+    }
+
+    private fun inventory(block: Block): Inventory? = when (val state = block.getState(false)) {
+        is org.bukkit.block.Chest -> state.blockInventory
+        is BlockInventoryHolder -> state.inventory
+        else -> null
+    }
+
+    private fun requireAvailable(block: Block) {
+        val position = block.citadelPosition()
+        if (!block.world.isChunkLoaded(block.x shr 4, block.z shr 4) ||
+            !manager.isChunkLoaded(position.world, block.x shr 4, block.z shr 4)) {
+            throw CitadelResolutionUnavailableException(position)
+        }
+    }
+
+    private fun oneItem(item: ItemStack): ItemStack = item.also {
+        require(it.hasMaterial() && it.amount == 1) { "A material must create exactly one item" }
+    }
 
     override fun enable() {
         if (enabled) return
@@ -108,3 +218,5 @@ class PaperBreakingService @JvmOverloads constructor(
         val BREAK_SOURCE_KEY = Key("paper", "player_break")
     }
 }
+
+internal fun Block.citadelPosition() = CitadelPosition(world.uid, x, y, z)
