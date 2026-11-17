@@ -49,13 +49,26 @@ class AcidSettingsTest {
             "material: GOLD_BLOCK\nmax-targets: 1\nmaturation-multiplier: 1\nenabled: text"
         ).map { "acid:\n  types:\n    bad:\n" + it.prependIndent("      ") }
         val invalid = invalidTypes + listOf("acid: []", "acid:\n  activation: []", "acid:\n  activation:\n    max-distance: 0",
-            "acid:\n  drops:\n    acid-block: 1", "acid:\n  enabled: 'false'")
+            "acid:\n  enabled: 'false'")
         for (text in invalid) {
             val config = YamlConfiguration().apply { loadFromString(text) }
             assertFailsWith<IllegalArgumentException>(text) { AcidSettings.read(config) }
             val plugin = PaperSettings.read(config)
             assertFalse(plugin.acid.enabled, text)
             assertNotNull(plugin.acidConfigurationError, text)
+            assertTrue(plugin.citadelTypes.types.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun `removed drop settings are rejected as unknown fields`() {
+        for (drops in listOf("{}", "false", "\n    target-block: true\n    target-reinforcement: false\n    acid-block: false\n    acid-reinforcement: true")) {
+            val config = YamlConfiguration().apply { loadFromString("acid:\n  drops: $drops") }
+            val failure = assertFailsWith<IllegalArgumentException> { AcidSettings.read(config) }
+            assertEquals("Unknown field in acid: [drops]", failure.message)
+            val plugin = PaperSettings.read(config)
+            assertFalse(plugin.acid.enabled)
+            assertNotNull(plugin.acidConfigurationError)
             assertTrue(plugin.citadelTypes.types.isNotEmpty())
         }
     }

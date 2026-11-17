@@ -1,6 +1,5 @@
 package ru.fornax.fornaxcitadel.paper.material
 
-import org.bukkit.Material
 import org.bukkit.block.Block
 import org.bukkit.inventory.ItemStack
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -8,7 +7,7 @@ import ru.fornax.fornaxcitadel.core.util.Key
 /**
  * A material identity with platform-specific matching and item creation.
  * Identity queries and item creation are trusted synchronous operations: they must not mutate
- * their inputs, the world, inventories, citadels or profiles. Only [breakBlocks] mutates the world.
+ * their inputs, the world, inventories, citadels or profiles. Only [breakNaturallyBlock] mutates the world.
  */
 interface MaterialAdapter {
     fun getKey(): Key
@@ -19,12 +18,10 @@ interface MaterialAdapter {
     fun createItemStack(amount: Int): ItemStack
 
     /**
-     * Mutates the world by removing exactly these physical parts and their provider state.
-     * The caller owns inventories, events and drops.
+     * Breaks this block through the provider's natural breaking routine, including its drops and
+     * optional effects. Returns the provider's result; unsupported materials return false.
      */
-    fun breakBlocks(blocks: List<Block>) {
-        blocks.forEach { it.setType(Material.AIR, false) }
-    }
+    fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean
 
     /** Resolves on use so integrations can register their materials after configuration is read. */
     class Wrapper(private val key: Key, private val materialRegistry: MaterialRegistry) : MaterialAdapter {
@@ -44,7 +41,7 @@ interface MaterialAdapter {
             return material.createItemStack(amount)
         }
 
-        override fun breakBlocks(blocks: List<Block>) =
-            checkNotNull(materialRegistry.getType(key)) { "Material $key is not registered" }.breakBlocks(blocks)
+        override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean =
+            materialRegistry.getType(key)?.breakNaturallyBlock(block, triggerEffect) ?: false
     }
 }

@@ -80,29 +80,23 @@ class AcidService(
         checkActor(player, acid)
         if (!module.health.maturation.isMature(acid.citadel)) fail(AcidFailure.IMMATURE)
         val selected = candidates(player, acid).take(acid.type.maxTargets)
-        val drops = registry.settings.drops
         if (breaking.destructionParts(acid.block, placement).mapNotNull {
             module.citadels.findProtecting(position(it))
         }.any { !same(it, acid.citadel) }) fail(AcidFailure.DENIED)
         val sourceAction = action(player, acid, acid.block, consuming = true)
         scopedActions.add(sourceAction)
-        if (!module.actions.isAllowed(sourceAction)) fail(AcidFailure.DENIED)
-        val event = AcidBlockActivateEvent(player, acid.citadel.position, acid.type, acid.citadel,
-            selected.map { AcidTarget(position(it.block), it.citadel) })
-        plugin.server.pluginManager.callEvent(event)
-        if (event.isCancelled) fail(AcidFailure.CANCELLED)
-        if (breaking.destroy(player, acid.block, listOf(acid.citadel), listOf(sourceAction), materials, placement,
-                drops.acidBlock, drops.acidReinforcement, validate = { sourceIsCurrent(player, acid) }) != ActionResult.SUCCESS) {
+        if (breaking.destroy(acid.block, listOf(acid.citadel), listOf(sourceAction), materials, placement,
+                validate = { sourceIsCurrent(player, acid) }) != ActionResult.SUCCESS) {
             fail(AcidFailure.DENIED)
         }
         var destroyed = 0
         for (target in selected) {
-            val result = breaking.destroy(player, target.block, target.reinforcements, target.actions, materials, placement,
-                drops.targetBlock, drops.targetReinforcement, validate = {
+            val result = breaking.destroy(target.block, target.reinforcements, target.actions, materials, placement,
+                validate = {
                     enabled && target.reinforcements.all {
                         canDissolve(acid.tier, citadelTypes.level(it))
                     }
-                }, createEvent = { part -> AcidBlockDissolveEvent(part, player, acid.citadel.position, acid.type) })
+                })
             if (result == ActionResult.SUCCESS) destroyed++
         }
         AcidResult.Activated(destroyed)
@@ -152,7 +146,7 @@ class AcidService(
             scopedActions.addAll(actions)
             if (!actions.all(module.actions::isAllowed)) continue
             seen.addAll(protected.map { it.second.position to it.second.runtimeId })
-            targets.add(Target(block, citadel, protected.map { it.second }, actions))
+            targets.add(Target(block, protected.map { it.second }, actions))
         }
         return targets
     }
@@ -181,8 +175,7 @@ class AcidService(
     private fun canDissolve(source: Int?, target: Int?): Boolean = target == null || source != null && source >= target
 
     private data class AcidBlock(val block: Block, val citadel: CitadelHandle, val type: AcidType, val owner: UUID?, val tier: Int?)
-    private data class Target(val block: Block, val citadel: CitadelHandle,
-                              val reinforcements: List<CitadelHandle>, val actions: List<AcidDestroyAction>)
+    private data class Target(val block: Block, val reinforcements: List<CitadelHandle>, val actions: List<AcidDestroyAction>)
 
     companion object {
         private val SOURCE = Key("paper", "acid")
@@ -194,7 +187,7 @@ class AcidService(
 
 enum class AcidFailure(val message: String) {
     NOT_FOUND("not-found"), NOT_REINFORCED("not-reinforced"), DISABLED("disabled"), NOT_OWNER("not-owner"),
-    IMMATURE("immature"), CANCELLED("cancelled"),
+    IMMATURE("immature"),
     CHUNK_UNAVAILABLE("chunk-unavailable"), INVALID_REINFORCEMENT("invalid-reinforcement"),
     DENIED("denied"), BUSY("busy"), WRONG_THREAD("wrong-thread"), ERROR("error")
 }

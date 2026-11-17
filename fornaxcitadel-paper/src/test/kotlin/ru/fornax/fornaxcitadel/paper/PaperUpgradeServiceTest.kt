@@ -417,6 +417,7 @@ class PaperUpgradeServiceTest {
                     override fun getKey() = key
                     override fun isConsists(itemStack: ItemStack) = false
                     override fun isConsists(block: Block) = false
+                    override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean) = false
                     override fun createItemStack(amount: Int): ItemStack = when (reason) {
                         "throw" -> error("Provider failed")
                         "empty" -> TestItemStack(Material.AIR, 1)

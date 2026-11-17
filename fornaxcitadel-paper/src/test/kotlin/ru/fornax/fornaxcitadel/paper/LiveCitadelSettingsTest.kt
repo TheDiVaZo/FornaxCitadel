@@ -24,7 +24,6 @@ import ru.fornax.fornaxcitadel.modules.health.DamageModifier
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
-import ru.fornax.fornaxcitadel.paper.modules.acid.AcidDrops
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidSettings
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
@@ -163,10 +162,10 @@ class LiveCitadelSettingsTest {
     }
 
     @Test
-    fun `acid refunds current configured items for restored source and target exactly once`() {
+    fun `acid never refunds configured reinforcement items after restart`() {
         restored(saved(neighbor = true), changed(50.0), acid = true).use { f ->
             assertEquals(AcidResult.Activated(1), f.acidService!!.activate(f.installer.player, f.block()))
-            assertEquals(listOf(Material.DIAMOND, Material.DIAMOND), f.droppedItems.map { it.second.type })
+            assertEquals(listOf(Material.GOLD_BLOCK, Material.COBBLESTONE), f.droppedItems.map { it.second.type })
             assertTrue(f.droppedItems.all { it.second.amount == 1 })
         }
     }
@@ -252,7 +251,7 @@ class LiveCitadelSettingsTest {
     private fun restored(snapshot: ChunkCordSnapshot, settings: CitadelTypesSettings, acid: Boolean = false) =
         PaperTestFixture(load = false, permissions = true, citadelSettings = settings,
             dismantleSettings = DismantleSettings(0.0),
-            acidSettings = if (acid) AcidSettings(drops = AcidDrops(false, true, false, true)) else null).apply {
+            acidSettings = if (acid) AcidSettings() else null).apply {
             backend.saveChunk(snapshot).join()
             loadChunk(0, 0)
             if (acid) material(Material.GOLD_BLOCK)

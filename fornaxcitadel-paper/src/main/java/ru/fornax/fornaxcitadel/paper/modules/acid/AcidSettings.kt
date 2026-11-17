@@ -18,11 +18,8 @@ data class AcidType(val id: String, val material: Material, val maxTargets: Int,
     private companion object { val AIR = setOf(Material.AIR, Material.CAVE_AIR, Material.VOID_AIR) }
 }
 
-data class AcidDrops(val targetBlock: Boolean = true, val targetReinforcement: Boolean = false,
-                     val acidBlock: Boolean = false, val acidReinforcement: Boolean = true)
-
 data class AcidSettings(val enabled: Boolean = true, val maxDistance: Int = 5,
-                        val drops: AcidDrops = AcidDrops(), val types: List<AcidType> = defaults()) {
+                        val types: List<AcidType> = defaults()) {
     init {
         require(maxDistance > 0) { "acid.activation.max-distance must be a positive integer" }
         require(types.map { it.id }.distinct().size == types.size) { "Duplicate acid type identifiers" }
@@ -39,10 +36,8 @@ data class AcidSettings(val enabled: Boolean = true, val maxDistance: Int = 5,
 
         fun read(root: ConfigurationSection): AcidSettings {
             val value = root.get("acid", null) ?: return AcidSettings()
-            val acid = mapping(value, "acid", setOf("enabled", "activation", "drops", "types"))
+            val acid = mapping(value, "acid", setOf("enabled", "activation", "types"))
             val activation = acid["activation"]?.let { mapping(it, "acid.activation", setOf("max-distance")) }.orEmpty()
-            val drops = acid["drops"]?.let { mapping(it, "acid.drops",
-                setOf("target-block", "target-reinforcement", "acid-block", "acid-reinforcement")) }.orEmpty()
             val types = if (acid.containsKey("types")) mapping(acid["types"], "acid.types").map { (id, raw) ->
                 val path = "acid.types.$id"
                 val type = mapping(raw, path, setOf("material", "max-targets", "maturation-multiplier", "enabled"))
@@ -57,10 +52,7 @@ data class AcidSettings(val enabled: Boolean = true, val maxDistance: Int = 5,
             } else defaults()
             return AcidSettings(boolean(acid, "enabled", true, "acid"),
                 if (activation.containsKey("max-distance")) integer(activation["max-distance"], "acid.activation.max-distance") else 5,
-                AcidDrops(boolean(drops, "target-block", true, "acid.drops"),
-                    boolean(drops, "target-reinforcement", false, "acid.drops"),
-                    boolean(drops, "acid-block", false, "acid.drops"),
-                    boolean(drops, "acid-reinforcement", true, "acid.drops")), types)
+                types)
         }
 
         private fun mapping(value: Any?, path: String, allowed: Set<String>? = null): Map<String, Any?> {

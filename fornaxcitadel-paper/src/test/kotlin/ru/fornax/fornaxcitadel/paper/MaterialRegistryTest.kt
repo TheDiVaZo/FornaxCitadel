@@ -1,8 +1,10 @@
 package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.Material
+import org.bukkit.block.Block
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.material.BukkitMaterialRegistry
+import ru.fornax.fornaxcitadel.paper.material.BukkitMaterialRegistry.SimpleMaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -15,6 +17,83 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class MaterialRegistryTest {
+    @Test
+    fun `vanilla adapter refuses a block with another material`() {
+        val block = paperProxy<Block>("mismatched material") { method, _ ->
+            when (method.name) {
+                "getType" -> Material.STONE
+                else -> unsupported(method)
+            }
+        }
+        for (effect in listOf(false, true)) {
+            assertFalse(SimpleMaterialAdapter(Material.DIRT).breakNaturallyBlock(block, effect))
+        }
+        assertEquals(Material.STONE, block.type)
+    }
+
+    @Test
+    fun `vanilla adapter delegates the effect flag once and returns the native result without inspecting state`() {
+        for (effect in listOf(false, true)) for (nativeResult in listOf(false, true)) {
+            val calls = mutableListOf<Boolean>()
+            val block = paperProxy<Block>("natural destruction target") { method, args ->
+                when (method.name) {
+                    "getType" -> Material.STONE
+                    "breakNaturally" -> {
+                        calls.add(args.single() as Boolean)
+                        nativeResult
+                    }
+                    else -> unsupported(method)
+                }
+            }
+
+            assertEquals(nativeResult, SimpleMaterialAdapter(Material.STONE).breakNaturallyBlock(block, effect))
+            assertEquals(listOf(effect), calls)
+            assertEquals(Material.STONE, block.type)
+        }
+    }
+
+    @Test
+    fun `negative hardness blocks resolve to the same refusing adapter through every lookup`() {
+        for (material in listOf(Material.BEDROCK, Material.BARRIER, Material.END_PORTAL_FRAME,
+            Material.COMMAND_BLOCK, Material.CHAIN_COMMAND_BLOCK, Material.REPEATING_COMMAND_BLOCK,
+            Material.STRUCTURE_BLOCK, Material.JIGSAW, Material.END_PORTAL, Material.END_GATEWAY,
+            Material.NETHER_PORTAL, Material.LIGHT, Material.MOVING_PISTON)) {
+            val block = paperProxy<Block>("protected $material") { method, _ ->
+                when (method.name) {
+                    "getType" -> material
+                    else -> unsupported(method)
+                }
+            }
+            val adapter = BukkitMaterialRegistry[material]
+            assertTrue(material.isBlock && material.hardness < 0, material.name)
+            assertSame(adapter, BukkitMaterialRegistry.getType(adapter.getKey()), material.name)
+            assertSame(adapter, BukkitMaterialRegistry.getTypeOrNull(block), material.name)
+            assertSame(adapter, BukkitMaterialRegistry.getTypeOrNull(TestItemStack(material, 1)), material.name)
+
+            for (effect in listOf(false, true)) {
+                assertFalse(adapter.breakNaturallyBlock(block, effect), material.name)
+            }
+            assertEquals(material, block.type)
+        }
+    }
+
+    @Test
+    fun `zero and positive hardness vanilla blocks remain breakable`() {
+        for (material in listOf(Material.TNT, Material.STONE)) {
+            val calls = mutableListOf<Boolean>()
+            val block = paperProxy<Block>("breakable $material") { method, args ->
+                when (method.name) {
+                    "getType" -> material
+                    "breakNaturally" -> { calls.add(args.single() as Boolean); true }
+                    else -> unsupported(method)
+                }
+            }
+            assertTrue(material.hardness >= 0, material.name)
+            assertTrue(BukkitMaterialRegistry[material].breakNaturallyBlock(block, false), material.name)
+            assertEquals(listOf(false), calls)
+        }
+    }
+
     @Test
     fun `vanilla identity resolves consistently by key item and block`() {
         val fixture = PaperTestFixture(initializeSystems = false)
@@ -98,6 +177,8 @@ class MaterialRegistryTest {
         assertEquals(material.getKey(), wrapper.getKey())
         assertFalse(wrapper.isConsists(sample))
         assertFalse(wrapper.isConsists(fixture.block()))
+        assertFalse(wrapper.breakNaturallyBlock(fixture.block(), true))
+        assertEquals(0, fixture.vanillaBlockChanges)
         assertFailsWith<IllegalStateException> { wrapper.createItemStack(1) }
 
         assertTrue(combined.register("late", TestMaterialRegistry(material)))
@@ -108,6 +189,38 @@ class MaterialRegistryTest {
         assertEquals(5, created.amount)
         assertTrue(material.isConsists(created))
         assertFailsWith<IllegalArgumentException> { wrapper.createItemStack(0) }
+    }
+
+    @Test
+    fun `wrapper forwards natural breaking flags and provider results and refuses an absent provider`() {
+        val block = paperProxy<Block>("custom natural target") { method, _ ->
+            when (method.name) {
+                "getType" -> Material.STONE
+                else -> unsupported(method)
+            }
+        }
+        val key = Key("custom", "natural")
+        val calls = mutableListOf<Pair<Block, Boolean>>()
+        var providerResult = false
+        val material = object : MaterialAdapter by TestMaterialAdapter(key, taggedBlock = block) {
+            override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean {
+                calls.add(block to triggerEffect)
+                return providerResult
+            }
+        }
+        val registry = CombineMaterialRegistry()
+        val wrapper = MaterialAdapter.Wrapper(key, registry)
+        for (effect in listOf(false, true)) assertFalse(wrapper.breakNaturallyBlock(block, effect))
+        assertTrue(calls.isEmpty())
+        assertTrue(registry.register(key.namespace, TestMaterialRegistry(material)))
+
+        for (effect in listOf(false, true)) for (result in listOf(false, true)) {
+            calls.clear()
+            providerResult = result
+            assertEquals(result, wrapper.breakNaturallyBlock(block, effect))
+            assertEquals(listOf(block to effect), calls)
+            assertEquals(Material.STONE, block.type)
+        }
     }
 
     @Test

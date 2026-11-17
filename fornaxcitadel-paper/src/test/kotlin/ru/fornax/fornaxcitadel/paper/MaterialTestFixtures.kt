@@ -28,6 +28,11 @@ internal class TestMaterialAdapter(
     override fun createItemStack(amount: Int): ItemStack = TestItemStack(base, amount).apply {
         data.values[tagKey] = itemTag
     }
+
+    override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean {
+        if (!isConsists(block)) return false
+        return block.breakNaturally(triggerEffect)
+    }
 }
 
 internal class TestMaterialRegistry(private vararg val adapters: MaterialAdapter) : MaterialRegistry {

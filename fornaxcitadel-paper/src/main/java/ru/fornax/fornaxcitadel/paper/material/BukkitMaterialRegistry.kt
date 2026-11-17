@@ -8,7 +8,10 @@ import ru.fornax.fornaxcitadel.core.util.Key
 /** Vanilla materials are the fallback after registered custom material providers. */
 object BukkitMaterialRegistry : MaterialRegistry {
     private val materials = Material.entries.filterNot(Material::isLegacy)
-        .associateWith(::SimpleMaterialAdapter)
+        .associateWith { material ->
+            if (material.isBlock && material.hardness < 0) UnbreakableMaterialAdapter(material)
+            else SimpleMaterialAdapter(material)
+        }
     private val keyToMaterial = materials.values.associateBy(MaterialAdapter::getKey)
 
     override fun getType(key: Key): MaterialAdapter? = keyToMaterial[key]
@@ -20,6 +23,10 @@ object BukkitMaterialRegistry : MaterialRegistry {
 
     operator fun get(material: Material): MaterialAdapter = requireNotNull(materials[material]) {
         "Legacy material $material is not supported"
+    }
+
+    private class UnbreakableMaterialAdapter(material: Material) : MaterialAdapter by SimpleMaterialAdapter(material) {
+        override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean = false
     }
 
     class SimpleMaterialAdapter(val material: Material) : MaterialAdapter {
@@ -37,6 +44,13 @@ object BukkitMaterialRegistry : MaterialRegistry {
             itemStack.hasMaterial() && itemStack.type == material
 
         override fun isConsists(block: Block): Boolean = block.type == material
+
+        override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean {
+            if (!isConsists(block)) return false
+            val nativeKey = block.type.key
+            if (Key(nativeKey.namespace, nativeKey.key) != getKey()) return false
+            return block.breakNaturally(triggerEffect)
+        }
 
         override fun createItemStack(amount: Int): ItemStack {
             require(amount > 0) { "Item amount must be positive: $amount" }

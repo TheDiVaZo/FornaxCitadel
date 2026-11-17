@@ -144,6 +144,9 @@ internal class PaperTestFixture(
     var vanillaBlockChanges = 0
     var blockLookups = 0
     val playerBreaks = mutableListOf<Pair<Player, Block>>()
+    val naturalBreaks = mutableListOf<Pair<Block, Boolean>>()
+    var beforeNaturalBreak: (Block) -> Unit = {}
+    var afterNaturalBreak: (Block) -> Unit = {}
     var beforeBreakEvent: (BlockBreakEvent) -> Unit = {}
     var afterBreakEvent: (BlockBreakEvent) -> Unit = {}
     var beforeEvent: (Event) -> Unit = {}
@@ -301,7 +304,7 @@ internal class PaperTestFixture(
     val dismantleService = PaperDismantleService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
     val repairService = PaperRepairService(module, citadelTypes, materials)
     val upgradeService = PaperUpgradeService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
-    val breakingService = PaperBreakingService(plugin, module, citadelTypes, playerDamage, messages, creativeModeEnabled)
+    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
     val acidService = acidSettings?.let {
         AcidService(plugin, module, citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it))
     }
@@ -349,6 +352,38 @@ internal class PaperTestFixture(
         return true
     }
 
+    /** Small native-world stub, separate from the player mining/event path and provider item factories. */
+    private fun breakNaturally(block: Block, triggerEffect: Boolean): Boolean {
+        naturalBreaks.add(block to triggerEffect)
+        beforeNaturalBreak(block)
+        if (block.isEmpty) return false
+        val material = block.type
+        val data = block.blockData
+        val related = materialPlacement.getRule(block).getRelatedBlock(block)
+        val parts = if ((data is org.bukkit.block.data.type.Door || data is org.bukkit.block.data.type.Bed) && related != null)
+            listOf(block, related) else listOf(block)
+        val contents = parts.flatMap { part ->
+            val key = Triple(part.x, part.y, part.z)
+            val items = inventories[key]?.filterNotNull()?.map(ItemStack::clone).orEmpty()
+            if (key in inventories) inventories[key] = arrayOfNulls(inventories[key]!!.size)
+            items
+        }
+        parts.forEach { it.setType(Material.AIR, true) }
+        if (data is org.bukkit.block.data.type.Chest && related != null) {
+            val partner = related.blockData as org.bukkit.block.data.type.Chest
+            partner.type = org.bukkit.block.data.type.Chest.Type.SINGLE
+            related.setBlockData(partner, true)
+        }
+        val location = block.location.add(0.5, 0.5, 0.5)
+        contents.forEach { world.dropItemNaturally(location, it) }
+        if (material.isItem) {
+            val drop = if (material == Material.STONE) Material.COBBLESTONE else material
+            world.dropItemNaturally(location, TestItemStack(drop, 1))
+        }
+        afterNaturalBreak(block)
+        return true
+    }
+
     fun chunkWrapper(x: Int = 0, z: Int = 0): Chunk = paperProxy("chunk wrapper") { method, _ ->
         when (method.name) {
             "getWorld" -> world
@@ -393,6 +428,10 @@ internal class PaperTestFixture(
                         block(x + direction.modX * distance, y + direction.modY * distance, z + direction.modZ * distance)
                     } else block(x + args[0] as Int, y + args[1] as Int, z + args[2] as Int)
                     "setType" -> { vanillaBlockChanges++; blockMaterials[key] = args[0] as Material; blockData.remove(key); null }
+                    "breakNaturally" -> {
+                        check(args.size == 1 && args[0] is Boolean) { "Expected native breakNaturally(triggerEffect)" }
+                        breakNaturally(block(x, y, z), args[0] as Boolean)
+                    }
                     else -> unsupported(method)
                 }
             }

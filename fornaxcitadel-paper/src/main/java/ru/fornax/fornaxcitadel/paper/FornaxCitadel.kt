@@ -128,7 +128,7 @@ class FornaxCitadel : JavaPlugin() {
             dismantle = PaperDismantleService(this, module, citadelTypes, materials, settings.dismantle).also(services::add)
             repair = PaperRepairService(module, citadelTypes, materials).also(services::add)
             upgrade = PaperUpgradeService(this, module, citadelTypes, materials, settings.dismantle).also(services::add)
-            val breaking = PaperBreakingService(this, module, citadelTypes, playerDamage, messages,
+            val breaking = PaperBreakingService(this, module, playerDamage, messages,
                 settings.playerDamage.creativeModeEnabled).also(services::add)
             acid = AcidService(this, module, citadelTypes, materials, materialPlacement, breaking, AcidRegistry(settings.acid)).also(services::add)
             services.add(PaperExplosionService(this, module, settings.explosionPowers))

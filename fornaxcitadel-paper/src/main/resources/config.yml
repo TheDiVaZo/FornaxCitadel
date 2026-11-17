@@ -3,13 +3,9 @@ acid:
   enabled: true
   activation:
     max-distance: 5
-  drops:
-    target-block: true
-    target-reinforcement: false
-    acid-block: false
-    acid-reinforcement: true
   # Types are determined by the reinforced block's material, not reinforcement item.
-  # After restart these values also apply to existing blocks. No targets means no consumption.
+  # After restart these values also apply to existing blocks. Activation consumes acid even without targets.
+  # Material adapters handle natural block drops; acid never refunds reinforcement materials.
   types:
     gold:
       enabled: true

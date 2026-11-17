@@ -7,10 +7,12 @@ import org.bukkit.block.Block
 import org.bukkit.block.data.type.Chest
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
-import org.bukkit.event.block.BlockBreakEvent
-import org.bukkit.event.block.BlockDropItemEvent
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
+import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.acid.*
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
@@ -19,6 +21,39 @@ import kotlin.test.*
 
 class AcidIntegrationTest {
     @Test
+    fun `unbreakable and non-item materials retain physical blocks but lose acid and target reinforcements`() {
+        for (material in listOf(Material.BEDROCK, Material.END_PORTAL)) for (retainSource in listOf(false, true)) {
+            val settings = if (retainSource) AcidSettings(
+                types = listOf(AcidType("retained", material, 1, 1.0))
+            ) else AcidSettings()
+            fixture(settings).use { f ->
+                if (retainSource) {
+                    reinforce(f, f.block())
+                    f.material(material)
+                } else acid(f)
+                val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+                val target = f.block(2, 64, 2)
+                reinforce(f, target)
+                val reinforcement = assertNotNull(f.module.citadels.findProtecting(target.testPosition()))
+                if (!retainSource) f.material(material, target.testPosition())
+
+                assertEquals(AcidResult.Activated(1), activate(f))
+
+                assertFalse(source.isCurrent || reinforcement.isCurrent)
+                assertEquals(material, (if (retainSource) f.block() else target).type)
+                assertTrue((if (retainSource) target else f.block()).isEmpty)
+                assertEquals(1, f.vanillaBlockChanges)
+                assertTrue(f.calledEvents.isEmpty())
+                val items = f.droppedItems.map { it.second.type }
+                assertFalse(Material.IRON_INGOT in items)
+                assertEquals(1, items.count { it == if (retainSource) Material.COBBLESTONE else Material.GOLD_BLOCK })
+                assertFalse(material in items)
+                assertEquals(1, items.size)
+            }
+        }
+    }
+
+    @Test
     fun `non-container inventory holders keep their contents`() = fixture().use { f ->
         acid(f)
         val target = f.block(2, 64, 2)
@@ -26,33 +61,69 @@ class AcidIntegrationTest {
         reinforce(f, target)
         f.inventories[Triple(target.x, target.y, target.z)] = arrayOf(TestItemStack(Material.BOOK, 1))
         assertEquals(AcidResult.Activated(1), activate(f))
-        assertEquals(listOf(Material.IRON_INGOT, Material.BOOK, Material.CHISELED_BOOKSHELF), f.droppedItems.map { it.second.type })
+        assertEquals(listOf(Material.GOLD_BLOCK, Material.BOOK, Material.CHISELED_BOOKSHELF), f.droppedItems.map { it.second.type })
     }
 
     @Test
-    fun `a door or bed is one target with all parts checked before breaking`() {
-        for (door in listOf(false, true)) fixture().use { f ->
+    fun `all independent door or bed reinforcements must permit one natural destruction`() {
+        for (door in listOf(false, true)) for (reason in listOf("success", "higher tier", "veto")) fixture().use { f ->
+            acid(f)
+            val (first, second) = if (door) f.door(2, 64, 2) else f.bed(2, 64, 2)
+            val firstCitadel = f.placeExact(first)
+            val secondCitadel = f.placeExact(second,
+                if (reason == "higher tier") PaperCitadelTypes.MATURING else PaperCitadelTypes.REINFORCED)
+            if (reason == "veto") f.vetoAcid { it.position == second.testPosition() }
+
+            assertEquals(AcidResult.Activated(if (reason == "success") 1 else 0), activate(f))
+
+            assertEquals(reason != "success", firstCitadel.isCurrent)
+            assertEquals(reason != "success", secondCitadel.isCurrent)
+            assertEquals(reason == "success", first.isEmpty)
+            assertEquals(reason == "success", second.isEmpty)
+            assertTrue(f.block().isEmpty)
+            assertEquals(if (reason == "success") listOf(f.block() to true, first to true)
+                else listOf(f.block() to true), f.naturalBreaks)
+            assertEquals(if (reason == "success") 1 else 0,
+                f.droppedItems.count { it.second.type == if (door) Material.OAK_DOOR else Material.RED_BED })
+            assertTrue(f.calledEvents.isEmpty())
+        }
+    }
+
+    @Test
+    fun `one compound provider call owns both parts and may refuse without preserving the reinforcement`() {
+        for (door in listOf(false, true)) for (refuse in listOf(false, true)) fixture().use { f ->
             acid(f)
             val (first, second) = if (door) f.door(2, 64, 2) else f.bed(2, 64, 2)
             reinforce(f, first)
-            f.afterEvent = { event -> if (event is BlockBreakEvent && event.block === second) event.isCancelled = true }
-            assertEquals(AcidResult.Activated(0), activate(f))
-            assertEquals(1, f.vanillaBlockChanges)
-            assertNotNull(f.module.citadels.findProtecting(first.testPosition()))
-            assertNull(f.module.citadels.findProtecting(f.position))
-            assertFalse(first.isEmpty || second.isEmpty)
-            assertEquals(listOf(Material.IRON_INGOT), f.droppedItems.map { it.second.type })
-            acid(f)
-            f.afterEvent = {}
-            f.calledEvents.clear()
-            assertEquals(AcidResult.Activated(1), activate(f))
-            assertTrue(first.isEmpty)
-            assertTrue(second.isEmpty)
-            assertNull(f.module.citadels.findProtecting(first.testPosition()))
-            assertEquals(2, f.calledEvents.filterIsInstance<BlockBreakEvent>().size)
-            val events = f.calledEvents.filterIsInstance<AcidBlockDissolveEvent>()
-            assertEquals(listOf(first, second), events.map { it.block })
-            assertEquals(1, f.droppedItems.count { it.second.type == if (door) Material.OAK_DOOR else Material.RED_BED })
+            val target = assertNotNull(f.module.citadels.findProtecting(first.testPosition()))
+            var attempts = 0
+            val delegate = assertNotNull(f.dismantleMaterials.getTypeOrNull(first))
+            val adapter = object : MaterialAdapter by delegate {
+                override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean {
+                    attempts++
+                    assertSame(first, block)
+                    assertTrue(triggerEffect)
+                    return !refuse && delegate.breakNaturallyBlock(block, triggerEffect)
+                }
+                override fun createItemStack(amount: Int): org.bukkit.inventory.ItemStack = error("The compound provider owns loot")
+            }
+            val materials = object : MaterialRegistry by f.dismantleMaterials {
+                override fun getTypeOrNull(block: Block): MaterialAdapter? =
+                    if (block === first) adapter else f.dismantleMaterials.getTypeOrNull(block)
+            }
+
+            withMaterials(f, materials) { acid ->
+                assertEquals(AcidResult.Activated(1), acid.activate(f.installer.player, f.block()))
+            }
+
+            assertEquals(1, attempts)
+            assertFalse(target.isCurrent)
+            assertEquals(!refuse, first.isEmpty)
+            assertEquals(!refuse, second.isEmpty)
+            assertEquals(if (refuse) listOf(f.block() to true) else listOf(f.block() to true, first to true), f.naturalBreaks)
+            assertEquals(if (refuse) 0 else 1,
+                f.droppedItems.count { it.second.type == if (door) Material.OAK_DOOR else Material.RED_BED })
+            assertFalse(f.droppedItems.any { it.second.type == Material.IRON_INGOT })
         }
     }
 
@@ -91,6 +162,59 @@ class AcidIntegrationTest {
         }
 
     @Test
+    fun `missing and refusing container providers preserve inventories and double chest links`() {
+        for (chest in listOf(false, true)) for (missing in listOf(false, true)) {
+            fixture().use { f ->
+                acid(f)
+                val (target, partner) = if (chest) f.doubleChest(2, 64, 2) else {
+                    val block = f.block(2, 64, 2)
+                    f.material(Material.CHISELED_BOOKSHELF, block.testPosition())
+                    block to null
+                }
+                reinforce(f, target)
+                val reinforcement = assertNotNull(f.module.citadels.findProtecting(target.testPosition()))
+                val targetKey = Triple(target.x, target.y, target.z)
+                val contents = TestItemStack(Material.EMERALD, 7)
+                f.inventories[targetKey] = arrayOf(contents)
+                val partnerKey = partner?.let { Triple(it.x, it.y, it.z) }
+                if (partnerKey != null) f.inventories[partnerKey] = arrayOf(TestItemStack(Material.DIAMOND, 9))
+                val initialData = target.blockData.asString
+                val initialPartnerData = partner?.blockData?.asString
+                var attempts = 0
+                val refusing = object : MaterialAdapter by assertNotNull(f.dismantleMaterials.getTypeOrNull(target)) {
+                    override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean {
+                        assertSame(target, block)
+                        attempts++
+                        return false
+                    }
+                    override fun createItemStack(amount: Int): org.bukkit.inventory.ItemStack =
+                        error("A retained container must not produce its block item")
+                }
+                val materials = object : MaterialRegistry by f.dismantleMaterials {
+                    override fun getTypeOrNull(block: Block): MaterialAdapter? =
+                        if (block === target) refusing.takeUnless { missing }
+                        else f.dismantleMaterials.getTypeOrNull(block)
+                }
+
+                withMaterials(f, materials) { acid ->
+                    assertEquals(AcidResult.Activated(1), acid.activate(f.installer.player, f.block()))
+                }
+
+                assertFalse(reinforcement.isCurrent)
+                assertEquals(if (missing) 0 else 1, attempts)
+                assertEquals(initialData, target.blockData.asString)
+                assertEquals(initialPartnerData, partner?.blockData?.asString)
+                assertSame(contents, f.inventories[targetKey]!!.single())
+                assertEquals(7, contents.amount)
+                if (partnerKey != null) assertEquals(9, f.inventories[partnerKey]!!.single()!!.amount)
+                assertEquals(listOf(Material.GOLD_BLOCK), f.droppedItems.map { it.second.type })
+                assertTrue(f.calledEvents.isEmpty())
+                assertEquals(1, f.vanillaBlockChanges)
+            }
+        }
+    }
+
+    @Test
     fun `a chest source and its selected partner are destroyed sequentially with separate inventories`() =
         fixture(AcidSettings(types = listOf(AcidType("chest", Material.CHEST, 1, 1.0)))).use { f ->
             // Reinforce separately before joining, as with independent existing chest records.
@@ -99,7 +223,7 @@ class AcidIntegrationTest {
             val (source, target) = f.doubleChest(1, 64, 2)
             f.inventories[Triple(source.x, source.y, source.z)] = arrayOf(TestItemStack(Material.EMERALD, 7))
             f.inventories[Triple(target.x, target.y, target.z)] = arrayOf(TestItemStack(Material.DIAMOND, 9))
-            f.beforeEvent = { if (it is AcidBlockDissolveEvent) {
+            f.beforeNaturalBreak = { if (it === target) {
                 assertTrue(source.isEmpty)
                 assertEquals(Chest.Type.SINGLE, (target.blockData as Chest).type)
             } }
@@ -109,8 +233,8 @@ class AcidIntegrationTest {
             val items = f.droppedItems.map { it.second }
             assertEquals(7, items.single { it.type == Material.EMERALD }.amount)
             assertEquals(9, items.single { it.type == Material.DIAMOND }.amount)
-            assertEquals(1, items.count { it.type == Material.CHEST })
-            assertEquals(1, items.count { it.type == Material.IRON_INGOT })
+            assertEquals(2, items.count { it.type == Material.CHEST })
+            assertFalse(items.any { it.type == Material.IRON_INGOT })
         }
 
     @Test
@@ -123,7 +247,7 @@ class AcidIntegrationTest {
         val last = source.getRelative(org.bukkit.block.BlockFace.EAST)
         reinforce(f, first)
         reinforce(f, last)
-        f.afterEvent = { if (it is AcidBlockDissolveEvent && it.block === first) {
+        f.afterNaturalBreak = { if (it === first) {
             f.manager.unloadChunk(f.worldId, 1, 0).join()
             f.loadedWorldChunks.remove(1 to 0)
         } }
@@ -136,34 +260,29 @@ class AcidIntegrationTest {
     }
 
     @Test
-    fun `container contents are read after callbacks and survive disabled block drops`() {
-        for (mutate in listOf(false, true)) PaperTestFixture(permissions = true,
-            acidSettings = AcidSettings(drops = AcidDrops(targetBlock = false))).use { f ->
+    fun `native destruction owns current container contents without service duplication`() {
+        for (mutate in listOf(false, true)) fixture().use { f ->
             acid(f)
             val target = f.block(2, 64, 2)
+            f.material(Material.CHISELED_BOOKSHELF, target.testPosition())
             reinforce(f, target)
             val key = Triple(target.x, target.y, target.z)
-            f.inventories[key] = arrayOf(TestItemStack(Material.EMERALD, 7))
-            if (mutate) f.afterEvent = { if (it is AcidBlockDissolveEvent) f.inventories[key] = arrayOf(TestItemStack(Material.EMERALD, 8)) }
+            f.inventories[key] = arrayOf(TestItemStack(Material.BOOK, 7))
+            if (mutate) f.beforeNaturalBreak = { if (it === target) f.inventories[key] = arrayOf(TestItemStack(Material.BOOK, 8)) }
+
             assertEquals(AcidResult.Activated(1), activate(f))
-            assertFalse(f.droppedItems.any { it.second.type == Material.STONE })
-            assertEquals(if (mutate) 8 else 7, f.droppedItems.single { it.second.type == Material.EMERALD }.second.amount)
+
+            assertEquals(if (mutate) 8 else 7, f.droppedItems.single { it.second.type == Material.BOOK }.second.amount)
+            assertEquals(1, f.droppedItems.count { it.second.type == Material.CHISELED_BOOKSHELF })
+            assertEquals(3, f.droppedItems.size)
             assertTrue(f.inventories[key]!!.all { it == null })
+            assertEquals(listOf(f.block() to true, target to true), f.naturalBreaks)
+            assertTrue(f.calledEvents.isEmpty())
         }
     }
 
     @Test
-    fun `ordinary block drops remain cancelable without duplicating reinforcement refunds`() =
-        PaperTestFixture(permissions = true, acidSettings = AcidSettings()).use { f ->
-            acid(f)
-            reinforce(f, f.block(2, 64, 2))
-            f.afterEvent = { if (it is BlockDropItemEvent) it.isCancelled = true }
-            assertEquals(AcidResult.Activated(1), activate(f))
-            assertEquals(listOf(Material.IRON_INGOT), f.droppedItems.map { it.second.type })
-        }
-
-    @Test
-    fun `multipart source is consumed as a whole without dissolve events after activation is allowed`() {
+    fun `multipart source is checked by core validation then consumed through one natural call`() {
         for (material in listOf(Material.OAK_DOOR, Material.RED_BED))
             fixture(AcidSettings(types = listOf(AcidType("multipart", material, 1, 1.0)))).use { f ->
                 val (first, second) = if (material == Material.OAK_DOOR) f.door() else f.bed(1, 64, 2)
@@ -173,35 +292,39 @@ class AcidIntegrationTest {
                 val clicked = if (anchor === first) second else first
                 val target = anchor.getRelative(org.bukkit.block.BlockFace.NORTH)
                 reinforce(f, target)
-                f.afterEvent = { if (it is AcidBlockActivateEvent) it.isCancelled = true }
-                assertEquals(AcidResult.Failed(AcidFailure.CANCELLED), f.acidService!!.activate(f.installer.player, clicked))
+                var vetoSource = true
+                f.vetoAcid { it.consumingSource && vetoSource }
+                assertEquals(AcidResult.Failed(AcidFailure.DENIED), f.acidService!!.activate(f.installer.player, clicked))
                 assertTrue(source.isCurrent)
-                assertEquals(0, f.vanillaBlockChanges)
+                assertTrue(f.naturalBreaks.isEmpty())
                 assertTrue(f.droppedItems.isEmpty())
-                f.afterEvent = { if (it is BlockBreakEvent && it.block in listOf(first, second)) it.isCancelled = true }
-                f.calledEvents.clear()
+                vetoSource = false
 
                 assertEquals(AcidResult.Activated(1), f.acidService.activate(f.installer.player, clicked))
 
-                assertTrue(first.isEmpty)
-                assertTrue(second.isEmpty)
-                val events = f.calledEvents.filterIsInstance<AcidBlockDissolveEvent>()
-                assertEquals(listOf(target), events.map { it.block })
-                assertTrue(events.all { it.acidPosition == source.position && it.acidType.material == material })
+                assertTrue(first.isEmpty && second.isEmpty)
+                assertEquals(listOf(anchor to true, target to true), f.naturalBreaks)
+                assertEquals(1, f.droppedItems.count { it.second.type == material })
+                assertTrue(f.calledEvents.isEmpty())
             }
     }
 
     @Test
-    fun `suppressing either target part suppresses the single multipart item`() {
-        for (vetoFirst in listOf(false, true)) fixture().use { f ->
-            acid(f)
-            val (first, second) = f.door(2, 64, 2)
-            reinforce(f, first)
-            val veto = if (vetoFirst) first else second
-            f.afterEvent = { event -> if (event is BlockBreakEvent && event.block === veto) event.isDropItems = false }
-            assertEquals(AcidResult.Activated(1), activate(f))
-            assertTrue(first.isEmpty && second.isEmpty)
-            assertEquals(listOf(Material.IRON_INGOT), f.droppedItems.map { it.second.type })
+    fun `a second independent reinforcement on a source part prevents activation`() {
+        for (door in listOf(false, true)) {
+            val material = if (door) Material.OAK_DOOR else Material.RED_BED
+            fixture(AcidSettings(types = listOf(AcidType("multipart", material, 1, 1.0)))).use { f ->
+                val (first, second) = if (door) f.door() else f.bed(1, 64, 2)
+                val firstCitadel = f.placeExact(first)
+                val secondCitadel = f.placeExact(second)
+
+                assertEquals(AcidResult.Failed(AcidFailure.DENIED), f.acidService!!.activate(f.installer.player, first))
+
+                assertTrue(firstCitadel.isCurrent && secondCitadel.isCurrent)
+                assertFalse(first.isEmpty || second.isEmpty)
+                assertTrue(f.naturalBreaks.isEmpty())
+                assertTrue(f.droppedItems.isEmpty())
+            }
         }
     }
 
@@ -254,6 +377,21 @@ class AcidIntegrationTest {
     private fun reinforce(f: PaperTestFixture, block: Block) {
         val type = PaperCitadelTypes.REINFORCED
         assertEquals(ActionResult.SUCCESS, f.module.actions.execute(PlaceAction(f.context(f.installer), block.testPosition(), type)))
+    }
+    private fun PaperTestFixture.vetoAcid(predicate: (AcidDestroyAction) -> Boolean) {
+        module.actions.validatorCoordinator.registerValidator(object : ActionValidator<AcidDestroyAction> {
+            override val actionClass = AcidDestroyAction::class.java
+            override fun validate(action: AcidDestroyAction) = if (predicate(action))
+                ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
+        })
+    }
+    private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
+        val original = assertNotNull(f.acidService)
+        original.disable()
+        val service = AcidService(f.plugin, f.module, f.citadelTypes, materials, f.materialPlacement,
+            f.breakingService, original.registry)
+        service.enable()
+        try { body(service) } finally { service.disable() }
     }
     private fun activate(f: PaperTestFixture) = f.acidService!!.activate(f.installer.player, f.block())
     private fun fixture(settings: AcidSettings = AcidSettings()) = PaperTestFixture(permissions = true,
