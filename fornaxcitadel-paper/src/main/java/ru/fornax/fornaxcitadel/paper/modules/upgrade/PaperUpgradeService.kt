@@ -52,20 +52,18 @@ class PaperUpgradeService @JvmOverloads constructor(
         val citadel = module.citadels.findProtecting(action.position) ?: return ActionResult.DENIED
         if (citadel.getComponent(CitadelOwner::class.java) == null) return ActionResult.DENIED
         val oldKey = citadel.getComponent(CitadelKind::class.java)?.definitionKey
-        if (oldKey == action.definitionKey) return ActionResult.DENIED
-        val comparison = comparison(citadel, action.definitionKey) ?: return ActionResult.DENIED
-        if (!comparison.isImprovement()) return ActionResult.DENIED
+        if (!canUpgradeTo(citadel, action.definitionKey)) return ActionResult.DENIED
+        val newMaximum = module.health.findDefinition(action.definitionKey)?.maxHealth
         val itemKey = citadelTypes.itemKey(action.definitionKey) ?: return ActionResult.DENIED
         val held = player.inventory.itemInMainHand
         if (!held.hasMaterial()) return ActionResult.DENIED
 
-        val oldHealth = citadel.getComponent(Health::class.java)?.health
-        if (oldHealth != null && (!oldHealth.isFinite() || oldHealth < 0.0)) return ActionResult.DENIED
         val oldMaximum = module.health.maxHealth(citadel)
         val block = findLoadedBlock(citadel.position) ?: return ActionResult.DENIED
         if (materials.getTypeOrNull(held)?.getKey() != itemKey) return ActionResult.DENIED
         val currentHealth = module.health.currentHealth(citadel)
-        val refundChance = refunds.chance(currentHealth != null && oldMaximum != null && currentHealth >= oldMaximum)
+        val refundChance = refunds.chance(
+            currentHealth != null && currentHealth.isFinite() && oldMaximum != null && currentHealth >= oldMaximum)
         val refund = try {
             refunds.create(oldKey?.let(citadelTypes::itemKey), refundChance)
         } catch (failure: Exception) {
@@ -75,7 +73,7 @@ class PaperUpgradeService @JvmOverloads constructor(
         val dropRefund = refund != null && refunds.shouldDrop(refundChance)
         val startedAt = clock.millis()
 
-        applyUpgrade(citadel, action.definitionKey, comparison.newHealth, startedAt)
+        applyUpgrade(citadel, action.definitionKey, newMaximum, startedAt)
         player.consumeOneFromMainHand(held)
         if (dropRefund) block.world.dropItemNaturally(block.location.add(0.5, 0.5, 0.5), checkNotNull(refund))
         return ActionResult.SUCCESS
@@ -102,17 +100,10 @@ class PaperUpgradeService @JvmOverloads constructor(
             Maturing(startedAtMillis))
     }
 
-    private fun comparison(citadel: ReadableHandle, destination: Key): UpgradeComparison? {
-        if (module.definitions.find(destination) == null) return null
-        val newLevel = citadelTypes.level(destination) ?: return null
-        val oldKey = citadel.getComponent(CitadelKind::class.java)?.definitionKey
-        return UpgradeComparison(
-            citadelTypes.level(citadel),
-            module.health.maxHealth(citadel) ?: module.health.currentHealth(citadel),
-            oldKey?.let(citadelTypes::isInvulnerable) == true,
-            newLevel,
-            module.health.findDefinition(destination)?.maxHealth,
-            citadelTypes.isInvulnerable(destination)
-        )
+    private fun canUpgradeTo(citadel: ReadableHandle, destination: Key): Boolean {
+        if (module.definitions.find(destination) == null) return false
+        val newLevel = citadelTypes.level(destination) ?: return false
+        val oldLevel = citadelTypes.level(citadel)
+        return oldLevel == null || newLevel > oldLevel
     }
 }

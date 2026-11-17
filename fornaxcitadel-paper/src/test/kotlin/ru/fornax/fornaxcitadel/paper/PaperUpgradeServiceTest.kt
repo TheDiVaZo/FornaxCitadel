@@ -20,6 +20,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
@@ -121,70 +122,211 @@ class PaperUpgradeServiceTest {
     }
 
     @Test
-    fun `known characteristics cannot decrease and at least one must grow using maximum not damaged HP`() {
-        for ((level, maximum, allowed) in listOf(
-            Triple(3, 20.0, true), Triple(2, 30.0, true), Triple(3, 30.0, true),
-            Triple(3, 10.0, false), Triple(1, 30.0, false), Triple(2, 20.0, false)
+    fun `known levels alone determine improvement regardless of maximum or damaged HP`() {
+        for (savedHealth in listOf(1.0, 20.0)) for ((level, maximum, allowed) in listOf(
+            Triple(3, 20.0, true), Triple(2, 30.0, false), Triple(3, 30.0, true),
+            Triple(3, 10.0, true), Triple(1, 100.0, false), Triple(2, 20.0, false)
         )) {
             val types = CitadelTypesSettings.DEFAULT_TYPES.toMutableMap()
             types[HEAVY.key] = types.getValue(HEAVY.key).copy(lvl = level, health = HealthSettings(maximum))
             PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings(types)).use { f ->
                 f.place()
-                f.citadel().editComponent(Health::class.java) { it.health = 1.0 }
+                val original = f.citadel()
+                original.editComponent(Health::class.java) { it.health = savedHealth }
+                val kind = original.getComponent(CitadelKind::class.java)
+                val health = original.getComponent(Health::class.java)
+                val maturing = original.getComponent(Maturing::class.java)
                 f.installer.held = f.reinforcementStack(HEAVY)
+
                 assertEquals(if (allowed) ActionResult.SUCCESS else ActionResult.DENIED,
-                    f.module.actions.execute(f.action()), "$level / $maximum")
-                assertEquals(if (allowed) maximum else 1.0, f.health())
+                    f.module.actions.execute(f.action()), "$level / $maximum from $savedHealth HP")
+
+                assertEquals(if (allowed) maximum else savedHealth, f.health())
                 assertEquals(if (allowed) 1 else 2, f.installer.held.amount)
-                if (!allowed) assertTrue(f.droppedItems.isEmpty())
+                assertTrue(original.isCurrent)
+                if (!allowed) {
+                    assertSame(kind, original.getComponent(CitadelKind::class.java))
+                    assertSame(health, original.getComponent(Health::class.java))
+                    assertSame(maturing, original.getComponent(Maturing::class.java))
+                    assertTrue(f.droppedItems.isEmpty())
+                }
             }
         }
     }
 
     @Test
-    fun `unknown kind unknown definition and absent maximum fall back to current HP`() {
-        for (missing in listOf("kind", "definition", "maximum")) fixture().use { f ->
+    fun `unknown kind or definition permits upgrade regardless of saved HP`() {
+        for (missing in listOf("kind", "definition")) for (savedHealth in listOf(80.0, 30.0, 10.0)) fixture().use { f ->
             f.place()
             val original = f.citadel()
+            val owner = original.getComponent(CitadelOwner::class.java)
             when (missing) {
                 "kind" -> f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
                 "definition" -> original.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "missing") }
-                "maximum" -> f.module.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
             }
+            original.editComponent(Health::class.java) { it.health = savedHealth }
+            assertNull(f.citadelTypes.level(original))
             f.installer.held = f.reinforcementStack(HEAVY)
+
+            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action()), "$missing / $savedHealth")
+
+            assertTrue(original.isCurrent)
+            assertEquals(original.runtimeId, f.citadel().runtimeId)
+            assertSame(owner, original.getComponent(CitadelOwner::class.java))
+            assertEquals(HEAVY, original.getComponent(CitadelKind::class.java)?.definitionKey)
+            assertEquals(3, f.citadelTypes.level(original))
+            assertEquals(30.0, f.health())
+            assertEquals(1, f.installer.held.amount)
+            assertTrue(f.droppedItems.isEmpty())
+        }
+    }
+
+    @Test
+    fun `known level still takes priority when the old maximum is absent`() {
+        fixture(DismantleSettings(0.0)).use { f ->
+            f.place()
+            val original = f.citadel()
+            f.module.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
             original.editComponent(Health::class.java) { it.health = 80.0 }
-            assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action()), missing)
-            assertEquals(80.0, f.health())
-            assertEquals(2, f.installer.held.amount)
-            if (missing != "maximum") {
-                original.editComponent(Health::class.java) { it.health = 30.0 }
-                assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action()), "Unknown level must not count as a gain")
-            }
-            original.editComponent(Health::class.java) { it.health = 10.0 }
-            dispatch(f.placementListener, f.click(), f.plugin)
+            f.installer.held = f.reinforcementStack(HEAVY)
+
+            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action()))
+
+            assertTrue(original.isCurrent)
             assertEquals(HEAVY, original.getComponent(CitadelKind::class.java)?.definitionKey)
             assertEquals(30.0, f.health())
             assertEquals(1, f.installer.held.amount)
-            if (missing != "maximum") assertTrue(f.droppedItems.isEmpty())
+            assertTrue(f.droppedItems.isEmpty())
             assertEquals(f.installer.id, original.getComponent(CitadelOwner::class.java)?.playerId)
         }
     }
 
     @Test
-    fun `no comparison data invalid HP and unknown destination never upgrade`() {
-        for (reason in listOf("no data", "nan", "negative", "destination")) fixture().use { f ->
+    fun `unknown level permits upgrade regardless of the known maximum`() {
+        for (maximum in listOf(80.0, 30.0, 20.0)) fixture().use { f ->
             f.place()
+            val original = f.citadel()
+            val owner = original.getComponent(CitadelOwner::class.java)
+            val externalKey = Key("external", "without_level")
+            original.editComponent(CitadelKind::class.java) { it.definitionKey = externalKey }
+            f.module.health.registerDefinition(externalKey, HealthDefinition(maximum))
+            original.editComponent(Health::class.java) { it.health = 1.0 }
+            assertNull(f.citadelTypes.level(original))
             f.installer.held = f.reinforcementStack(HEAVY)
-            when (reason) {
-                "no data" -> {
-                    f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
-                    f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+
+            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action()), maximum.toString())
+
+            assertTrue(original.isCurrent)
+            assertEquals(original.runtimeId, f.citadel().runtimeId)
+            assertSame(owner, original.getComponent(CitadelOwner::class.java))
+            assertEquals(HEAVY, original.getComponent(CitadelKind::class.java)?.definitionKey)
+            assertEquals(3, f.citadelTypes.level(original))
+            assertEquals(30.0, f.health())
+            assertEquals(1, f.installer.held.amount)
+            assertTrue(f.droppedItems.isEmpty())
+        }
+    }
+
+    @Test
+    fun `destination without maximum accepts an unknown or lower source level and removes saved HP`() {
+        for (knownLevel in listOf(true, false)) fixture().use { f ->
+            f.place()
+            val original = f.citadel()
+            val owner = original.getComponent(CitadelOwner::class.java)
+            if (!knownLevel) f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+            f.module.health.unregisterDefinition(HEAVY)
+            assertFalse(f.citadelTypes.isInvulnerable(HEAVY))
+            f.installer.held = f.reinforcementStack(HEAVY)
+
+            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action()), knownLevel.toString())
+
+            assertTrue(original.isCurrent)
+            assertEquals(original.runtimeId, f.citadel().runtimeId)
+            assertSame(owner, original.getComponent(CitadelOwner::class.java))
+            assertEquals(1, f.installer.held.amount)
+            assertEquals(HEAVY, original.getComponent(CitadelKind::class.java)?.definitionKey)
+            assertEquals(3, f.citadelTypes.level(original))
+            assertNull(original.getComponent(Health::class.java))
+            assertNull(f.module.health.currentHealth(original))
+            assertEquals(if (knownLevel) 1 else 0, f.droppedItems.size)
+        }
+    }
+
+    @Test
+    fun `missing kind and health permit upgrade and receive the destination profile`() = fixture().use { f ->
+        f.place()
+        val original = f.citadel()
+        val owner = original.getComponent(CitadelOwner::class.java)
+        f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+        f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+        val destination = Key("fornaxcitadel", "reinforced_light")
+        f.installer.held = f.reinforcementStack(destination)
+
+        assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action(destination)))
+
+        assertTrue(original.isCurrent)
+        assertEquals(original.runtimeId, f.citadel().runtimeId)
+        assertSame(owner, original.getComponent(CitadelOwner::class.java))
+        assertEquals(destination, original.getComponent(CitadelKind::class.java)?.definitionKey)
+        assertEquals(1, f.citadelTypes.level(original))
+        assertEquals(10.0, f.health())
+        assertEquals(1, f.installer.held.amount)
+        assertTrue(f.droppedItems.isEmpty())
+    }
+
+    @Test
+    fun `invalid saved HP permits upgrade but receives only the configured refund chance`() {
+        for (savedHealth in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, -1.0)) {
+            for (chance in listOf(0.0, 1.0)) for (hasMaximum in listOf(true, false)) {
+                fixture(DismantleSettings(chance)) { error("Zero or certain refunds must not roll") }.use { f ->
+                    f.place()
+                    val original = f.citadel()
+                    val owner = original.getComponent(CitadelOwner::class.java)
+                    original.editComponent(Health::class.java) { it.health = savedHealth }
+                    if (!hasMaximum) f.module.health.unregisterDefinition(HEAVY)
+                    f.installer.held = f.reinforcementStack(HEAVY)
+
+                    assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action()),
+                        "$savedHealth / chance $chance / maximum $hasMaximum")
+
+                    assertTrue(original.isCurrent)
+                    assertEquals(original.runtimeId, f.citadel().runtimeId)
+                    assertSame(owner, original.getComponent(CitadelOwner::class.java))
+                    assertEquals(HEAVY, original.getComponent(CitadelKind::class.java)?.definitionKey)
+                    assertEquals(3, f.citadelTypes.level(original))
+                    if (hasMaximum) assertEquals(30.0, f.health())
+                    else assertNull(original.getComponent(Health::class.java))
+                    assertEquals(1, f.installer.held.amount)
+                    assertEquals(if (chance == 1.0) 1 else 0, f.droppedItems.size)
+                    if (chance == 1.0) {
+                        assertEquals(Material.IRON_INGOT, f.droppedItems.single().second.type)
+                        assertEquals(1, f.droppedItems.single().second.amount)
+                    }
                 }
-                "nan" -> f.citadel().editComponent(Health::class.java) { it.health = Double.NaN }
-                "negative" -> f.citadel().editComponent(Health::class.java) { it.health = -1.0 }
             }
-            assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action(
-                if (reason == "destination") Key("test", "missing") else HEAVY)), reason)
+        }
+    }
+
+    @Test
+    fun `unknown destination is denied with or without a known source level`() {
+        for (knownLevel in listOf(true, false)) fixture().use { f ->
+            f.place()
+            val original = f.citadel()
+            if (!knownLevel) f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+            val kind = original.getComponent(CitadelKind::class.java)
+            val health = original.getComponent(Health::class.java)
+            val maturing = original.getComponent(Maturing::class.java)
+            val owner = original.getComponent(CitadelOwner::class.java)
+            f.installer.held = f.reinforcementStack(HEAVY)
+
+            assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action(Key("test", "missing"))), knownLevel.toString())
+
+            assertTrue(original.isCurrent)
+            assertSame(kind, original.getComponent(CitadelKind::class.java))
+            assertSame(health, original.getComponent(Health::class.java))
+            assertSame(maturing, original.getComponent(Maturing::class.java))
+            assertSame(owner, original.getComponent(CitadelOwner::class.java))
+            assertEquals(20.0, f.health())
             assertEquals(2, f.installer.held.amount)
             assertTrue(f.droppedItems.isEmpty())
         }
@@ -253,30 +395,58 @@ class PaperUpgradeServiceTest {
     }
 
     @Test
-    fun `invulnerable upgrade needs admin and removes health but cannot downgrade to damageable`() {
+    fun `invulnerable destination needs admin and a higher level may restore damageable health`() {
         val types = CitadelTypesSettings.DEFAULT_TYPES.toMutableMap()
         types[HEAVY.key] = types.getValue(HEAVY.key).copy(lvl = 1000, health = HealthSettings(1000.0))
         PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings(types)).use { f ->
             f.place()
+            val original = f.citadel()
+            val health = original.getComponent(Health::class.java)
+            val maturing = original.getComponent(Maturing::class.java)
             f.installer.held = f.reinforcementStack(PaperCitadelTypes.INVULNERABLE)
             assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action(PaperCitadelTypes.INVULNERABLE)))
             assertEquals(20.0, f.health())
+            assertSame(health, original.getComponent(Health::class.java))
+            assertSame(maturing, original.getComponent(Maturing::class.java))
+            assertEquals(PaperCitadelTypes.REINFORCED, original.getComponent(CitadelKind::class.java)?.definitionKey)
+            assertEquals(2, f.installer.held.amount)
+            assertTrue(f.droppedItems.isEmpty())
+
             f.installer.permissions.add("fornaxcitadel.admin")
             assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action(PaperCitadelTypes.INVULNERABLE)))
-            assertNull(f.citadel().getComponent(Health::class.java))
-            assertEquals(PaperCitadelTypes.INVULNERABLE, f.citadel().getComponent(CitadelKind::class.java)?.definitionKey)
+            assertNull(original.getComponent(Health::class.java))
+            assertEquals(PaperCitadelTypes.INVULNERABLE, original.getComponent(CitadelKind::class.java)?.definitionKey)
             assertEquals(1, f.droppedItems.size)
+
+            f.installer.permissions.remove("fornaxcitadel.admin")
             f.installer.held = f.reinforcementStack(HEAVY)
-            assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action()))
-            assertEquals(2, f.installer.held.amount)
+            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action()))
+            assertTrue(original.isCurrent)
+            assertEquals(HEAVY, original.getComponent(CitadelKind::class.java)?.definitionKey)
+            assertEquals(1000.0, f.health())
+            assertEquals(1, f.installer.held.amount)
+            assertEquals(f.installer.id, original.getComponent(CitadelOwner::class.java)?.playerId)
         }
         fixture().use { f ->
             f.place()
+            val original = f.citadel()
+            val owner = original.getComponent(CitadelOwner::class.java)
             f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+            val maturing = original.getComponent(Maturing::class.java)
             f.installer.permissions.add("fornaxcitadel.admin")
             f.installer.held = f.reinforcementStack(PaperCitadelTypes.INVULNERABLE)
-            assertEquals(ActionResult.DENIED, f.module.actions.execute(f.action(PaperCitadelTypes.INVULNERABLE)))
-            assertEquals(20.0, f.health())
+
+            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action(PaperCitadelTypes.INVULNERABLE)))
+
+            assertTrue(original.isCurrent)
+            assertEquals(original.runtimeId, f.citadel().runtimeId)
+            assertSame(owner, original.getComponent(CitadelOwner::class.java))
+            assertEquals(PaperCitadelTypes.INVULNERABLE, original.getComponent(CitadelKind::class.java)?.definitionKey)
+            assertEquals(999, f.citadelTypes.level(original))
+            assertNull(original.getComponent(Health::class.java))
+            assertNotSame(maturing, original.getComponent(Maturing::class.java))
+            assertEquals(1, f.installer.held.amount)
+            assertTrue(f.droppedItems.isEmpty())
         }
     }
 
