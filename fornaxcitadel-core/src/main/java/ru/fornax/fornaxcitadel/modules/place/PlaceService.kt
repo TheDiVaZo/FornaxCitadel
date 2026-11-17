@@ -5,6 +5,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 
 /**
@@ -17,29 +18,17 @@ class PlaceService(
     private val definitions: CitadelDefinitionRegistry
 ) : LifecycleService {
     private val manager = actions.componentManager
-    private val processor = PlaceProcessor(this)
-    private val validator = PlaceActionValidator(actions.citadels, definitions)
+    private val registration = ActionRegistration(
+        actions, PlaceProcessor(this), listOf(PlaceActionValidator(actions.citadels, definitions))
+    )
 
     init {
         manager.registerComponent(CitadelKind.KEY, CitadelKind::class.java)
         manager.registerComponent(CitadelOwner.KEY, CitadelOwner::class.java)
     }
 
-    override fun enable() {
-        actions.processorCoordinator.registerProcessor(processor)
-        try {
-            actions.validatorCoordinator.registerValidator(validator)
-        } catch (failure: Throwable) {
-            actions.validatorCoordinator.unregisterValidator(validator)
-            actions.processorCoordinator.unregisterProcessor(processor)
-            throw failure
-        }
-    }
-
-    override fun disable() {
-        actions.validatorCoordinator.unregisterValidator(validator)
-        actions.processorCoordinator.unregisterProcessor(processor)
-    }
+    override fun enable() = registration.enable()
+    override fun disable() = registration.disable()
 
     fun place(action: PlaceAction): ActionResult {
         val definition = definitions.require(action.definitionKey)

@@ -8,7 +8,6 @@ public final class CitadelEntity {
 
     private final int packedPosition;
     private final int id;
-    private long components;
 
     CitadelEntity(int packedPosition) {
         this.packedPosition = packedPosition;
@@ -21,22 +20,6 @@ public final class CitadelEntity {
 
     public int getPackedPosition() {
         return packedPosition;
-    }
-
-    public long components() {
-        return components;
-    }
-
-    void addComponent(long bit) {
-        components |= bit;
-    }
-
-    void setComponents(long bits) {
-        components = bits;
-    }
-
-    void removeComponent(long bit) {
-        components &= ~bit;
     }
 
     @Override

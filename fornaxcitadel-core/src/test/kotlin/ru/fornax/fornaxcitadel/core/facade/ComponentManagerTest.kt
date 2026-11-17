@@ -14,7 +14,10 @@ import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
+import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
+import ru.fornax.fornaxcitadel.core.storage.CitadelSnapshot
+import ru.fornax.fornaxcitadel.core.storage.ComponentSnapshot
 import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -67,7 +70,7 @@ class ComponentManagerTest {
     }
 
     @Test
-    fun `Java clients infer readable component types and retain typed mutation callbacks`() {
+    fun `Java clients infer readable types and retain typed component mutations`() {
         val fixture = Fixture()
         fixture.load()
         fixture.manager.registerComponent(Health.KEY, Health::class.java)
@@ -86,6 +89,14 @@ class ComponentManagerTest {
 
         assertEquals(12.0, component.health)
         assertTrue(fixture.chunk().isDirty)
+
+        val replacement = Health(20.0)
+        assertSame(health, ReadonlyJavaClient.putHealth(writable, replacement))
+        assertSame(replacement, ReadonlyJavaClient.readHealth(reader))
+        assertSame(replacement, ReadonlyJavaClient.removeHealth(writable))
+        assertNull(ReadonlyJavaClient.readHealth(reader))
+        assertNull(ReadonlyJavaClient.putHealth(writable, health))
+        assertSame(health, ReadonlyJavaClient.readHealth(reader))
     }
 
     @Test
@@ -101,7 +112,7 @@ class ComponentManagerTest {
         )
         val mutators = setOf(
             "setHealth", "setPlayerId", "setDefinitionKey", "setStartedAtMillis",
-            "editComponent", "markDirty", "createCitadel", "removeCitadel", "putComponent",
+            "editComponent", "markDirty", "createCitadel", "removeCitadel", "putComponent", "removeComponent",
             "safeRead", "safeReadChecked", "safeWrite", "safeWriteChecked", "toByteArray"
         )
         for (type in readTypes) {
@@ -193,12 +204,16 @@ class ComponentManagerTest {
     }
 
     @Test
-    fun `put cannot implicitly create a position`() {
+    fun `put cannot recreate a removed position`() {
         val fixture = Fixture()
         fixture.load()
+        fixture.put(1)
+        val removed = fixture.handle()
+        assertTrue(fixture.manager.removeCitadel(removed))
+        fixture.manager.saveAll().join()
 
         assertFailsWith<IllegalStateException> {
-            fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, 0, 0, ValueComponent())
+            removed.putComponent(ValueComponent::class.java, ValueComponent())
         }
         assertTrue(fixture.chunk().isEmpty)
         assertFalse(fixture.chunk().isDirty)
@@ -210,10 +225,17 @@ class ComponentManagerTest {
         fixture.load()
         val original = fixture.put(1)
         val old = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
+        fixture.manager.saveAll().join()
         val foreignManager = ComponentManager(fixture.storage, fixture.types)
         assertFalse(foreignManager.isCurrent(old))
         assertFalse(foreignManager.removeCitadel(old))
+        assertFailsWith<IllegalStateException> {
+            foreignManager.putComponent(old, ValueComponent::class.java, ValueComponent(99))
+        }
+        assertNull(foreignManager.removeComponent(old, ValueComponent::class.java))
         assertTrue(old.isCurrent)
+        assertSame(original, old.getComponent(ValueComponent::class.java))
+        assertFalse(fixture.chunk().isDirty)
 
         assertTrue(fixture.manager.removeCitadel(old))
         val replacement = fixture.put(2)
@@ -224,6 +246,10 @@ class ComponentManagerTest {
         assertNull(old.getComponent(ValueComponent::class.java))
         assertFalse(old.editComponent(ValueComponent::class.java) { error("Stale handle must not invoke callback") })
         assertFalse(old.markDirty(ValueComponent::class.java, original))
+        assertFailsWith<IllegalStateException> {
+            old.putComponent(ValueComponent::class.java, ValueComponent(99))
+        }
+        assertNull(old.removeComponent(ValueComponent::class.java))
         assertFalse(fixture.manager.removeCitadel(old))
         assertTrue(current.isCurrent)
         assertSame(replacement, current.getComponent(ValueComponent::class.java))
@@ -238,11 +264,20 @@ class ComponentManagerTest {
         val old = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
         fixture.manager.unloadChunk(WORLD, 0, 0).join()
         assertFalse(old.isCurrent)
+        assertFailsWith<IllegalStateException> {
+            old.putComponent(ValueComponent::class.java, ValueComponent(99))
+        }
+        assertNull(old.removeComponent(ValueComponent::class.java))
+        assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
         fixture.load()
 
         assertFalse(old.isCurrent)
         assertFalse(fixture.manager.removeCitadel(old))
         assertNull(old.getComponent(ValueComponent::class.java))
+        assertFailsWith<IllegalStateException> {
+            old.putComponent(ValueComponent::class.java, ValueComponent(99))
+        }
+        assertNull(old.removeComponent(ValueComponent::class.java))
         val current = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
         assertTrue(current.isCurrent)
         assertEquals(42, assertNotNull(current.getComponent(ValueComponent::class.java)).value)
@@ -521,7 +556,7 @@ class ComponentManagerTest {
             val entity = assertNotNull(chunk.getCitadel(Math.floorMod(x, 16), y, Math.floorMod(z, 16)))
             val type = assertNotNull(fixture.types.getType(ValueComponent::class.java))
             assertSame(component, chunk.getComponent(entity, type))
-            assertSame(component, fixture.manager.getComponent(ValueComponent::class.java, WORLD, x, y, z))
+            assertSame(component, fixture.handle(WORLD, x, y, z).getComponent(ValueComponent::class.java))
         }
     }
 
@@ -538,29 +573,49 @@ class ComponentManagerTest {
         val foreign = ValueComponent(3)
         fixture.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, other)
         fixture.putComponent(ValueComponent::class.java, otherWorld, 0, 0, 0, foreign)
+        val handle = fixture.handle()
+        val foreignHandle = fixture.handle(otherWorld)
+        fixture.manager.saveAll().join()
 
-        assertSame(first, fixture.putComponent(ValueComponent::class.java, WORLD, 0, 0, 0, replacement))
+        assertSame(first, handle.putComponent(ValueComponent::class.java, replacement))
         assertSame(replacement, fixture.current())
-        assertSame(replacement, fixture.manager.removeComponent(ValueComponent::class.java, WORLD, 0, 0, 0))
+        assertSame(other, handle.getComponent(OtherComponent::class.java))
+        assertSame(foreign, foreignHandle.getComponent(ValueComponent::class.java))
+        assertTrue(fixture.chunk().isDirty)
+        assertFalse(assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(otherWorld, 0, 0))).isDirty)
+        assertSame(replacement, handle.removeComponent(ValueComponent::class.java))
         assertNull(fixture.current())
-        assertSame(other, fixture.manager.getComponent(OtherComponent::class.java, WORLD, 0, 0, 0))
-        assertSame(foreign, fixture.manager.getComponent(ValueComponent::class.java, otherWorld, 0, 0, 0))
-        assertTrue(fixture.manager.removeAllComponents(WORLD, 0, 0, 0))
-        assertNull(fixture.manager.getComponent(OtherComponent::class.java, WORLD, 0, 0, 0))
-        assertFalse(fixture.manager.removeAllComponents(WORLD, 0, 0, 0))
+        assertSame(other, handle.getComponent(OtherComponent::class.java))
+        assertSame(foreign, foreignHandle.getComponent(ValueComponent::class.java))
+        assertNull(handle.putComponent(ValueComponent::class.java, first))
+        assertSame(first, handle.getComponent(ValueComponent::class.java))
+        assertSame(other, handle.getComponent(OtherComponent::class.java))
+        assertTrue(fixture.manager.removeCitadel(handle))
+        assertNull(handle.getComponent(OtherComponent::class.java))
+        assertFalse(fixture.manager.removeCitadel(handle))
     }
 
     @Test
     fun `missing data does not trigger loading or silently accept writes`() {
         val fixture = Fixture()
         assertNull(fixture.current())
-        assertNull(fixture.manager.removeComponent(ValueComponent::class.java, WORLD, 0, 0, 0))
-        assertFalse(fixture.manager.removeAllComponents(WORLD, 0, 0, 0))
-        assertFalse(fixture.manager.editComponent(ValueComponent::class.java, WORLD, 0, 0, 0) {
+        assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
+        fixture.load()
+        assertEquals(ActionResult.SUCCESS,
+            fixture.manager.createCitadel(MutableCitadelDraft(CitadelPosition(WORLD, 0, 0, 0))))
+        val handle = fixture.handle()
+        fixture.manager.unloadChunk(WORLD, 0, 0).join()
+
+        assertNull(handle.getComponent(ValueComponent::class.java))
+        assertNull(handle.removeComponent(ValueComponent::class.java))
+        assertFalse(fixture.manager.removeCitadel(handle))
+        assertFalse(handle.editComponent(ValueComponent::class.java) {
             error("Missing component must not invoke the callback")
         })
-        assertFalse(fixture.manager.markDirty(ValueComponent::class.java, WORLD, 0, 0, 0, ValueComponent()))
-        assertFailsWith<IllegalStateException> { fixture.put(1) }
+        assertFalse(handle.markDirty(ValueComponent::class.java, ValueComponent()))
+        assertFailsWith<IllegalStateException> {
+            handle.putComponent(ValueComponent::class.java, ValueComponent(1))
+        }
         assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
 
         fixture.load()
@@ -570,20 +625,76 @@ class ComponentManagerTest {
     }
 
     @Test
-    fun `unregistered types and invalid heights are rejected before inserting data`() {
+    fun `handle removes opaque component data without disturbing decoded neighbors`() {
+        val fixture = Fixture()
+        val otherKey = Key("test", "other")
+        val valueKey = Key("test", "value")
+        val location = WXZCord(WORLD, 0, 0)
+        fixture.backend.persisted[location] = ChunkCordSnapshot(location, listOf(
+            CitadelSnapshot(ChunkCord.packPosition(0, 0, 0), listOf(
+                ComponentSnapshot(valueKey, ValueComponent(7).toByteArray()),
+                ComponentSnapshot(otherKey, byteArrayOf())
+            ))
+        ))
+        fixture.load()
+        val handle = fixture.handle()
+        val neighbor = assertNotNull(handle.getComponent(ValueComponent::class.java))
+        fixture.manager.registerComponent(otherKey, OtherComponent::class.java)
+        assertNull(handle.getComponent(OtherComponent::class.java))
+        assertEquals(listOf(otherKey), fixture.chunk().captureOpaqueComponents().map { it.key })
+        assertFalse(fixture.chunk().isDirty)
+
+        assertNull(handle.removeComponent(OtherComponent::class.java))
+
+        assertTrue(fixture.chunk().isDirty)
+        assertTrue(fixture.chunk().captureOpaqueComponents().isEmpty())
+        assertSame(neighbor, handle.getComponent(ValueComponent::class.java))
+        fixture.manager.saveAll().join()
+        assertEquals(listOf(valueKey), fixture.backend.persisted.getValue(location).citadels.single().components.map { it.key })
+        assertNull(handle.removeComponent(OtherComponent::class.java))
+        assertFalse(fixture.chunk().isDirty)
+    }
+
+    @Test
+    fun `unregistered component types are rejected without changing the entity`() {
         val fixture = Fixture()
         fixture.load()
+        val original = fixture.put(1)
+        val handle = fixture.handle()
+        fixture.manager.saveAll().join()
 
         assertFailsWith<IllegalArgumentException> {
-            fixture.manager.putComponent(OtherComponent::class.java, WORLD, 0, 0, 0, OtherComponent())
+            handle.putComponent(OtherComponent::class.java, OtherComponent())
         }
-        for (y in listOf(-65, 320)) {
-            assertFailsWith<IllegalArgumentException> {
-                fixture.manager.putComponent(ValueComponent::class.java, WORLD, 0, y, 0, ValueComponent())
+        assertFailsWith<IllegalArgumentException> { handle.getComponent(OtherComponent::class.java) }
+        assertFailsWith<IllegalArgumentException> { handle.removeComponent(OtherComponent::class.java) }
+        fixture.manager.registerComponent(Key("test", "other"), OtherComponent::class.java)
+        @Suppress("UNCHECKED_CAST")
+        val incorrectClass = OtherComponent::class.java as Class<Component<*>>
+        assertFailsWith<IllegalArgumentException> { handle.putComponent(incorrectClass, ValueComponent(99)) }
+        assertNull(handle.getComponent(OtherComponent::class.java))
+        assertSame(original, handle.getComponent(ValueComponent::class.java))
+        assertFalse(fixture.chunk().isDirty)
+    }
+
+    @Test
+    fun `lookup rejects invalid coordinates without loading or changing chunks`() {
+        for (loaded in listOf(false, true)) {
+            val fixture = Fixture()
+            if (loaded) fixture.load()
+            for (y in listOf(-65, 320, Int.MIN_VALUE, Int.MAX_VALUE)) {
+                assertFailsWith<IllegalArgumentException> { fixture.manager.findCitadel(WORLD, 0, y, 0) }
+            }
+            for (coordinate in listOf((Short.MIN_VALUE.toInt() shl 4) - 1, (Short.MAX_VALUE.toInt() + 1) shl 4)) {
+                assertFailsWith<IllegalArgumentException> { fixture.manager.findCitadel(WORLD, coordinate, 0, 0) }
+                assertFailsWith<IllegalArgumentException> { fixture.manager.findCitadel(WORLD, 0, 0, coordinate) }
+            }
+            assertEquals(loaded, fixture.manager.isChunkLoaded(WORLD, 0, 0))
+            if (loaded) {
+                assertTrue(fixture.chunk().isEmpty)
+                assertFalse(fixture.chunk().isDirty)
             }
         }
-        assertTrue(fixture.chunk().isEmpty)
-        assertFalse(fixture.chunk().isDirty)
     }
 
     @Test
@@ -600,7 +711,7 @@ class ComponentManagerTest {
 
         assertEquals(1, fixture.backend.saves.size)
         assertEquals(1, fixture.savedValue())
-        assertTrue(fixture.manager.markDirty(ValueComponent::class.java, WORLD, 0, 0, 0, component))
+        assertTrue(fixture.handle().markDirty(ValueComponent::class.java, component))
         fixture.manager.saveAll().join()
         assertEquals(2, fixture.savedValue())
     }
@@ -614,7 +725,7 @@ class ComponentManagerTest {
         val failure = IllegalStateException("Failed after mutation")
 
         val actual = assertFailsWith<IllegalStateException> {
-            fixture.manager.editComponent(ValueComponent::class.java, WORLD, 0, 0, 0) {
+            fixture.handle().editComponent(ValueComponent::class.java) {
                 it.value = 2
                 throw failure
             }
@@ -635,13 +746,13 @@ class ComponentManagerTest {
         fixture.manager.saveAll().join()
 
         old.value = 3
-        assertFalse(fixture.manager.markDirty(ValueComponent::class.java, WORLD, 0, 0, 0, old))
+        assertFalse(fixture.handle().markDirty(ValueComponent::class.java, old))
         assertFalse(fixture.chunk().isDirty)
         assertEquals(2, assertNotNull(fixture.current()).value)
 
-        fixture.manager.removeComponent(ValueComponent::class.java, WORLD, 0, 0, 0)
+        fixture.handle().removeComponent(ValueComponent::class.java)
         fixture.manager.saveAll().join()
-        assertFalse(fixture.manager.markDirty(ValueComponent::class.java, WORLD, 0, 0, 0, current))
+        assertFalse(fixture.handle().markDirty(ValueComponent::class.java, current))
         assertFalse(fixture.chunk().isDirty)
     }
 
@@ -650,16 +761,18 @@ class ComponentManagerTest {
         val fixture = Fixture()
         fixture.load()
         val old = fixture.put(1)
+        val oldHandle = fixture.handle()
         assertNull(fixture.manager.unloadChunk(WORLD, 0, 0).join())
         assertFalse(fixture.manager.isChunkLoaded(WORLD, 0, 0))
 
         old.value = 2
-        assertFalse(fixture.manager.markDirty(ValueComponent::class.java, WORLD, 0, 0, 0, old))
+        assertFalse(oldHandle.markDirty(ValueComponent::class.java, old))
         fixture.load()
         val current = assertNotNull(fixture.current())
         assertNotSame(old, current)
         assertEquals(1, current.value)
-        assertFalse(fixture.manager.markDirty(ValueComponent::class.java, WORLD, 0, 0, 0, old))
+        assertFalse(oldHandle.markDirty(ValueComponent::class.java, old))
+        assertFalse(fixture.handle().markDirty(ValueComponent::class.java, old))
         assertFalse(fixture.chunk().isDirty)
     }
 
@@ -673,7 +786,7 @@ class ComponentManagerTest {
         val saving = fixture.manager.saveAll()
         assertFalse(saving.isDone)
 
-        assertTrue(fixture.manager.editComponent(ValueComponent::class.java, WORLD, 0, 0, 0) {
+        assertTrue(fixture.handle().editComponent(ValueComponent::class.java) {
             it.value = 2
         })
         pending.complete(null)
@@ -699,7 +812,7 @@ class ComponentManagerTest {
         assertFalse(fixture.chunk().isDirty)
         assertSame(component, fixture.current())
         component.writeFailure = null
-        assertTrue(fixture.manager.markDirty(ValueComponent::class.java, WORLD, 0, 0, 0, component))
+        assertTrue(fixture.handle().markDirty(ValueComponent::class.java, component))
         fixture.manager.saveAll().join()
         assertEquals(1, fixture.savedValue())
     }
@@ -765,10 +878,13 @@ class ComponentManagerTest {
             if (manager.findCitadel(world, x, y, z) == null) {
                 check(manager.createCitadel(MutableCitadelDraft(CitadelPosition(world, x, y, z))) == ActionResult.SUCCESS)
             }
-            return manager.putComponent(componentClass, world, x, y, z, component)
+            return handle(world, x, y, z).putComponent(componentClass, component)
         }
 
-        fun current(): ReadableTestValue? = manager.getComponent(ValueComponent::class.java, WORLD, 0, 0, 0)
+        fun handle(world: UUID = WORLD, x: Int = 0, y: Int = 0, z: Int = 0): CitadelHandle =
+            checkNotNull(manager.findCitadel(world, x, y, z))
+
+        fun current(): ReadableTestValue? = manager.findCitadel(WORLD, 0, 0, 0)?.getComponent(ValueComponent::class.java)
 
         fun chunk() = checkNotNull(storage.getIfChunkLoaded(WXZCord(WORLD, 0, 0)))
 

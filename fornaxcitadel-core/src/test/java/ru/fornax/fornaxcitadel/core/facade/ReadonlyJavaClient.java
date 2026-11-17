@@ -24,4 +24,12 @@ final class ReadonlyJavaClient {
             return Unit.INSTANCE;
         });
     }
+
+    static Health putHealth(CitadelHandle handle, Health health) {
+        return handle.putComponent(Health.class, health);
+    }
+
+    static Health removeHealth(CitadelHandle handle) {
+        return handle.removeComponent(Health.class);
+    }
 }

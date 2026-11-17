@@ -12,11 +12,9 @@ import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
-import ru.fornax.fornaxcitadel.paper.modules.dismantle.OwnerDismantleValidator
+import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
-import ru.fornax.fornaxcitadel.paper.modules.repair.OwnerRepairValidator
-import ru.fornax.fornaxcitadel.paper.modules.upgrade.OwnerUpgradeValidator
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -96,9 +94,9 @@ class PaperActionServicesTest {
     fun `owner validators preserve grants abstentions and their unavailable target policies`() {
         PaperTestFixture(permissions = true).use { f ->
             f.place()
-            val repair = OwnerRepairValidator(f.module.citadels)
-            val upgrade = OwnerUpgradeValidator(f.module.citadels)
-            val dismantle = OwnerDismantleValidator(f.module.citadels)
+            val repair = OwnerActionValidator(RepairAction::class.java, f.module.citadels)
+            val upgrade = OwnerActionValidator(UpgradeAction::class.java, f.module.citadels, ActionValidator.Result.Rejected)
+            val dismantle = OwnerActionValidator(DismantleAction::class.java, f.module.citadels)
             fun results(context: ActionContext) = listOf(
                 repair.validate(RepairAction(context, f.position)),
                 upgrade.validate(UpgradeAction(context, f.position, PaperCitadelTypes.REINFORCED)),
@@ -110,7 +108,7 @@ class PaperActionServicesTest {
             assertEquals<List<ActionValidator.Result>>(success, results(f.context(f.installer)))
             assertEquals<List<ActionValidator.Result>>(neutral, results(f.context(f.stranger)))
             assertEquals<List<ActionValidator.Result>>(neutral, results(ActionContext.SYSTEM))
-            f.manager.removeComponent(CitadelOwner::class.java, f.worldId, 1, 64, 2)
+            assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelOwner::class.java)
             assertEquals<List<ActionValidator.Result>>(rejected, results(f.context(f.installer)))
             assertEquals<List<ActionValidator.Result>>(rejected, results(f.context(f.stranger)))
             assertEquals<List<ActionValidator.Result>>(rejected, results(ActionContext.SYSTEM))

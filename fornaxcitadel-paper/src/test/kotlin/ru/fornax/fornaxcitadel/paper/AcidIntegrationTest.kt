@@ -370,6 +370,35 @@ class AcidIntegrationTest {
             }
         }
 
+    @Test
+    fun `acid ray preserves absent bounds and rejects either unavailable chunk before looking up blocks`() =
+        PaperTestFixture(load = false, acidSettings = AcidSettings()).use { f ->
+            val service = assertNotNull(f.acidService)
+            val initialLookups = f.blockLookups
+            assertFailsWith<ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException> {
+                service.findTarget(f.installer.player)
+            }
+            assertEquals(initialLookups, f.blockLookups)
+
+            f.loadChunk(0, 0)
+            f.worldChunkLoaded = false
+            assertFailsWith<ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException> {
+                service.findTarget(f.installer.player)
+            }
+            assertEquals(initialLookups, f.blockLookups)
+            f.worldChunkLoaded = true
+
+            for (location in listOf(
+                org.bukkit.Location(f.world, 0.5, -65.5, 0.5),
+                org.bukkit.Location(f.world, 0.5, 320.5, 0.5),
+                org.bukkit.Location(f.world, (Short.MAX_VALUE.toInt() + 1) * 16.0, 64.5, 0.5)
+            )) {
+                f.installer.location = location
+                assertNull(service.findTarget(f.installer.player))
+            }
+            assertEquals(initialLookups, f.blockLookups)
+        }
+
     private fun acid(f: PaperTestFixture, block: Block = f.block()) {
         f.material(Material.GOLD_BLOCK, block.testPosition())
         reinforce(f, block)

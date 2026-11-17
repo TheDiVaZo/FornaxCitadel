@@ -66,9 +66,8 @@ import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
-import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidationService
+import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
 import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
-import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
@@ -83,7 +82,6 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
-import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionValidationService
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.util.UUID
@@ -274,9 +272,9 @@ internal class PaperTestFixture(
     val materialPlacement = MaterialPlacementService(server, materials, manager)
     val module = CitadelModule(manager, moduleScheduler, maxActionsPerTick,
         resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager))
-    val actionValidationService = PaperActionValidationService(module.actions, PaperActionStateValidator(server))
-    val permissionService = PaperPermissionService(module.actions, permissionValidator)
-    val damageValidationService = PaperDamageValidationService(module.actions,
+    val actionValidationService = ValidatorRegistration(module.actions, PaperActionStateValidator(server))
+    val permissionService = ValidatorRegistration(module.actions, permissionValidator)
+    val damageValidationService = ValidatorRegistration(module.actions,
         PaperDamageValidator(module.citadels, citadelTypes, creativeModeEnabled))
     val placementService = PaperPlacementService(plugin, module, citadelTypes, materials, placementSettings, messages).also { service ->
         citadelTypes.keys.forEach { definition ->

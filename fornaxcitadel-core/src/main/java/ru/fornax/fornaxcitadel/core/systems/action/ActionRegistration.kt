@@ -1,32 +1,33 @@
-package ru.fornax.fornaxcitadel.paper.action
+package ru.fornax.fornaxcitadel.core.systems.action
 
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
-import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
-import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
-import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 
 /** Owns the processor and validator registrations for one gameplay service. */
-internal class ActionRegistration<T : ActionData>(
+class ActionRegistration<T : ActionData>(
     private val actions: ActionManager,
-    type: Class<T>,
-    key: Key,
-    validators: List<ActionValidator<T>>,
-    process: (T) -> ActionResult
+    private val processor: ActionProcessor<T>,
+    validators: List<ActionValidator<*>>
 ) : LifecycleService {
     private val validators = validators.toList()
-    private val processor = object : ActionProcessor<T>() {
+
+    constructor(
+        actions: ActionManager,
+        type: Class<T>,
+        key: Key,
+        validators: List<ActionValidator<*>>,
+        process: (T) -> ActionResult
+    ) : this(actions, object : ActionProcessor<T>() {
         override val actionClass = type
         override val actionKey = key
         override fun execute(action: T) = process(action)
-    }
+    }, validators)
+
     var isEnabled = false
         private set
 
     override fun enable() {
-        if (isEnabled) return
         actions.processorCoordinator.registerProcessor(processor)
         try {
             validators.forEach(actions.validatorCoordinator::registerValidator)

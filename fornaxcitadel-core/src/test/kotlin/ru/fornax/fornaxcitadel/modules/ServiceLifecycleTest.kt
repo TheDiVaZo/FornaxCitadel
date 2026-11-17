@@ -98,6 +98,70 @@ class ServiceLifecycleTest {
     }
 
     @Test
+    fun `repeated core enable restores an externally removed processor and preserves prerequisites`() {
+        for ((index, request) in invalidRequests().withIndex()) {
+            val fixture = Fixture()
+            fixture.prepare()
+            val approval = fixture.approveAll()
+            val service = fixture.services[index]
+            val processors = fixture.actions.processorCoordinator
+            val validators = fixture.actions.validatorCoordinator
+            service.enable()
+            val own = assertNotNull(processors.getProcessor(request.type))
+
+            assertTrue(processors.unregisterProcessor(own))
+            assertEquals(ActionValidator.Result.Rejected, validators.validate(request))
+            service.enable()
+            assertSame(own, processors.getProcessor(request.type))
+            assertEquals(ActionValidator.Result.Rejected, validators.validate(request))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(request))
+
+            service.disable()
+            assertNull(processors.getProcessor(request.type))
+            assertEquals(ActionValidator.Result.Success, validators.validate(request))
+            assertTrue(validators.unregisterValidator(approval))
+        }
+    }
+
+    @Test
+    fun `repeated core enable rejects a replacement processor without losing existing prerequisites`() {
+        for ((index, request) in invalidRequests().withIndex()) {
+            val fixture = Fixture()
+            fixture.prepare()
+            val approval = fixture.approveAll()
+            val service = fixture.services[index]
+            val processors = fixture.actions.processorCoordinator
+            val validators = fixture.actions.validatorCoordinator
+            service.enable()
+            val own = assertNotNull(processors.getProcessor(request.type))
+            assertTrue(processors.unregisterProcessor(own))
+            var externalExecutions = 0
+            val replacement = object : ActionProcessor<ActionData>() {
+                override val actionClass = ActionData::class.java
+                override val actionKey = request.type
+                override fun execute(action: ActionData): ActionResult {
+                    externalExecutions++
+                    return ActionResult.SUCCESS
+                }
+            }
+            processors.registerProcessor(replacement)
+
+            assertFailsWith<IllegalArgumentException> { service.enable() }
+            assertSame(replacement, processors.getProcessor(request.type))
+            assertEquals(ActionValidator.Result.Rejected, validators.validate(request))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(request))
+            assertEquals(0, externalExecutions)
+
+            service.disable()
+            assertSame(replacement, processors.getProcessor(request.type))
+            assertEquals(ActionValidator.Result.Success, validators.validate(request))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(request))
+            assertEquals(1, externalExecutions)
+            assertTrue(validators.unregisterValidator(approval))
+        }
+    }
+
+    @Test
     fun `constructors register component types before enabling any handlers`() {
         val fixture = Fixture()
         fixture.prepare()

@@ -1,17 +1,19 @@
 package ru.fornax.fornaxcitadel.paper.modules.repair
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
-import ru.fornax.fornaxcitadel.paper.action.ActionRegistration
+import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.consumeOneFromMainHand
 import ru.fornax.fornaxcitadel.paper.material.hasMaterial
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 
 /** Restores an authorized, owned reinforcement to its current maximum health. */
 class PaperRepairService(
@@ -21,10 +23,15 @@ class PaperRepairService(
 ) : LifecycleService {
     private val registration = ActionRegistration(
         module.actions, RepairAction::class.java, RepairAction.KEY,
-        listOf(RepairActionValidator(module.citadels), OwnerRepairValidator(module.citadels)), ::repair
+        listOf(
+            ExistingCitadelValidator(RepairAction::class.java, module.citadels),
+            OwnerActionValidator(RepairAction::class.java, module.citadels)
+        ), ::repair
     )
 
-    override fun enable() = registration.enable()
+    override fun enable() {
+        if (!registration.isEnabled) registration.enable()
+    }
     override fun disable() = registration.disable()
 
     /** Executes a validated action; external requests must enter through module.actions. */

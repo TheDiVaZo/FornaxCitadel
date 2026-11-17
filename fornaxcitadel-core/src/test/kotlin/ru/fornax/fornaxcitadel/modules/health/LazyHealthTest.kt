@@ -178,7 +178,7 @@ class LazyHealthTest {
         f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(100.0))
         val unknown = f.create(definitionKey = Key("test", "missing"))
         val noKind = f.create(1)
-        f.manager.removeComponent(CitadelKind::class.java, noKind.world, noKind.x, noKind.y, noKind.z)
+        noKind.removeComponent(CitadelKind::class.java)
         val dead = f.create(2, Health(0.0))
         f.chunk.resetDirty()
         for (target in listOf(unknown, noKind)) {

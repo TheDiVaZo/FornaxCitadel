@@ -14,7 +14,7 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
-import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
+import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
@@ -93,7 +93,7 @@ class PaperPermissionServiceTest {
     fun `permission lifecycle owns the supplied validator and leaves external checks registered`() {
         PaperTestFixture(initializeSystems = false).use { fixture ->
             val validator = PaperPermissionValidator(fixture.citadelTypes)
-            val service = PaperPermissionService(fixture.module.actions, validator)
+            val service = ValidatorRegistration(fixture.module.actions, validator)
             val coordinator = fixture.module.actions.validatorCoordinator
             val action = PlaceAction(fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.REINFORCED)
             var externalCalls = 0

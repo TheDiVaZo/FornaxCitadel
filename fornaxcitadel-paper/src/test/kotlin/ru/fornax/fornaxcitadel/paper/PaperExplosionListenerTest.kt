@@ -52,7 +52,7 @@ class PaperExplosionListenerTest {
                 val type = if (protected) PaperCitadelTypes.INVULNERABLE else PaperCitadelTypes.REINFORCED
                 f.installer.permissions.add("fornaxcitadel.admin")
                 f.place(type)
-                f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+                checkNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
                 f.module.health.unregisterDefinition(type)
                 val event = f.blockExplosion(f.block())
                 dispatch(f.explosionListener, event, f.plugin)

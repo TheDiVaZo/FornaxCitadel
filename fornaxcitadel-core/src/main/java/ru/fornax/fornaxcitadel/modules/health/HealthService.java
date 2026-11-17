@@ -11,7 +11,9 @@ import ru.fornax.fornaxcitadel.core.facade.ComponentManager;
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle;
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
+import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
+import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator;
 import ru.fornax.fornaxcitadel.core.util.Key;
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService;
 
@@ -34,8 +36,7 @@ public final class HealthService implements LifecycleService {
     private final MaturationService maturation;
     private final Map<Key, HealthDefinition> definitions = new HashMap<>();
     private List<DamageModifier> modifiers = List.of();
-    private final DamageProcessor processor = new DamageProcessor(this);
-    private final DamageActionValidator validator;
+    private final ActionRegistration<DamageAction> registration;
 
     public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService) {
         this(actions, removeService, Clock.systemUTC());
@@ -44,7 +45,8 @@ public final class HealthService implements LifecycleService {
     public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
                          @NotNull Clock clock) {
         this.actions = Objects.requireNonNull(actions, "actions");
-        this.validator = new DamageActionValidator(actions.getCitadels());
+        this.registration = new ActionRegistration<>(actions, new DamageProcessor(this),
+                List.of(new ExistingCitadelValidator<>(DamageAction.class, actions.getCitadels())));
         this.componentManager = actions.getComponentManager();
         this.removeService = Objects.requireNonNull(removeService, "removeService");
         componentManager.registerComponent(Health.KEY, Health.class);
@@ -87,20 +89,12 @@ public final class HealthService implements LifecycleService {
 
     @Override
     public void enable() {
-        actions.getProcessorCoordinator().registerProcessor(processor);
-        try {
-            actions.getValidatorCoordinator().registerValidator(validator);
-        } catch (Throwable failure) {
-            actions.getValidatorCoordinator().unregisterValidator(validator);
-            actions.getProcessorCoordinator().unregisterProcessor(processor);
-            throw failure;
-        }
+        registration.enable();
     }
 
     @Override
     public void disable() {
-        actions.getValidatorCoordinator().unregisterValidator(validator);
-        actions.getProcessorCoordinator().unregisterProcessor(processor);
+        registration.disable();
     }
 
     /**
@@ -178,8 +172,7 @@ public final class HealthService implements LifecycleService {
         if (remainingHealth == initialHealth) return ActionResult.DENIED;
         if (component == null) {
             if (remainingHealth == 0.0) return removeService.remove(citadel);
-            componentManager.putComponent(Health.class, citadel.getWorld(), citadel.getX(), citadel.getY(), citadel.getZ(),
-                    new Health(remainingHealth));
+            citadel.putComponent(Health.class, new Health(remainingHealth));
             return ActionResult.SUCCESS;
         }
         boolean edited = citadel.editComponent(Health.class, health -> {

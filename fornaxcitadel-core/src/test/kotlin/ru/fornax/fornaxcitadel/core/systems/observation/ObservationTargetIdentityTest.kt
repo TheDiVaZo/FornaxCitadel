@@ -68,7 +68,7 @@ class ObservationTargetIdentityTest {
             val shared = system.events.single().target
             system.events.clear()
 
-            fixture.manager.putComponent(ValueComponent::class.java, WORLD, citadel.x, citadel.y, citadel.z, ValueComponent())
+            citadel.putComponent(ValueComponent::class.java, ValueComponent())
             fixture.scheduler.tick()
 
             assertEquals(listOf("leave:alice", "detach", "enter:alice", "tick:alice"), system.events.map { it.label })

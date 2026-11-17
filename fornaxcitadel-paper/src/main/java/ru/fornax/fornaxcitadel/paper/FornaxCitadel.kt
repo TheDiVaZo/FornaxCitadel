@@ -9,6 +9,7 @@ import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
+import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
@@ -20,19 +21,16 @@ import ru.fornax.fornaxcitadel.paper.modules.dismantle.PaperDismantleService
 import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
-import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidationService
 import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.observation.Full3DObservation
 import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationService
-import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionService
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.upgrade.PaperUpgradeService
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
-import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionValidationService
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.CompletionException
@@ -107,9 +105,9 @@ class FornaxCitadel : JavaPlugin() {
                 resolver = materialPlacement
             )
             citadelTypes.register(module)
-            services.add(PaperActionValidationService(module.actions, PaperActionStateValidator(server)))
-            services.add(PaperPermissionService(module.actions, permissions))
-            services.add(PaperDamageValidationService(module.actions,
+            services.add(ValidatorRegistration(module.actions, PaperActionStateValidator(server)))
+            services.add(ValidatorRegistration(module.actions, permissions))
+            services.add(ValidatorRegistration(module.actions,
                 PaperDamageValidator(module.citadels, citadelTypes, settings.playerDamage.creativeModeEnabled)))
 
             val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)

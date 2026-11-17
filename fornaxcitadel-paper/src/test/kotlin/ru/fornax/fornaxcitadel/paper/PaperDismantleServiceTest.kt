@@ -127,8 +127,10 @@ class PaperDismantleServiceTest {
             PaperTestFixture(dismantleSettings = DismantleSettings(chance),
                 dismantleRandom = { error("Guaranteed refund must not roll") }).use { fixture ->
                 fixture.place()
-                if (!withHealth) assertNotNull(fixture.manager.removeComponent(
-                    Health::class.java, fixture.worldId, fixture.position.x, fixture.position.y, fixture.position.z))
+                if (!withHealth) {
+                    val citadel = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+                    assertNotNull(citadel.removeComponent(Health::class.java))
+                }
 
                 assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
                 val refund = fixture.droppedItems.single().second
@@ -265,7 +267,7 @@ class PaperDismantleServiceTest {
     private fun PaperTestFixture.placeWithItem(key: Key?) {
         assertEquals(ActionResult.SUCCESS, module.actions.execute(
             PlaceAction(context(installer), position, PaperCitadelTypes.REINFORCED)))
-        if (key == null) manager.removeComponent(CitadelKind::class.java, worldId, position.x, position.y, position.z)
+        if (key == null) assertNotNull(manager.findCitadel(worldId, position.x, position.y, position.z)).removeComponent(CitadelKind::class.java)
     }
 
     private fun PaperTestFixture.validate(check: (DismantleAction) -> ActionValidator.Result): ActionValidator<DismantleAction> =

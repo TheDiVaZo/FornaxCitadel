@@ -35,7 +35,7 @@ class PaperDamageValidationTest {
             val type = Key("fornaxcitadel", if (protected) "invulnerable" else "reinforced")
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
-            f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+            assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
             f.module.health.unregisterDefinition(type)
             f.playerDamage.register { _, _, _ -> 0.0 }
             assertTrue(f.breakingService.breakBlock(f.stranger.player, f.block()))
@@ -51,9 +51,9 @@ class PaperDamageValidationTest {
             for (explosion in listOf(false, true)) PaperTestFixture(permissions = true).use { f ->
                 f.place()
                 val target = assertNotNull(f.module.citadels.findProtecting(f.position))
-                f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+                assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
                 when (kind) {
-                    "missing" -> f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+                    "missing" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
                     "unknown" -> target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("external", "unknown") }
                     "allow" -> f.module.health.unregisterDefinition(ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes.REINFORCED)
                 }
@@ -73,7 +73,7 @@ class PaperDamageValidationTest {
             val type = Key("fornaxcitadel", if (reason == "policy") "invulnerable" else "reinforced")
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
-            f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+            assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
             f.module.health.unregisterDefinition(type)
             if (reason == "permission") f.stranger.permissions.remove("fornaxcitadel.damage")
             f.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {

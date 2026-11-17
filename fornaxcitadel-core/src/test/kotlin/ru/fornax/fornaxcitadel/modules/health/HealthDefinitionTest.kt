@@ -75,7 +75,7 @@ class HealthDefinitionTest {
         assertEquals(ActionResult.SUCCESS, f.service.damage(citadel, 1.0))
         assertEquals(79.0, citadel.getComponent(Health::class.java)?.health)
         f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(1.0))
-        f.manager.removeComponent(CitadelKind::class.java, HealthFixture.WORLD, 0, 0, 0)
+        citadel.removeComponent(CitadelKind::class.java)
         assertNull(f.service.maxHealth(citadel))
         assertEquals(ActionResult.SUCCESS, f.service.damage(citadel, 1.0))
         assertEquals(78.0, citadel.getComponent(Health::class.java)?.health)

@@ -2,7 +2,8 @@ package ru.fornax.fornaxcitadel.paper.modules.acid
 
 import org.bukkit.Material
 import org.bukkit.configuration.ConfigurationSection
-import java.math.BigDecimal
+import ru.fornax.fornaxcitadel.paper.config.exactInt
+import ru.fornax.fornaxcitadel.paper.config.readLocalMapping
 
 data class AcidType(val id: String, val material: Material, val maxTargets: Int,
                     val maturationMultiplier: Double, val enabled: Boolean = true) {
@@ -56,14 +57,7 @@ data class AcidSettings(val enabled: Boolean = true, val maxDistance: Int = 5,
         }
 
         private fun mapping(value: Any?, path: String, allowed: Set<String>? = null): Map<String, Any?> {
-            val map = when (value) {
-                is ConfigurationSection -> value.getValues(false).filterKeys { value.contains(it, true) }
-                is Map<*, *> -> value
-                else -> throw IllegalArgumentException("$path must be a mapping")
-            }.entries.associate { (key, entry) ->
-                require(key is String) { "$path keys must be strings" }
-                key to entry
-            }
+            val map = readLocalMapping(value, path)
             require(allowed == null || map.keys.all { it in allowed }) { "Unknown field in $path: ${map.keys - allowed.orEmpty()}" }
             return map
         }
@@ -75,7 +69,7 @@ data class AcidSettings(val enabled: Boolean = true, val maxDistance: Int = 5,
 
         private fun integer(value: Any?, path: String): Int {
             require(value is Number) { "$path must be an integer" }
-            return try { BigDecimal(value.toString()).intValueExact() }
+            return try { value.exactInt() }
             catch (failure: RuntimeException) { throw IllegalArgumentException("$path must be an integer fitting in Int", failure) }
         }
     }

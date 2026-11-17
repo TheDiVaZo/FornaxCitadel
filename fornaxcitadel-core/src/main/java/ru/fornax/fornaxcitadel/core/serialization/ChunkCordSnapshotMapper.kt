@@ -23,29 +23,10 @@ data class CorruptedComponentPayload(
     val cause: Throwable
 )
 
-internal sealed interface OpaqueComponentResolution {
-    val candidate: OpaqueComponentCandidate
-
-    data class Decoded(
-        override val candidate: OpaqueComponentCandidate,
-        val type: ComponentType<out Component<*>>,
-        val component: Component<*>
-    ) : OpaqueComponentResolution
-
-    data class Unknown(
-        override val candidate: OpaqueComponentCandidate
-    ) : OpaqueComponentResolution
-
-    data class Corrupted(
-        override val candidate: OpaqueComponentCandidate,
-        val cause: Throwable
-    ) : OpaqueComponentResolution
-
-    data class InfrastructureFailure(
-        override val candidate: OpaqueComponentCandidate,
-        val cause: Throwable
-    ) : OpaqueComponentResolution
-}
+internal data class OpaqueComponentResolution(
+    val candidate: OpaqueComponentCandidate,
+    val result: ComponentDecodeResult
+)
 
 class ChunkCordSnapshotMapper(
     private val typeManager: TypeManager,
@@ -151,7 +132,7 @@ class ChunkCordSnapshotMapper(
                 component,
                 registeredTypes[candidate.key]
             )
-            resolutions.add(result.toOpaqueResolution(candidate))
+            resolutions.add(OpaqueComponentResolution(candidate, result))
         }
         return Collections.unmodifiableList(resolutions)
     }
@@ -161,15 +142,14 @@ class ChunkCordSnapshotMapper(
         chunk: ChunkCord,
         resolutions: List<OpaqueComponentResolution>
     ): OpaqueUpdateResult {
-        val infrastructureFailure = resolutions
-            .filterIsInstance<OpaqueComponentResolution.InfrastructureFailure>()
-            .firstOrNull()
-        if (infrastructureFailure != null) {
-            throw IOException(
-                "Cannot restore opaque component ${infrastructureFailure.candidate.key} " +
-                    "for citadel ${infrastructureFailure.candidate.packedPosition}",
-                infrastructureFailure.cause
-            )
+        for ((candidate, result) in resolutions) {
+            if (result is ComponentDecodeResult.InfrastructureFailure) {
+                throw IOException(
+                    "Cannot restore opaque component ${candidate.key} " +
+                        "for citadel ${candidate.packedPosition}",
+                    result.cause
+                )
+            }
         }
 
         var restored = 0
@@ -177,13 +157,13 @@ class ChunkCordSnapshotMapper(
         var unresolved = 0
         var skipped = 0
 
-        for (resolution in resolutions) {
-            when (resolution) {
-                is OpaqueComponentResolution.Decoded -> {
+        for ((candidate, result) in resolutions) {
+            when (result) {
+                is ComponentDecodeResult.Decoded -> {
                     if (chunk.replaceOpaqueComponent(
-                            resolution.candidate,
-                            resolution.type,
-                            resolution.component
+                            candidate,
+                            result.type,
+                            result.component
                         )
                     ) {
                         restored++
@@ -191,27 +171,27 @@ class ChunkCordSnapshotMapper(
                         skipped++
                     }
                 }
-                is OpaqueComponentResolution.Unknown -> {
-                    if (chunk.isOpaqueComponentCurrent(resolution.candidate)) {
+                ComponentDecodeResult.Unknown -> {
+                    if (chunk.isOpaqueComponentCurrent(candidate)) {
                         unresolved++
                     } else {
                         skipped++
                     }
                 }
-                is OpaqueComponentResolution.Corrupted -> {
-                    if (chunk.discardOpaqueComponent(resolution.candidate)) {
+                is ComponentDecodeResult.Corrupted -> {
+                    if (chunk.discardOpaqueComponent(candidate)) {
                         discarded++
                         reportCorrupted(
                             chunk,
-                            resolution.candidate.packedPosition,
-                            resolution.candidate.key,
-                            resolution.cause
+                            candidate.packedPosition,
+                            candidate.key,
+                            result.cause
                         )
                     } else {
                         skipped++
                     }
                 }
-                is OpaqueComponentResolution.InfrastructureFailure -> {
+                is ComponentDecodeResult.InfrastructureFailure -> {
                     error("Infrastructure failures are handled before applying resolutions")
                 }
             }
@@ -232,25 +212,6 @@ class ChunkCordSnapshotMapper(
             typedType,
             decoded.component
         )
-    }
-
-    private fun ComponentDecodeResult.toOpaqueResolution(
-        candidate: OpaqueComponentCandidate
-    ): OpaqueComponentResolution {
-        return when (this) {
-            is ComponentDecodeResult.Decoded -> {
-                OpaqueComponentResolution.Decoded(candidate, type, component)
-            }
-            ComponentDecodeResult.Unknown -> {
-                OpaqueComponentResolution.Unknown(candidate)
-            }
-            is ComponentDecodeResult.Corrupted -> {
-                OpaqueComponentResolution.Corrupted(candidate, cause)
-            }
-            is ComponentDecodeResult.InfrastructureFailure -> {
-                OpaqueComponentResolution.InfrastructureFailure(candidate, cause)
-            }
-        }
     }
 
     private fun reportCorrupted(

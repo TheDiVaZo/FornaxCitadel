@@ -18,14 +18,14 @@ import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
 /**
- * Component access by global block coordinates. Chunk lifecycle methods take chunk coordinates.
+ * Finds handles by global block coordinates. Chunk lifecycle methods take chunk coordinates.
  * [typeManager] must be the same registry used by the storage's snapshot mapper.
  *
  * This facade is not thread-safe. Access components on the owning game thread, while the storage
  * is active. Read views and inserted components refer to live instances, not copies. Do not share an
  * instance between positions or keep using it after replacement, removal, unload, or shutdown.
- * Read APIs expose only component views. Use [editComponent] to mutate stored components; any
- * retained writable references require [markDirty] after further changes, including nested data.
+ * Read APIs expose only component views. Use [CitadelHandle.editComponent] to mutate stored components;
+ * retained writable references require [CitadelHandle.markDirty] after further changes, including nested data.
  * The coordinate pool supports chunk x and z in -32768..32767.
  */
 class ComponentManager(
@@ -147,16 +147,6 @@ class ComponentManager(
         } ?: false
     }
 
-    /** Returns the live read-only view, or null if the chunk, position, or component is absent. */
-    fun <R : ReadableComponent> getComponent(
-        componentClass: Class<out Component<out R>>, world: UUID, x: Int, y: Int, z: Int
-    ): R? {
-        val type = requireType(componentClass)
-        val chunk = findChunk(world, x, y, z) ?: return null
-        val entity = chunk.getCitadel(x and 15, y, z and 15) ?: return null
-        return chunk.getComponent(entity, type)?.readable
-    }
-
     /**
      * Visits positions with this component type in the specified loaded chunk.
      * [chunkX] and [chunkZ] are chunk coordinates; [action] receives global block coordinates.
@@ -228,77 +218,27 @@ class ComponentManager(
         }
     }
 
-    /**
-     * Inserts a live instance into an existing position and returns the previous one.
-     * The chunk and position must already exist. Use the placement service to create a citadel.
-     * Marks the chunk dirty; does not immediately save it.
-     */
-    fun <T : Component<*>> putComponent(
-        componentClass: Class<T>, world: UUID, x: Int, y: Int, z: Int, component: T
+    internal fun <T : Component<*>> putComponent(
+        handle: CitadelHandle, componentClass: Class<T>, component: T
     ): T? {
         val type = requireType(componentClass)
         require(componentClass.isInstance(component)) {
             "Component ${component.javaClass.name} does not match ${componentClass.name}"
         }
-        val chunk = checkNotNull(findChunk(world, x, y, z)) {
-            "Chunk $world [${x shr 4}, ${z shr 4}] is not loaded"
+        return withCurrentCitadel(handle, unavailable = {
+            error("Citadel handle at ${handle.position} is no longer current or belongs to another manager")
+        }) { chunk, entity ->
+            chunk.putComponent(entity, type, component)
         }
-        val entity = checkNotNull(chunk.getCitadel(x and 15, y, z and 15)) {
-            "Citadel $world [$x, $y, $z] does not exist"
-        }
-        return chunk.putComponent(entity, type, component)
     }
 
-    /** Removes decoded or opaque data of this type and returns the removed live instance, if any. */
-    fun <T : Component<*>> removeComponent(
-        componentClass: Class<T>, world: UUID, x: Int, y: Int, z: Int
+    internal fun <T : Component<*>> removeComponent(
+        handle: CitadelHandle, componentClass: Class<T>
     ): T? {
         val type = requireType(componentClass)
-        val chunk = findChunk(world, x, y, z) ?: return null
-        val entity = chunk.getCitadel(x and 15, y, z and 15) ?: return null
-        return chunk.removeComponent(entity, type)
-    }
-
-    /** Removes the position and all its decoded and opaque components; false if absent/unloaded. */
-    fun removeAllComponents(world: UUID, x: Int, y: Int, z: Int): Boolean {
-        val chunk = findChunk(world, x, y, z) ?: return false
-        return chunk.removeCitadel(x and 15, y, z and 15) != null
-    }
-
-    /**
-     * Edits the live component synchronously; false if it is absent or the chunk is unloaded.
-     * Marks dirty even if [action] throws, because partial changes are not rolled back.
-     * Only mutate the supplied component here; do not unload, save, or replace it inside [action].
-     * Mutations made through a retained reference after [action] returns still need [markDirty].
-     */
-    fun <T : Component<*>> editComponent(
-        componentClass: Class<T>, world: UUID, x: Int, y: Int, z: Int, action: (T) -> Unit
-    ): Boolean {
-        val type = requireType(componentClass)
-        val chunk = findChunk(world, x, y, z) ?: return false
-        val entity = chunk.getCitadel(x and 15, y, z and 15) ?: return false
-        val component = chunk.getComponent(entity, type) ?: return false
-        try {
-            action(component)
-        } finally {
-            chunk.markDirty()
+        return withCurrentCitadel(handle) { chunk, entity ->
+            chunk.removeComponent(entity, type)
         }
-        return true
-    }
-
-    /**
-     * Marks a directly mutated component for the next save. Returns false if [component] is no
-     * longer the instance stored at this position, including after an unload and reload.
-     */
-    fun <T : Component<*>> markDirty(
-        componentClass: Class<T>, world: UUID, x: Int, y: Int, z: Int, component: T
-    ): Boolean {
-        val type = requireType(componentClass)
-        val chunk = findChunk(world, x, y, z) ?: return false
-        val entity = chunk.getCitadel(x and 15, y, z and 15) ?: return false
-        if (chunk.getComponent(entity, type) !== component) return false
-        chunk.markDirty()
-        return true
     }
 
     fun isChunkLoaded(world: UUID, chunkX: Int, chunkZ: Int): Boolean {
@@ -345,12 +285,14 @@ class ComponentManager(
 
     /** Resolves one loaded entity for an operation. Runtime IDs are never reused. */
     private inline fun <R> withCurrentCitadel(
-        handle: ReadableHandle, action: (ChunkCord, CitadelEntity) -> R
+        handle: ReadableHandle,
+        unavailable: () -> R? = { null },
+        action: (ChunkCord, CitadelEntity) -> R
     ): R? {
-        if (handle.manager !== this) return null
-        val chunk = findChunk(handle.world, handle.x, handle.y, handle.z) ?: return null
-        val entity = chunk.getCitadel(handle.x and 15, handle.y, handle.z and 15) ?: return null
-        if (entity.id != handle.runtimeId) return null
+        if (handle.manager !== this) return unavailable()
+        val chunk = findChunk(handle.world, handle.x, handle.y, handle.z) ?: return unavailable()
+        val entity = chunk.getCitadel(handle.x and 15, handle.y, handle.z and 15) ?: return unavailable()
+        if (entity.id != handle.runtimeId) return unavailable()
         return action(chunk, entity)
     }
 

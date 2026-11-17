@@ -1,12 +1,12 @@
-package ru.fornax.fornaxcitadel.paper.modules.validation
+package ru.fornax.fornaxcitadel.core.systems.action
 
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 
-/** Owns common platform validation independently of permissions and gameplay listeners. */
-class PaperActionValidationService(
+/** Independently owns one validator without coupling its lifetime to a processor or listener. */
+class ValidatorRegistration(
     private val actions: ActionManager,
-    private val validator: PaperActionStateValidator
+    private val validator: ActionValidator<*>
 ) : LifecycleService {
     override fun enable() {
         actions.validatorCoordinator.registerValidator(validator)

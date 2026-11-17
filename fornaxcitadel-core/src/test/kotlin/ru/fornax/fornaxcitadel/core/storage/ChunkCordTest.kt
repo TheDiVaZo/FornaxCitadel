@@ -128,11 +128,9 @@ class ChunkCordTest {
     }
 
     @Test
-    fun `reads lifecycle events and unsuccessful mutations leave a clean chunk clean`() {
+    fun `reads and unsuccessful mutations leave a clean chunk clean`() {
         val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
-        chunk.minecraftChunkLoaded()
-        chunk.minecraftChunkUnloaded()
         chunk.clear()
         assertNull(chunk.removeCitadel(1, 20, 2))
         assertFalse(chunk.isDirty)
@@ -145,28 +143,6 @@ class ChunkCordTest {
         chunk.removeAllComponents(entity)
         assertFailsWith<IllegalStateException> { chunk.putCitadel(1, 20, 2) }
         assertFalse(chunk.isDirty)
-    }
-
-    @Test
-    fun `minecraft chunk load state follows rapid lifecycle events independently of contents`() {
-        val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
-        assertFalse(chunk.isChunkLoaded())
-        chunk.minecraftChunkUnloaded()
-        assertFalse(chunk.isChunkLoaded())
-
-        chunk.minecraftChunkLoaded()
-        chunk.putCitadel(1, 20, 2)
-        chunk.clear()
-        assertTrue(chunk.isChunkLoaded())
-
-        repeat(100) {
-            chunk.minecraftChunkUnloaded()
-            assertFalse(chunk.isChunkLoaded())
-            chunk.minecraftChunkLoaded()
-            val loadedAfterReload = chunk.isChunkLoaded()
-            assertTrue(loadedAfterReload)
-        }
-        assertTrue(chunk.isEmpty)
     }
 
     @Test
@@ -194,7 +170,7 @@ class ChunkCordTest {
     }
 
     @Test
-    fun `removeCitadel clears mask and makes old entity stale`() {
+    fun `removeCitadel clears components and makes old entity stale`() {
         val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val types = TypeManager()
         val type = types.registerType(COMPONENT_KEY, TestComponent::class.java)
@@ -204,8 +180,8 @@ class ChunkCordTest {
         val removed = chunk.removeCitadel(4, 21, 5)
 
         assertSame(entity, removed)
-        assertEquals(0L, entity.components())
         assertNull(chunk.getCitadel(4, 21, 5))
+        chunk.forEachComponentOfType(type) { _, _ -> error("Removed component is still indexed") }
 
         val replacement = chunk.putCitadel(4, 21, 5)
         assertNotEquals(entity.id, replacement.id)
@@ -245,15 +221,13 @@ class ChunkCordTest {
             }
 
             assertSame(component, target.getComponent(entity, type))
-            assertEquals(type.flag, entity.components())
             assertFalse(target.isDirty)
         }
         assertSame(sourceComponent, source.getComponent(foreignEntity, type))
-        assertEquals(type.flag, foreignEntity.components())
     }
 
     @Test
-    fun `clear resets masks and frees occupied positions`() {
+    fun `clear removes all components and frees occupied positions`() {
         val chunk = ChunkCord(WXZCord(UUID.randomUUID(), 0, 0))
         val type = TypeManager().registerType(COMPONENT_KEY, TestComponent::class.java)
         val first = chunk.putCitadel(4, 21, 5)
@@ -268,8 +242,7 @@ class ChunkCordTest {
 
         assertTrue(chunk.isEmpty)
         assertEquals(0, chunk.size)
-        assertEquals(0L, first.components())
-        assertEquals(0L, second.components())
+        chunk.forEachComponentOfType(type) { _, _ -> error("Cleared component is still indexed") }
         assertTrue(chunk.captureOpaqueComponents().isEmpty())
         assertNull(chunk.getCitadel(4, 21, 5))
         assertNull(chunk.getCitadel(7, 42, 11))

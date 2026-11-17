@@ -199,10 +199,6 @@ class ReadAndWriteAbleTest {
         assertEquals(7, decoded.location.z)
         assertNotEquals(entity.id, decodedEntity.id)
         assertEquals(entity.packedPosition, decodedEntity.packedPosition)
-        assertEquals(
-            targetIntType.flag or targetOtherType.flag,
-            decodedEntity.components()
-        )
         assertEquals(42, decodedComponent.value)
         assertNotNull(decoded.getComponent(decodedEntity, targetOtherType))
     }
@@ -223,11 +219,10 @@ class ReadAndWriteAbleTest {
         val opaqueEntity = assertNotNull(opaqueChunk.getCitadel(3, 12, 9))
 
         assertFalse(opaqueChunk.isDirty)
-        assertEquals(0L, opaqueEntity.components())
+        opaqueChunk.forEachComponent(opaqueEntity) { _, _ -> error("Unknown type was decoded") }
         assertNull(unavailableTypes.getType(INT_KEY))
         val firstExplicitType = unavailableTypes.registerType(OTHER_KEY, OtherComponent::class.java)
         assertEquals(0, firstExplicitType.id.toInt())
-        assertEquals(1L, firstExplicitType.flag)
 
         val passthroughData = unavailableMapper.snapshot(opaqueChunk).toByteArray()
         assertContentEquals(sourceData, passthroughData)
@@ -242,7 +237,6 @@ class ReadAndWriteAbleTest {
             restoredChunk.getComponent(restoredEntity, restoredType)
         )
 
-        assertEquals(restoredType.flag, restoredEntity.components())
         assertEquals(73, restoredComponent.value)
         assertFalse(restoredChunk.isDirty)
     }
@@ -282,7 +276,6 @@ class ReadAndWriteAbleTest {
         )
         val restoredRetainedEntity = assertNotNull(restoredChunk.getCitadel(1, 20, 2))
 
-        assertEquals(0L, restoredRetainedEntity.components())
         assertNull(restoredChunk.getComponent(restoredRetainedEntity, restoredType))
         assertNull(restoredChunk.getCitadel(4, 21, 5))
     }
@@ -360,7 +353,6 @@ class ReadAndWriteAbleTest {
         assertTrue(restored.isDirty)
         assertNull(restored.getComponent(entity, intType))
         assertNotNull(restored.getComponent(entity, otherType))
-        assertEquals(otherType.flag, entity.components())
 
         val savedComponents = mapper.snapshot(restored).citadels.single().components
         assertEquals(listOf(OTHER_KEY, UNKNOWN_KEY), savedComponents.map { it.key })
@@ -438,7 +430,6 @@ class ReadAndWriteAbleTest {
         assertEquals(OpaqueUpdateResult(1, 1, 1, 0), result)
         assertSame(entity, chunk.getCitadel(4, 50, 6))
         assertEquals(73, assertNotNull(chunk.getComponent(entity, intType)).value)
-        assertEquals(intType.flag, entity.components())
         assertEquals(listOf(UNKNOWN_KEY), chunk.captureOpaqueComponents().map { it.key })
         assertEquals(CORRUPT_KEY, corrupted.single().key)
 
@@ -481,7 +472,39 @@ class ReadAndWriteAbleTest {
         assertFalse(chunk.isDirty)
         assertTrue(chunk.captureOpaqueComponents().isEmpty())
         assertNull(chunk.getComponent(entity, intType))
-        assertEquals(0L, entity.components())
+    }
+
+    @Test
+    fun `infrastructure failure rejects the entire opaque batch before any changes`() {
+        val snapshot = ChunkCordSnapshot(
+            WXZCord(UUID.randomUUID(), 0, 0),
+            listOf(
+                CitadelSnapshot(
+                    ChunkCord.packPosition(2, 30, 4),
+                    listOf(
+                        ComponentSnapshot(INT_KEY, IntComponent(31).toByteArray()),
+                        ComponentSnapshot(CORRUPT_KEY, byteArrayOf(1, 2)),
+                        ComponentSnapshot(INFRASTRUCTURE_KEY, byteArrayOf())
+                    )
+                )
+            )
+        )
+        val types = TypeManager()
+        val corrupted = ArrayList<CorruptedComponentPayload>()
+        val mapper = ChunkCordSnapshotMapper(types, corrupted::add)
+        val chunk = mapper.restore(snapshot)
+        val entity = assertNotNull(chunk.getCitadel(2, 30, 4))
+        val intType = types.registerType(INT_KEY, IntComponent::class.java)
+        types.registerType(CORRUPT_KEY, CorruptibleComponent::class.java)
+        types.registerType(INFRASTRUCTURE_KEY, RequiredArgumentComponent::class.java)
+        val resolutions = mapper.decodeOpaqueComponents(mapper.captureOpaqueComponents(chunk))
+
+        assertFailsWith<IOException> { mapper.applyOpaqueComponents(chunk, resolutions) }
+
+        assertFalse(chunk.isDirty)
+        assertNull(chunk.getComponent(entity, intType))
+        assertTrue(corrupted.isEmpty())
+        assertContentEquals(snapshot.toByteArray(), mapper.snapshot(chunk).toByteArray())
     }
 
     @Test

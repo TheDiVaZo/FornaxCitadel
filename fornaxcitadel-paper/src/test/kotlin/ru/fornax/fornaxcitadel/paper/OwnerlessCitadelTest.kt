@@ -141,8 +141,8 @@ class OwnerlessCitadelTest {
         dismantleSettings = DismantleSettings(1.0))
 
     private fun PaperTestFixture.citadel() = assertNotNull(module.citadels.findProtecting(position))
-    private fun PaperTestFixture.unown() = manager.removeComponent(CitadelOwner::class.java, worldId, 1, 64, 2)
-    private fun PaperTestFixture.removeHealth() = manager.removeComponent(Health::class.java, worldId, 1, 64, 2)
+    private fun PaperTestFixture.unown() = checkNotNull(manager.findCitadel(worldId, 1, 64, 2)).removeComponent(CitadelOwner::class.java)
+    private fun PaperTestFixture.removeHealth() = checkNotNull(manager.findCitadel(worldId, 1, 64, 2)).removeComponent(Health::class.java)
     private fun PaperTestFixture.click() = PlayerInteractEvent(installer.player, Action.RIGHT_CLICK_BLOCK,
         installer.held, block(), BlockFace.UP, EquipmentSlot.HAND)
 

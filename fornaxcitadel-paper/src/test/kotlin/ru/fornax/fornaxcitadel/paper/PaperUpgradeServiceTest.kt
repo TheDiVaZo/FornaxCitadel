@@ -81,7 +81,7 @@ class PaperUpgradeServiceTest {
                 val owner = original.getComponent(CitadelOwner::class.java)
                 f.manager.registerComponent(Key("test", "marker"), Marker::class.java)
                 val marker = Marker().apply { value = 42 }
-                f.manager.putComponent(Marker::class.java, f.worldId, 1, 64, 2, marker)
+                assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).putComponent(Marker::class.java, marker)
                 original.editComponent(Maturing::class.java) { it.startedAtMillis = 1 }
                 f.installer.gameMode = mode
                 f.installer.held = f.reinforcementStack(HEAVY, amount)
@@ -161,7 +161,7 @@ class PaperUpgradeServiceTest {
             val original = f.citadel()
             val owner = original.getComponent(CitadelOwner::class.java)
             when (missing) {
-                "kind" -> f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+                "kind" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
                 "definition" -> original.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "missing") }
             }
             original.editComponent(Health::class.java) { it.health = savedHealth }
@@ -233,7 +233,7 @@ class PaperUpgradeServiceTest {
             f.place()
             val original = f.citadel()
             val owner = original.getComponent(CitadelOwner::class.java)
-            if (!knownLevel) f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+            if (!knownLevel) assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
             f.module.health.unregisterDefinition(HEAVY)
             assertFalse(f.citadelTypes.isInvulnerable(HEAVY))
             f.installer.held = f.reinforcementStack(HEAVY)
@@ -257,8 +257,8 @@ class PaperUpgradeServiceTest {
         f.place()
         val original = f.citadel()
         val owner = original.getComponent(CitadelOwner::class.java)
-        f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
-        f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+        assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
+        assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
         val destination = Key("fornaxcitadel", "reinforced_light")
         f.installer.held = f.reinforcementStack(destination)
 
@@ -312,7 +312,7 @@ class PaperUpgradeServiceTest {
         for (knownLevel in listOf(true, false)) fixture().use { f ->
             f.place()
             val original = f.citadel()
-            if (!knownLevel) f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+            if (!knownLevel) assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
             val kind = original.getComponent(CitadelKind::class.java)
             val health = original.getComponent(Health::class.java)
             val maturing = original.getComponent(Maturing::class.java)
@@ -354,8 +354,8 @@ class PaperUpgradeServiceTest {
                 f.place()
                 when (missing) {
                     "maximum" -> f.module.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
-                    "health" -> f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
-                    "item" -> f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+                    "health" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
+                    "item" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
                 }
                 f.installer.held = f.reinforcementStack(HEAVY)
                 assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action()), missing)
@@ -431,7 +431,7 @@ class PaperUpgradeServiceTest {
             f.place()
             val original = f.citadel()
             val owner = original.getComponent(CitadelOwner::class.java)
-            f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+            assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
             val maturing = original.getComponent(Maturing::class.java)
             f.installer.permissions.add("fornaxcitadel.admin")
             f.installer.held = f.reinforcementStack(PaperCitadelTypes.INVULNERABLE)

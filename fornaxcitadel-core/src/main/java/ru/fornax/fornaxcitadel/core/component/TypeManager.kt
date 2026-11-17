@@ -1,7 +1,5 @@
 package ru.fornax.fornaxcitadel.core.component
 
-import it.unimi.dsi.fastutil.bytes.Byte2ObjectOpenHashMap
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.Collections
 
@@ -9,10 +7,6 @@ class TypeManager {
     private val typeLock = Any()
     private val typeMap = mutableMapOf<Class<out Component<*>>, ComponentType<out Component<*>>>()
     private val typesByKey = mutableMapOf<Key, ComponentType<out Component<*>>>()
-    private val typeList = mutableListOf<ComponentType<out Component<*>>>()
-    private val typesById = Byte2ObjectOpenHashMap<ComponentType<out Component<*>>>()
-
-    private var nextFlag = 1L
     private var genTypeID: Byte = 0
 
     @Suppress("UNCHECKED_CAST")
@@ -63,13 +57,10 @@ class TypeManager {
                 throw IllegalStateException("max components has been registered.")
             }
 
-            val type = ComponentType(key, componentClass, nextFlag, genTypeID)
-            typesById.put(genTypeID, type)
-            nextFlag = nextFlag shl 1
+            val type = ComponentType(key, componentClass, genTypeID)
             genTypeID++
             typeMap[componentClass] = type
             typesByKey[key] = type
-            typeList.add(type)
 
             type
         }

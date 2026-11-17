@@ -39,7 +39,7 @@ class PaperCrackHealthObservationSystemTest {
     fun `observing implicit full health stays read-only and cracks appear after the first hit`() {
         Fixture().use { f ->
             val position = f.target.position
-            f.paper.manager.removeComponent(Health::class.java, position.world, position.x, position.y, position.z)
+            checkNotNull(f.paper.manager.findCitadel(position.world, position.x, position.y, position.z)).removeComponent(Health::class.java)
             f.paper.manager.saveAll().join()
             val saves = f.paper.backend.saves
             f.observe(f.paper.installer)
@@ -261,15 +261,14 @@ class PaperCrackHealthObservationSystemTest {
         Fixture().use { fixture ->
             fixture.observe(fixture.paper.installer)
             val position = fixture.target.position
-            fixture.paper.manager.putComponent(Health::class.java, position.world, position.x, position.y,
-                position.z, ReplacementHealth(75.0))
+            checkNotNull(fixture.paper.manager.findCitadel(position.world, position.x, position.y, position.z)).putComponent(Health::class.java, ReplacementHealth(75.0))
 
             fixture.paper.advanceTicks(1)
 
             val packets = fixture.paper.installer.blockDamagePackets
             assertEquals(listOf(0.5f, 0f, 0.25f), packets.map { it.progress })
             assertTrue(packets.all { it.sourceId == -fixture.target.runtimeId })
-            fixture.paper.manager.removeComponent(Health::class.java, position.world, position.x, position.y, position.z)
+            checkNotNull(fixture.paper.manager.findCitadel(position.world, position.x, position.y, position.z)).removeComponent(Health::class.java)
             fixture.paper.advanceTicks(1)
             assertEquals(listOf(0.5f, 0f, 0.25f, 0f), packets.map { it.progress })
             fixture.observations.disable()
@@ -355,8 +354,7 @@ class PaperCrackHealthObservationSystemTest {
     fun `observing a maturing target reads fixed health without dirtying storage`() {
         Fixture().use { fixture ->
             val position = fixture.target.position
-            fixture.paper.manager.putComponent(Maturing::class.java, position.world, position.x,
-                position.y, position.z, Maturing(0L))
+            checkNotNull(fixture.paper.manager.findCitadel(position.world, position.x, position.y, position.z)).putComponent(Maturing::class.java, Maturing(0L))
             fixture.paper.manager.saveAll().join()
             val saves = fixture.paper.backend.saves
             fixture.observe(fixture.paper.installer)

@@ -3,7 +3,9 @@ package ru.fornax.fornaxcitadel.modules.remove
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 
 /**
  * Removes core data after authorization. Minecraft block changes belong to a platform integration.
@@ -14,24 +16,12 @@ class RemoveService(
     private val actions: ActionManager
 ) : LifecycleService {
     private val manager = actions.componentManager
-    private val processor = RemoveProcessor(this)
-    private val validator = RemoveActionValidator(actions.citadels)
+    private val registration = ActionRegistration(
+        actions, RemoveProcessor(this), listOf(ExistingCitadelValidator(RemoveAction::class.java, actions.citadels))
+    )
 
-    override fun enable() {
-        actions.processorCoordinator.registerProcessor(processor)
-        try {
-            actions.validatorCoordinator.registerValidator(validator)
-        } catch (failure: Throwable) {
-            actions.validatorCoordinator.unregisterValidator(validator)
-            actions.processorCoordinator.unregisterProcessor(processor)
-            throw failure
-        }
-    }
-
-    override fun disable() {
-        actions.validatorCoordinator.unregisterValidator(validator)
-        actions.processorCoordinator.unregisterProcessor(processor)
-    }
+    override fun enable() = registration.enable()
+    override fun disable() = registration.disable()
 
     /** Executes a validated request with an available target. External requests must enter through actions. */
     fun request(action: RemoveAction): ActionResult {

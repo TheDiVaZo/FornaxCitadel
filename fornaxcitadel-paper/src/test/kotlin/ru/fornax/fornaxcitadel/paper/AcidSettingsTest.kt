@@ -82,5 +82,49 @@ class AcidSettingsTest {
         assertNull(AcidRegistry(AcidSettings(enabled = false)).find(Material.GOLD_BLOCK))
     }
 
+    @Test
+    fun `raw mappings accept exact whole numbers and numeric failures retain the acid path`() {
+        val config = YamlConfiguration().apply {
+            set("acid", mapOf(
+                "activation" to mapOf("max-distance" to java.math.BigDecimal("5.000")),
+                "types" to mapOf("custom" to mapOf(
+                    "material" to "GOLD_BLOCK", "max-targets" to 2.0, "maturation-multiplier" to 1
+                ))
+            ))
+        }
+        val settings = AcidSettings.read(config)
+        assertEquals(5, settings.maxDistance)
+        assertEquals(2, settings.types.single().maxTargets)
+
+        val path = "acid.activation.max-distance"
+        for ((value, message) in listOf(
+            "5" to "$path must be an integer",
+            5.5 to "$path must be an integer fitting in Int",
+            Int.MAX_VALUE.toLong() + 1 to "$path must be an integer fitting in Int",
+            Double.NaN to "$path must be an integer fitting in Int"
+        )) {
+            val invalid = YamlConfiguration().apply { set(path, value) }
+            val failure = assertFailsWith<IllegalArgumentException> { AcidSettings.read(invalid) }
+            assertEquals(message, failure.message)
+            val plugin = PaperSettings.read(invalid)
+            assertFalse(plugin.acid.enabled)
+            assertEquals(message, plugin.acidConfigurationError)
+        }
+    }
+
+    @Test
+    fun `required acid fields do not inherit copied Bukkit defaults`() {
+        val defaults = YamlConfiguration().apply {
+            loadFromString("acid: {types: {gold: {material: GOLD_BLOCK, max-targets: 1, maturation-multiplier: 2}}}")
+        }
+        val configured = YamlConfiguration().apply {
+            loadFromString("acid: {types: {gold: {material: GOLD_BLOCK, maturation-multiplier: 2}}}")
+            setDefaults(defaults)
+            options().copyDefaults(true)
+        }
+        val failure = assertFailsWith<IllegalArgumentException> { AcidSettings.read(configured) }
+        assertEquals("acid.types.gold.max-targets must be an integer", failure.message)
+    }
+
     private fun read(text: String) = AcidSettings.read(YamlConfiguration().apply { loadFromString(text) })
 }

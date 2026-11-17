@@ -31,13 +31,13 @@ class AcidServiceTest {
     @Test
     fun `unowned acid permits activation while source veto permission and another owner preserve it`() {
         for (reason in listOf("success", "veto", "permission", "claimed")) fixture().use { f ->
-            f.manager.removeComponent(CitadelOwner::class.java, f.worldId, 1, 64, 2)
+            checkNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelOwner::class.java)
             val target = reinforce(f, f.block().getRelative(BlockFace.UP))
             val owner = target.getComponent(CitadelOwner::class.java)?.playerId
             when (reason) {
                 "veto" -> f.vetoAcid { it.consumingSource }
                 "permission" -> f.installer.permissions.remove("fornaxcitadel.acid")
-                "claimed" -> f.manager.putComponent(CitadelOwner::class.java, f.worldId, 1, 64, 2, CitadelOwner(f.stranger.id))
+                "claimed" -> checkNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).putComponent(CitadelOwner::class.java, CitadelOwner(f.stranger.id))
             }
             if (reason == "success") {
                 assertEquals(AcidResult.Activated(1), activate(f))

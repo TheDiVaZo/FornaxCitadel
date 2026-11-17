@@ -8,13 +8,15 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
-import ru.fornax.fornaxcitadel.paper.action.ActionRegistration
+import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.consumeOneFromMainHand
@@ -39,10 +41,15 @@ class PaperUpgradeService @JvmOverloads constructor(
     private val refunds = ReinforcementRefunds(materials, settings, random)
     private val registration = ActionRegistration(
         module.actions, UpgradeAction::class.java, UpgradeAction.KEY,
-        listOf(UpgradeActionValidator(module.citadels, module.definitions), OwnerUpgradeValidator(module.citadels)), ::upgrade
+        listOf(
+            UpgradeActionValidator(module.citadels, module.definitions),
+            OwnerActionValidator(UpgradeAction::class.java, module.citadels, ActionValidator.Result.Rejected)
+        ), ::upgrade
     )
 
-    override fun enable() = registration.enable()
+    override fun enable() {
+        if (!registration.isEnabled) registration.enable()
+    }
     override fun disable() = registration.disable()
 
     /** Executes a validated action; external requests must enter through module.actions. */
@@ -87,17 +94,13 @@ class PaperUpgradeService @JvmOverloads constructor(
     }
 
     private fun applyUpgrade(citadel: CitadelHandle, destination: Key, maximum: Double?, startedAtMillis: Long) {
-        val position = citadel.position
-        val manager = module.actions.componentManager
-        manager.putComponent(CitadelKind::class.java, position.world, position.x, position.y, position.z,
-            CitadelKind(destination))
+        citadel.putComponent(CitadelKind::class.java, CitadelKind(destination))
         if (maximum == null) {
-            manager.removeComponent(Health::class.java, position.world, position.x, position.y, position.z)
+            citadel.removeComponent(Health::class.java)
         } else {
-            manager.putComponent(Health::class.java, position.world, position.x, position.y, position.z, Health(maximum))
+            citadel.putComponent(Health::class.java, Health(maximum))
         }
-        manager.putComponent(Maturing::class.java, position.world, position.x, position.y, position.z,
-            Maturing(startedAtMillis))
+        citadel.putComponent(Maturing::class.java, Maturing(startedAtMillis))
     }
 
     private fun canUpgradeTo(citadel: ReadableHandle, destination: Key): Boolean {

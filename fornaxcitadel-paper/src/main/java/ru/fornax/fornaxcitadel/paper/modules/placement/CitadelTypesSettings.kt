@@ -2,7 +2,9 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import org.bukkit.configuration.ConfigurationSection
 import ru.fornax.fornaxcitadel.core.util.Key
-import java.math.BigDecimal
+import ru.fornax.fornaxcitadel.paper.config.exactInt
+import ru.fornax.fornaxcitadel.paper.config.exactLong
+import ru.fornax.fornaxcitadel.paper.config.readLocalMapping
 import java.util.Locale
 
 data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DEFAULT_TYPES) {
@@ -39,7 +41,7 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
         fun read(root: ConfigurationSection): CitadelTypesSettings {
             // A user catalog replaces the bundled catalog, including when the user leaves it empty.
             val configured = root.get("citadel-types", null) ?: return CitadelTypesSettings()
-            val types = readMapping(configured, "citadel-types").mapValues { (id, value) ->
+            val types = readLocalMapping(configured, "citadel-types").mapValues { (id, value) ->
                 requireValidId(id)
                 readType(value, "citadel-types.$id")
             }
@@ -53,7 +55,7 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
         }
 
         private fun readType(value: Any?, path: String): CitadelTypeSettings {
-            val values = readMapping(value, path)
+            val values = readLocalMapping(value, path)
             val unknown = values.keys.firstOrNull { it !in setOf("item", "lvl", "damage-policy", "health", "maturing") }
             require(unknown == null) { "Unknown configuration field $path.$unknown" }
             val item = readItem(values["item"], "$path.item")
@@ -92,7 +94,7 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
             val message = "$path is required and must be a positive whole number fitting in Int"
             require(value is Number) { message }
             val lvl = try {
-                BigDecimal(value.toString()).intValueExact()
+                value.exactInt()
             } catch (exception: NumberFormatException) {
                 throw IllegalArgumentException(message, exception)
             } catch (exception: ArithmeticException) {
@@ -103,31 +105,19 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
         }
 
         private fun readHealth(value: Any?, path: String): HealthSettings {
-            val values = readMapping(value, path)
+            val values = readLocalMapping(value, path)
             val unknown = values.keys.firstOrNull { it != "max" }
             require(unknown == null) { "Unknown configuration field $path.$unknown" }
             return HealthSettings(readPositive(values["max"], "$path.max"))
         }
 
         private fun readMaturing(value: Any?, path: String): MaturingSettings {
-            val values = readMapping(value, path)
+            val values = readLocalMapping(value, path)
             val unknown = values.keys.firstOrNull { it !in setOf("duration-seconds", "initial-damage-multiplier") }
             require(unknown == null) { "Unknown configuration field $path.$unknown" }
             val multiplier = readPositive(values["initial-damage-multiplier"], "$path.initial-damage-multiplier")
             require(multiplier >= 1.0) { "$path.initial-damage-multiplier must be at least 1" }
             return MaturingSettings(readDuration(values["duration-seconds"], "$path.duration-seconds"), multiplier)
-        }
-
-        private fun readMapping(value: Any?, path: String): Map<String, Any?> {
-            val values = when (value) {
-                is ConfigurationSection -> value.getValues(false).filterKeys { value.contains(it, true) }
-                is Map<*, *> -> value
-                else -> throw IllegalArgumentException("$path must be a mapping")
-            }
-            return values.entries.associate { (key, entry) ->
-                require(key is String) { "$path keys must be strings" }
-                key to entry
-            }
         }
 
         private fun readPositive(value: Any?, path: String): Double {
@@ -140,7 +130,7 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
         private fun readDuration(value: Any?, path: String): Long {
             require(value is Number) { "$path must be a non-negative whole number of seconds" }
             val seconds = try {
-                BigDecimal(value.toString()).longValueExact()
+                value.exactLong()
             } catch (exception: NumberFormatException) {
                 throw IllegalArgumentException("$path must be a non-negative whole number of seconds", exception)
             } catch (exception: ArithmeticException) {

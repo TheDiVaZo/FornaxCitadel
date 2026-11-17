@@ -79,7 +79,6 @@ class ChunkCord(val location: WXZCord) {
         }
     }
 
-    private var minecraftChunkLoaded = false
     internal val dirtyState = ChunkDirtyState()
 
     private val citadels = CitadelsData()
@@ -136,7 +135,7 @@ class ChunkCord(val location: WXZCord) {
     ): CitadelEntity? {
         val packedPosition = packPosition(locX, y, locZ)
         val removed = citadels.removeCitadel(locX, y, locZ) ?: return null
-        removeAllComponentsAt(removed, packedPosition)
+        removeAllComponentsAt(packedPosition)
         markDirty()
         return removed
     }
@@ -191,7 +190,6 @@ class ChunkCord(val location: WXZCord) {
             component
         )
         opaqueComponents.remove(packedPosition, type.key)
-        entity.addComponent(type.flag)
         markDirty()
         return previous
     }
@@ -203,16 +201,13 @@ class ChunkCord(val location: WXZCord) {
         val packedPosition = requireCurrentPosition(entity)
         val removed = components.removeComponent(packedPosition, type)
         val removedOpaque = opaqueComponents.remove(packedPosition, type.key)
-        if (removed != null) {
-            entity.removeComponent(type.flag)
-        }
         if (removed != null || removedOpaque != null) markDirty()
         return removed
     }
 
     fun removeAllComponents(entity: CitadelEntity) {
         val packedPosition = requireCurrentPosition(entity)
-        removeAllComponentsAt(entity, packedPosition)
+        removeAllComponentsAt(packedPosition)
     }
 
     fun forEachComponent(
@@ -307,9 +302,6 @@ class ChunkCord(val location: WXZCord) {
 
     fun clear() {
         if (isEmpty) return
-        citadels.forEachCitadel { _, _, _, entity ->
-            entity.setComponents(0L)
-        }
         opaqueComponents.clear()
         components.clear()
         citadels.clear()
@@ -324,13 +316,9 @@ class ChunkCord(val location: WXZCord) {
         return packedPosition
     }
 
-    private fun removeAllComponentsAt(
-        entity: CitadelEntity,
-        packedPosition: Int
-    ) {
+    private fun removeAllComponentsAt(packedPosition: Int) {
         val removed = components.removeAllComponents(packedPosition)
         val removedOpaque = opaqueComponents.removeAll(packedPosition)
-        entity.setComponents(0L)
         if (removed || removedOpaque) markDirty()
     }
 
@@ -345,19 +333,6 @@ class ChunkCord(val location: WXZCord) {
             type as ComponentType<Component<*>>,
             component
         )
-    }
-
-    /** Tracks the Minecraft chunk lifecycle independently of storage residency and citadel contents. */
-    fun isChunkLoaded(): Boolean {
-        return minecraftChunkLoaded
-    }
-
-    fun minecraftChunkLoaded() {
-        minecraftChunkLoaded = true
-    }
-
-    fun minecraftChunkUnloaded() {
-        minecraftChunkLoaded = false
     }
 
     private class CitadelsData {

@@ -18,7 +18,7 @@ import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
-import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionValidationService
+import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -147,7 +147,7 @@ class PaperActionValidationTest {
     private class Probe(fixture: PaperTestFixture) {
         val actions = ActionManager(fixture.manager)
         val validator = PaperActionStateValidator(fixture.server)
-        val service = PaperActionValidationService(actions, validator)
+        val service = ValidatorRegistration(actions, validator)
         var processorCalls = 0
             private set
 

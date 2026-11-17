@@ -4,6 +4,7 @@ import org.bukkit.Material
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.block.data.Bisected
+import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.modules.resolver.DefaultMaterialPlacementRule
@@ -106,6 +107,38 @@ class MaterialPlacementRulesTest {
             fixture.loadChunk(1, 0)
             assertEquals(head.testPosition(), fixture.materialPlacement.getResponsiblePosition(foot.testPosition()))
             assertNull(fixture.materialPlacement.getReinforcementProtecting(foot.testPosition()))
+        }
+    }
+
+    @Test
+    fun `unavailable positions never reach Bukkit while boundary relatives remain absent`() {
+        PaperTestFixture().use { fixture ->
+            val initialLookups = fixture.blockLookups
+            val invalid = listOf(
+                fixture.position.copy(world = java.util.UUID(99, 99)),
+                fixture.position.copy(y = -65), fixture.position.copy(y = 320),
+                fixture.position.copy(x = Short.MIN_VALUE.toInt() * 16 - 1),
+                fixture.position.copy(z = (Short.MAX_VALUE.toInt() + 1) * 16)
+            )
+            for (position in invalid) {
+                assertFailsWith<CitadelResolutionUnavailableException> {
+                    fixture.materialPlacement.getResponsiblePosition(position)
+                }
+            }
+            fixture.worldChunkLoaded = false
+            assertFailsWith<CitadelResolutionUnavailableException> {
+                fixture.materialPlacement.getResponsiblePosition(fixture.position)
+            }
+            assertEquals(initialLookups, fixture.blockLookups)
+            fixture.worldChunkLoaded = true
+
+            assertNull(fixture.materialPlacement.findLoadedRelative(fixture.block(y = -64), BlockFace.DOWN))
+            assertNull(fixture.materialPlacement.findLoadedRelative(fixture.block(y = 319), BlockFace.UP))
+            assertEquals(initialLookups, fixture.blockLookups)
+
+            fixture.loadChunk(-1, -1)
+            val negative = CitadelPosition(fixture.worldId, -1, -64, -1)
+            assertEquals(negative, fixture.materialPlacement.getResponsiblePosition(negative))
         }
     }
 }

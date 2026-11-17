@@ -159,7 +159,7 @@ class MaturationServiceTest {
         assertTrue(service.isMature(fixture.citadel))
         assertEquals(2, records.size)
 
-        fixture.manager.removeComponent(CitadelKind::class.java, HealthFixture.WORLD, 0, 0, 0)
+        fixture.citadel.removeComponent(CitadelKind::class.java)
         repeat(3) { assertTrue(service.isMature(fixture.citadel)) }
         assertEquals(3, records.size)
         assertTrue(records.last().message.contains("missing CitadelKind"))

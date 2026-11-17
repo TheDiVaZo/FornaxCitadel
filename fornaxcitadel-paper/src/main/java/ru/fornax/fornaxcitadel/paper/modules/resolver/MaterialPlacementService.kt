@@ -7,11 +7,11 @@ import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.LoadedBlocks
 import java.util.Locale
 
 /**
@@ -94,17 +94,8 @@ class MaterialPlacementService(
     private fun findLoadedBlock(position: CitadelPosition): Block =
         requireAvailable(position).getBlockAt(position.x, position.y, position.z)
 
-    private fun requireAvailable(position: CitadelPosition): World {
-        val world = server.getWorld(position.world)
-            ?: throw CitadelResolutionUnavailableException(position)
-        if (!CitadelPosition.isSupported(position.x, position.y, position.z) ||
-            position.y !in world.minHeight until world.maxHeight ||
-            !world.isChunkLoaded(position.x shr 4, position.z shr 4) ||
-            !manager.isChunkLoaded(position.world, position.x shr 4, position.z shr 4)) {
-            throw CitadelResolutionUnavailableException(position)
-        }
-        return world
-    }
+    private fun requireAvailable(position: CitadelPosition): World =
+        LoadedBlocks.requireAvailable(server, manager, position)
 
     private fun positionOf(block: Block): CitadelPosition =
         CitadelPosition(block.world.uid, block.x, block.y, block.z)

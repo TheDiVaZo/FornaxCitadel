@@ -343,11 +343,11 @@ class ObservationRequirementsTest {
         }
 
         fun <C : Component<*>> put(target: ReadableHandle, type: Class<C>, component: C) {
-            manager.putComponent(type, WORLD, target.x, target.y, target.z, component)
+            checkNotNull(manager.findCitadel(WORLD, target.x, target.y, target.z)).putComponent(type, component)
         }
 
         fun <C : Component<*>> remove(target: ReadableHandle, type: Class<C>) {
-            manager.removeComponent(type, WORLD, target.x, target.y, target.z)
+            checkNotNull(manager.findCitadel(WORLD, target.x, target.y, target.z)).removeComponent(type)
         }
 
         fun start(system: ObservationSystem<String>) {

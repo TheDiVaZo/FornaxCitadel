@@ -283,7 +283,7 @@ class ObservationServiceTest {
         fixture.observe(ALICE, "alice").observation.publish(listOf(target))
         fixture.observe(BOB, "bob").observation.publish(listOf(target))
 
-        fixture.manager.putComponent(ValueComponent::class.java, WORLD, 1, 0, 0, replacement)
+        checkNotNull(fixture.manager.findCitadel(WORLD, 1, 0, 0)).putComponent(ValueComponent::class.java, replacement)
         fixture.scheduler.tick()
 
         assertEquals(2, system.leaves.size)
@@ -305,9 +305,9 @@ class ObservationServiceTest {
         fixture.service.enable()
         fixture.observe(ALICE, "alice", listOf(target))
         system.onDetached = {
-            fixture.manager.removeComponent(ValueComponent::class.java, WORLD, 1, 0, 0)
+            checkNotNull(fixture.manager.findCitadel(WORLD, 1, 0, 0)).removeComponent(ValueComponent::class.java)
         }
-        fixture.manager.putComponent(ValueComponent::class.java, WORLD, 1, 0, 0, ValueComponent(99))
+        checkNotNull(fixture.manager.findCitadel(WORLD, 1, 0, 0)).putComponent(ValueComponent::class.java, ValueComponent(99))
 
         fixture.scheduler.tick()
         fixture.scheduler.tick()
@@ -330,14 +330,14 @@ class ObservationServiceTest {
         fixture.service.enable()
         fixture.observe(ALICE, "alice").observation.publish(listOf(target))
 
-        fixture.manager.removeComponent(ValueComponent::class.java, WORLD, 1, 0, 0)
+        checkNotNull(fixture.manager.findCitadel(WORLD, 1, 0, 0)).removeComponent(ValueComponent::class.java)
         fixture.scheduler.tick()
         assertEquals(1, system.leaves.size)
         assertEquals(1, system.detaches.size)
         assertTrue(system.ticks.isEmpty())
 
         val restored = ValueComponent(2)
-        fixture.manager.putComponent(ValueComponent::class.java, WORLD, 1, 0, 0, restored)
+        checkNotNull(fixture.manager.findCitadel(WORLD, 1, 0, 0)).putComponent(ValueComponent::class.java, restored)
         fixture.scheduler.tick()
         assertEquals(2, system.enters.size)
         assertSame(restored, system.ticks.single().component)

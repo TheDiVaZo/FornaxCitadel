@@ -114,7 +114,7 @@ class PaperRepairServiceTest {
                 fixture.installer.held = fixture.reinforcementStack()
                 when (reason) {
                     "wrong material" -> fixture.installer.held = TestItemStack(Material.DIRT, 2)
-                    "missing health" -> fixture.manager.removeComponent(Health::class.java, fixture.worldId, 1, 64, 2)
+                    "missing health" -> assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2)).removeComponent(Health::class.java)
                 }
                 val event = fixture.interact()
                 val blockUse = event.useInteractedBlock()

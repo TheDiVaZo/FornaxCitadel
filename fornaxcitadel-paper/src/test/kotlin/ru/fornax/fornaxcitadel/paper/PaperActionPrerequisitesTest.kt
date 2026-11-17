@@ -15,9 +15,8 @@ import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
-import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleActionValidator
+import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
-import ru.fornax.fornaxcitadel.paper.modules.repair.RepairActionValidator
 import ru.fornax.fornaxcitadel.paper.modules.upgrade.UpgradeActionValidator
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -40,8 +39,8 @@ class PaperActionPrerequisitesTest {
             assertFalse(f.manager.isChunkLoaded(f.worldId, 1, 0))
             f.place()
             val target = assertNotNull(f.module.citadels.findProtecting(f.position))
-            f.manager.removeComponent(CitadelOwner::class.java, f.worldId, 1, 64, 2)
-            f.manager.removeComponent(Health::class.java, f.worldId, 1, 64, 2)
+            assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelOwner::class.java)
+            assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
             f.manager.saveAll().join()
             val saves = f.backend.saves
             val lookups = f.blockLookups
@@ -87,7 +86,7 @@ class PaperActionPrerequisitesTest {
             target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "removed") }
             assertSame(Result.Rejected, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, Key("test", "unknown"))))
             assertSame(Result.Neutral, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.REINFORCED)))
-            f.manager.removeComponent(CitadelKind::class.java, f.worldId, 1, 64, 2)
+            assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
             assertSame(Result.Neutral, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.REINFORCED)))
             assertNull(target.getComponent(CitadelKind::class.java))
         }
@@ -124,9 +123,9 @@ class PaperActionPrerequisitesTest {
 
     private fun PaperTestFixture.prerequisites(approve: Boolean = false) = ValidatorCoordinator().apply {
         if (approve) registerValidator(approval())
-        registerValidator(RepairActionValidator(module.citadels))
+        registerValidator(ExistingCitadelValidator(RepairAction::class.java, module.citadels))
         registerValidator(UpgradeActionValidator(module.citadels, module.definitions))
-        registerValidator(DismantleActionValidator(module.citadels))
+        registerValidator(ExistingCitadelValidator(DismantleAction::class.java, module.citadels))
     }
 
     private fun PaperTestFixture.action(kind: String, target: CitadelPosition = position): ActionData = when (kind) {

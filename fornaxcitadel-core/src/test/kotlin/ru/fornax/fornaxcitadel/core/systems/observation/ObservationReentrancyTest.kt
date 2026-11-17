@@ -65,7 +65,7 @@ class ObservationReentrancyTest {
             fixture.observe(listOf(first, second))
             events.clear()
             restartOnFirstDetach = true
-            fixture.manager.removeComponent(ValueComponent::class.java, WORLD, first.x, first.y, first.z)
+            first.removeComponent(ValueComponent::class.java)
 
             fixture.scheduler.tick()
 
@@ -93,10 +93,8 @@ class ObservationReentrancyTest {
                     // Fail promptly if reconciliation regresses to an endless enter/replace loop.
                     assertTrue(enters < 16, "A finite callback must not cause unbounded synchronous reentry")
                     assertTrue(resources.add(citadel.runtimeId))
-                    fixture.manager.putComponent(
-                        ValueComponent::class.java, WORLD, citadel.x, citadel.y, citadel.z,
-                        ValueComponent(component.value + 1)
-                    )
+                    val writable = checkNotNull(fixture.manager.findCitadel(WORLD, citadel.x, citadel.y, citadel.z))
+                    writable.putComponent(ValueComponent::class.java, ValueComponent(component.value + 1))
                 }
 
                 override fun tick(citadel: ReadableHandle, target: ObservationTarget, viewers: List<String>) {
@@ -165,7 +163,7 @@ class ObservationReentrancyTest {
             fixture.service.enable()
             original = fixture.observe(listOf(first, second))
             restart = true
-            fixture.manager.removeComponent(ValueComponent::class.java, WORLD, first.x, first.y, first.z)
+            first.removeComponent(ValueComponent::class.java)
 
             fixture.scheduler.tick()
 
@@ -241,9 +239,8 @@ class ObservationReentrancyTest {
                 override fun onViewerEnter(citadel: ReadableHandle, target: ObservationTarget, viewer: String) {
                     if (replaceComponent && citadel.runtimeId == first.runtimeId) {
                         replaceComponent = false
-                        fixture.manager.putComponent(
-                            ValueComponent::class.java, WORLD, citadel.x, citadel.y, citadel.z, ValueComponent(99)
-                        )
+                        val writable = checkNotNull(fixture.manager.findCitadel(WORLD, citadel.x, citadel.y, citadel.z))
+                        writable.putComponent(ValueComponent::class.java, ValueComponent(99))
                     }
                 }
 

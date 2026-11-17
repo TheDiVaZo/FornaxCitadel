@@ -2,14 +2,16 @@ package ru.fornax.fornaxcitadel.paper.modules.dismantle
 
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
+import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.paper.action.ActionRegistration
+import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import java.util.logging.Level
 import kotlin.random.Random
 
@@ -25,10 +27,15 @@ class PaperDismantleService @JvmOverloads constructor(
     private val refunds = ReinforcementRefunds(materials, settings, random)
     private val registration = ActionRegistration(
         module.actions, DismantleAction::class.java, DismantleAction.KEY,
-        listOf(DismantleActionValidator(module.citadels), OwnerDismantleValidator(module.citadels)), ::dismantle
+        listOf(
+            ExistingCitadelValidator(DismantleAction::class.java, module.citadels),
+            OwnerActionValidator(DismantleAction::class.java, module.citadels)
+        ), ::dismantle
     )
 
-    override fun enable() = registration.enable()
+    override fun enable() {
+        if (!registration.isEnabled) registration.enable()
+    }
     override fun disable() = registration.disable()
 
     /**
