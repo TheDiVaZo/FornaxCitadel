@@ -95,7 +95,7 @@ explosions:
 # damage-policy defaults to allow; deny blocks ordinary damage from every source.
 # Authorized creative destruction and administrative removal can still remove these types.
 # health.max is read from current settings; only actual HP is stored in a citadel.
-# Reducing max never changes HP on load: 80/50 becomes 49/50 only when taking 1 damage.
+# Reducing max keeps saved HP: saved 80 with max 50 displays 50/50; taking 1 damage saves 49.
 # Increasing max does not heal. Maturing amplifies ordinary damage from every source.
 # Only placement time is stored; current maturation settings apply to existing citadels too.
 # Missing maturing or duration-seconds: 0 means instant maturity, including acid blocks.

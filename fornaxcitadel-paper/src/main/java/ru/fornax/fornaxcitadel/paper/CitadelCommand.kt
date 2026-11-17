@@ -205,8 +205,9 @@ class CitadelCommand(
                 val health = module.health.currentHealth(citadel)
                 if (health != null) {
                     val maximum = module.health.maxHealth(citadel)
+                    val displayedHealth = maximum?.let { health.coerceAtMost(it) } ?: health
                     sender.message(if (maximum == null) "commands.info.health-without-maximum" else "commands.info.health",
-                        "health" to String.format(Locale.ROOT, "%.1f", health),
+                        "health" to String.format(Locale.ROOT, "%.1f", displayedHealth),
                         "maximum" to (maximum?.let { String.format(Locale.ROOT, "%.1f", it) } ?: ""))
                 }
                 if (kind != null && citadelTypes.isInvulnerable(kind)) sender.message("commands.info.invulnerable")

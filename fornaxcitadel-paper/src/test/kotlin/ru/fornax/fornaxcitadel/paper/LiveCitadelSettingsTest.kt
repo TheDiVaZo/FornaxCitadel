@@ -114,7 +114,10 @@ class LiveCitadelSettingsTest {
             assertEquals(7, f.citadelTypes.level(target))
             assertEquals(Key("minecraft", "diamond"), f.citadelTypes.itemKey(target))
             val saves = f.backend.saves
-            assertTrue(info(f).any { it.contains("80.0 / 50.0") })
+            assertEquals(80.0, f.module.health.currentHealth(target))
+            assertTrue(info(f).any { it.contains("50.0 / 50.0") })
+            assertEquals(80.0, f.health())
+            assertEquals(80.0, f.module.health.currentHealth(target))
             f.manager.saveAll().join()
             assertEquals(saves, f.backend.saves)
 
@@ -130,6 +133,7 @@ class LiveCitadelSettingsTest {
             assertEquals(80.0, f.health())
             assertEquals(ActionResult.SUCCESS, damage(f, 1.0))
             assertEquals(49.0, f.health())
+            assertTrue(info(f).any { it.contains("49.0 / 50.0") })
         }
     }
 
