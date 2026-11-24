@@ -50,7 +50,7 @@ class OwnerlessCitadelTest {
                 val materials = f.callbackMaterials { materialCalls++ }
                 val request = f.action(kind)
                 val (service, direct) = f.replaceService(kind, materials, request)
-                if (grant) f.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<ActionData> {
+                if (grant) f.module.actions.registerValidator(object : ActionValidator<ActionData> {
                     override val actionClass = ActionData::class.java
                     override fun validate(action: ActionData) = ActionValidator.Result.Success
                 })
@@ -147,7 +147,7 @@ class OwnerlessCitadelTest {
         installer.held, block(), BlockFace.UP, EquipmentSlot.HAND)
 
     private fun PaperTestFixture.observe() = mutableListOf<ActionData>().also { notifications ->
-        module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+        module.actions.registerHandler(object : ActionHandler<ActionData> {
             override val actionClass = ActionData::class.java
             override fun handle(action: ActionData) { notifications.add(action) }
         })

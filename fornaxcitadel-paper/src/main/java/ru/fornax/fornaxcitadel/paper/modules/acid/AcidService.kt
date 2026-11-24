@@ -10,6 +10,7 @@ import ru.fornax.fornaxcitadel.core.citadel.isOwnerOrUnowned
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
@@ -32,13 +33,13 @@ import java.util.logging.Level
 class AcidService(
     private val plugin: Plugin,
     private val module: CitadelModule,
+    private val manager: ComponentManager,
     private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry,
     private val placement: MaterialPlacementService,
     private val breaking: PaperBreakingService,
     val registry: AcidRegistry
 ) : LifecycleService {
-    private val manager = module.actions.componentManager
     private var enabled = false
     private var busy = false
     private val scopedActions = Collections.newSetFromMap(IdentityHashMap<AcidDestroyAction, Boolean>())
@@ -56,12 +57,12 @@ class AcidService(
     override fun enable() {
         if (enabled) return
         module.health.maturation.registerMultiplier(multiplier)
-        module.actions.validatorCoordinator.registerValidator(validator)
+        module.actions.registerValidator(validator)
         enabled = true
     }
 
     override fun disable() {
-        module.actions.validatorCoordinator.unregisterValidator(validator)
+        module.actions.unregisterValidator(validator)
         module.health.maturation.unregisterMultiplier(multiplier)
         scopedActions.clear()
         enabled = false

@@ -32,7 +32,6 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperRepairServiceTest {
@@ -78,7 +77,7 @@ class PaperRepairServiceTest {
                 fixture.installer.permissions.remove("fornaxcitadel.place")
                 val remaining = amount - if (mode == GameMode.CREATIVE) 0 else 1
                 var completed = 0
-                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<RepairAction> {
+                fixture.module.actions.registerHandler(object : ActionHandler<RepairAction> {
                     override val actionClass = RepairAction::class.java
                     override fun handle(action: RepairAction) {
                         assertEquals(100.0, fixture.health())
@@ -154,14 +153,14 @@ class PaperRepairServiceTest {
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
             assertEquals(10.0, fixture.health())
             assertEquals(2, fixture.stranger.held.amount)
-            fixture.module.actions.validatorCoordinator.unregisterValidator(veto)
+            fixture.module.actions.unregisterValidator(veto)
             fixture.stranger.permissions.remove("fornaxcitadel.repair")
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
             fixture.stranger.permissions.add("fornaxcitadel.repair")
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(stranger))
             assertEquals(100.0, fixture.health())
             assertEquals(1, fixture.stranger.held.amount)
-            fixture.module.actions.validatorCoordinator.unregisterValidator(grant)
+            fixture.module.actions.unregisterValidator(grant)
 
             fixture.damage()
             val owner = RepairAction(ActionContext(fixture.stranger.id, PlayerSource(fixture.installer.player)), fixture.position)
@@ -219,7 +218,7 @@ class PaperRepairServiceTest {
                     "chunk" -> fixture.worldChunkLoaded = false
                 }
                 var completed = 0
-                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<RepairAction> {
+                fixture.module.actions.registerHandler(object : ActionHandler<RepairAction> {
                     override val actionClass = RepairAction::class.java
                     override fun handle(action: RepairAction) { completed++ }
                 })
@@ -329,15 +328,15 @@ class PaperRepairServiceTest {
             fixture.damage()
             fixture.installer.held = fixture.reinforcementStack()
             val action = fixture.action()
-            assertSame(ActionValidator.Result.Success, fixture.module.actions.validatorCoordinator.validate(action))
+            assertTrue(fixture.module.actions.isAllowed(action))
             val grant = fixture.validate { ActionValidator.Result.Success }
             repeat(2) { fixture.repairService.disable() }
-            assertSame(ActionValidator.Result.Success, fixture.module.actions.validatorCoordinator.validate(action))
+            assertTrue(fixture.module.actions.isAllowed(action))
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
             repeat(2) { fixture.repairService.enable() }
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
             assertEquals(1, fixture.installer.held.amount)
-            assertTrue(fixture.module.actions.validatorCoordinator.unregisterValidator(grant))
+            assertTrue(fixture.module.actions.unregisterValidator(grant))
         }
     }
 
@@ -376,5 +375,5 @@ class PaperRepairServiceTest {
         object : ActionValidator<RepairAction> {
             override val actionClass = RepairAction::class.java
             override fun validate(action: RepairAction) = check(action)
-        }.also(module.actions.validatorCoordinator::registerValidator)
+        }.also(module.actions::registerValidator)
 }

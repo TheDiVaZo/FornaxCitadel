@@ -5,13 +5,14 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
-import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import java.time.Clock
@@ -32,10 +33,11 @@ internal class HealthFixture(
     val types = TypeManager()
     val storage = MemoryStorage(if (loaded) ChunkCord(WXZCord(WORLD, 0, 0)) else null)
     val manager = ComponentManager(storage, types)
-    val actions = ActionManager(manager).apply {
-        actionMetaRegistry.register(DamageAction.KEY, ActionMetaRegistry.ActionMeta(false))
+    val citadels = CitadelFacade(manager)
+    val actions = ActionManager(citadels).apply {
+        registerActionMeta(DamageAction.KEY, ActionMeta(false))
     }
-    val service = HealthService(actions, RemoveService(actions), clock)
+    val service = HealthService(actions, RemoveService(actions, citadels, manager), citadels, manager, clock)
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)
     val citadel: CitadelHandle get() = reference()
 

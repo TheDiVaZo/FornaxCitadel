@@ -28,20 +28,20 @@ class ActionRegistration<T : ActionData>(
         private set
 
     override fun enable() {
-        actions.processorCoordinator.registerProcessor(processor)
+        actions.registerProcessor(processor)
         try {
-            validators.forEach(actions.validatorCoordinator::registerValidator)
+            validators.forEach(actions::registerValidator)
             isEnabled = true
         } catch (failure: Throwable) {
-            validators.asReversed().forEach(actions.validatorCoordinator::unregisterValidator)
-            actions.processorCoordinator.unregisterProcessor(processor)
+            validators.asReversed().forEach(actions::unregisterValidator)
+            actions.unregisterProcessor(processor)
             throw failure
         }
     }
 
     override fun disable() {
-        validators.asReversed().forEach(actions.validatorCoordinator::unregisterValidator)
-        actions.processorCoordinator.unregisterProcessor(processor)
+        validators.asReversed().forEach(actions::unregisterValidator)
+        actions.unregisterProcessor(processor)
         isEnabled = false
     }
 }

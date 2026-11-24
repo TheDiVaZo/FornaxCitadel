@@ -73,7 +73,7 @@ class MultipartReinforcementTest {
             val (lower, upper) = fixture.door()
             val source = upper.testPosition()
             val observed = mutableListOf<CitadelPosition>()
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result {
                     observed.add(action.position)
@@ -210,7 +210,7 @@ class MultipartReinforcementTest {
                 val (lower, upper) = fixture.door()
                 val handle = fixture.placeExact(lower)
                 var hits = 0
-                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         hits++

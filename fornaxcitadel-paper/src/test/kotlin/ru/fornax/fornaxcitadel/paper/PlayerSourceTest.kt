@@ -102,7 +102,7 @@ class PlayerSourceTest {
 
     private fun PaperTestFixture.captureActions(): List<ActionData> {
         val observed = mutableListOf<ActionData>()
-        module.actions.validatorCoordinator.registerValidator(object : ActionValidator<ActionData> {
+        module.actions.registerValidator(object : ActionValidator<ActionData> {
             override val actionClass = ActionData::class.java
             override fun validate(action: ActionData): ActionValidator.Result {
                 observed.add(action)

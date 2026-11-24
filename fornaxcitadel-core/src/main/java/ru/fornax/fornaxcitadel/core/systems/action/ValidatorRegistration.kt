@@ -9,10 +9,10 @@ class ValidatorRegistration(
     private val validator: ActionValidator<*>
 ) : LifecycleService {
     override fun enable() {
-        actions.validatorCoordinator.registerValidator(validator)
+        actions.registerValidator(validator)
     }
 
     override fun disable() {
-        actions.validatorCoordinator.unregisterValidator(validator)
+        actions.unregisterValidator(validator)
     }
 }

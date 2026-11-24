@@ -32,7 +32,7 @@ class PaperBreakingListenerTest {
             var modifierCalls = 0
             fixture.playerDamage.register(PlayerDamageModifier { _, _, current -> modifierCalls++; current * 2.0 })
             val sourceDamage = mutableListOf<Double>()
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result {
                     sourceDamage.add(action.damage)
@@ -66,7 +66,7 @@ class PaperBreakingListenerTest {
     @Test
     fun `explicit removal of damage protected reinforcement preserves the physical block`() {
         val fixture = PaperTestFixture(permissions = true)
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
         })
@@ -82,7 +82,7 @@ class PaperBreakingListenerTest {
 
         assertTrue(breaking.isCancelled)
         assertEquals(100.0, fixture.health())
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
         })
@@ -202,7 +202,7 @@ class PaperBreakingListenerTest {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.place()
             fixture.playerDamage.register(PlayerDamageModifier { _, _, _ -> 100.0 })
-            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+            fixture.module.actions.registerHandler(object : ActionHandler<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun handle(action: DamageAction) { fixture.material(Material.AIR) }
             })
@@ -235,7 +235,7 @@ class PaperBreakingListenerTest {
         fixture.place()
         val event = BlockBreakEvent(fixture.block(), fixture.stranger.player)
         var cancelledDuringValidation: Boolean? = null
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
 
             override fun validate(action: DamageAction): ActionValidator.Result {

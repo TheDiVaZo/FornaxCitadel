@@ -112,7 +112,7 @@ class AcidServiceTest {
             source.editComponent(Maturing::class.java) { it.startedAtMillis = startedAt }
             assertFalse(f.module.health.maturation.isMature(source))
             f.acidService!!.disable()
-            val disabled = AcidService(f.plugin, f.module, f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService,
+            val disabled = AcidService(f.plugin, f.module, f.manager, f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService,
                 AcidRegistry(AcidSettings(enabled = false)))
             disabled.enable()
             try {
@@ -289,7 +289,7 @@ class AcidServiceTest {
         high.editComponent(CitadelKind::class.java) { it.definitionKey = Key("fornaxcitadel", "reinforced_heavy") }
         val veto = f.block().getRelative(BlockFace.NORTH)
         reinforce(f, veto)
-        f.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        f.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = if (action.position == veto.testPosition())
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
@@ -421,13 +421,13 @@ class AcidServiceTest {
         val first = reinforce(f, f.block().getRelative(BlockFace.UP))
         val second = reinforce(f, f.block().getRelative(BlockFace.DOWN))
         var veto = false
-        f.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        f.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = if (veto && action.position == first.position)
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
         })
         val notified = mutableListOf<ru.fornax.fornaxcitadel.core.citadel.CitadelPosition>()
-        f.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+        f.module.actions.registerHandler(object : ActionHandler<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun handle(action: DamageAction) { notified.add(action.position) }
         })
@@ -560,7 +560,7 @@ class AcidServiceTest {
         val notified = mutableListOf<AcidDestroyAction>()
         val remaining = mutableListOf<List<Boolean>>()
         val physical = mutableListOf<Boolean>()
-        f.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+        f.module.actions.registerHandler(object : ActionHandler<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun handle(action: DamageAction) {
                 if (action is AcidDestroyAction) {
@@ -616,7 +616,7 @@ class AcidServiceTest {
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.manager.loadChunk(f.worldId, 0, 0).join()
             val settings = AcidSettings(types = listOf(AcidType("changed", Material.GOLD_BLOCK, 2, 1.0)))
-            val service = AcidService(f.plugin, f.module, f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService, AcidRegistry(settings))
+            val service = AcidService(f.plugin, f.module, f.manager, f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService, AcidRegistry(settings))
             service.enable()
             try {
                 val info = assertIs<AcidResult.Information>(service.inspect(f.installer.player, f.block()))
@@ -704,7 +704,7 @@ class AcidServiceTest {
     }
 
     private fun PaperTestFixture.vetoAcid(predicate: (AcidDestroyAction) -> Boolean) {
-        module.actions.validatorCoordinator.registerValidator(object : ActionValidator<AcidDestroyAction> {
+        module.actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
             override val actionClass = AcidDestroyAction::class.java
             override fun validate(action: AcidDestroyAction) = if (predicate(action))
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
@@ -714,7 +714,7 @@ class AcidServiceTest {
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
         val original = assertNotNull(f.acidService)
         original.disable()
-        val service = AcidService(f.plugin, f.module, f.citadelTypes, materials, f.materialPlacement,
+        val service = AcidService(f.plugin, f.module, f.manager, f.citadelTypes, materials, f.materialPlacement,
             f.breakingService, original.registry)
         service.enable()
         try { body(service) } finally { service.disable() }

@@ -137,7 +137,7 @@ class ExplosionDamageModelTest {
             ExplosionSource.fromBlock(blockState, 5.0f)
         )
         val observed = mutableListOf<DamageAction>()
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 observed.add(action)

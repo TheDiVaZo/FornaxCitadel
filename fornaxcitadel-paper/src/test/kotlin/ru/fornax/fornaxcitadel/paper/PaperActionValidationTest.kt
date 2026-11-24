@@ -145,19 +145,19 @@ class PaperActionValidationTest {
     }
 
     private class Probe(fixture: PaperTestFixture) {
-        val actions = ActionManager(fixture.manager)
+        val actions = ActionManager(fixture.module.citadels)
         val validator = PaperActionStateValidator(fixture.server)
         val service = ValidatorRegistration(actions, validator)
         var processorCalls = 0
             private set
 
         init {
-            actions.validatorCoordinator.registerValidator(object : ActionValidator<ActionData> {
+            actions.registerValidator(object : ActionValidator<ActionData> {
                 override val actionClass = ActionData::class.java
                 override fun validate(action: ActionData) = ActionValidator.Result.Success
             })
             for (key in listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY, DismantleAction.KEY)) {
-                actions.processorCoordinator.registerProcessor(object : ActionProcessor<ActionData>() {
+                actions.registerProcessor(object : ActionProcessor<ActionData>() {
                     override val actionClass = ActionData::class.java
                     override val actionKey = key
                     override fun execute(action: ActionData): ActionResult {

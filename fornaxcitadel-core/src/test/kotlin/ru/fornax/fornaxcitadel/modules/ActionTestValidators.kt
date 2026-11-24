@@ -2,7 +2,8 @@ package ru.fornax.fornaxcitadel.modules
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -12,9 +13,10 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 
 /** Installs one test rule directly in the action pipeline, without a service policy registry. */
 internal fun ActionManager.validateDamage(
+    citadels: ReadableCitadelFacade,
     definitionKey: Key? = null,
     mode: DamageAction.Mode = DamageAction.Mode.DAMAGE,
-    allowed: (ActionContext, CitadelHandle) -> Boolean = { _, _ -> true }
+    allowed: (ActionContext, ReadableHandle) -> Boolean = { _, _ -> true }
 ): ActionValidator<DamageAction> {
     val validator = object : ActionValidator<DamageAction> {
         override val actionClass = DamageAction::class.java
@@ -33,12 +35,13 @@ internal fun ActionManager.validateDamage(
             else ActionValidator.Result.Rejected
         }
     }
-    validatorCoordinator.registerValidator(validator)
+    registerValidator(validator)
     return validator
 }
 
 internal fun ActionManager.validateRemoval(
-    allowed: (ActionContext, CitadelHandle) -> Boolean = { _, _ -> true }
+    citadels: ReadableCitadelFacade,
+    allowed: (ActionContext, ReadableHandle) -> Boolean = { _, _ -> true }
 ): ActionValidator<RemoveAction> {
     val validator = object : ActionValidator<RemoveAction> {
         override val actionClass = RemoveAction::class.java
@@ -53,6 +56,6 @@ internal fun ActionManager.validateRemoval(
             else ActionValidator.Result.Rejected
         }
     }
-    validatorCoordinator.registerValidator(validator)
+    registerValidator(validator)
     return validator
 }

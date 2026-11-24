@@ -25,7 +25,7 @@ class HealthServiceTest {
         val fixture = HealthFixture(createInitial = false)
         val health = Health(10.0)
         val citadel = fixture.create(health = health)
-        fixture.actions.validateDamage(HealthFixture.TYPE)
+        fixture.actions.validateDamage(fixture.citadels, HealthFixture.TYPE)
         fixture.service.enable()
         fixture.chunk.resetDirty()
 
@@ -40,10 +40,10 @@ class HealthServiceTest {
     @Test
     fun `authorized destruction bypasses numeric modifiers and ordinary damage validators`() {
         val fixture = HealthFixture(createInitial = false)
-        fixture.actions.validateDamage(mode = DamageAction.Mode.DESTROY)
+        fixture.actions.validateDamage(fixture.citadels, mode = DamageAction.Mode.DESTROY)
         val health = Health(40.0)
         val citadel = fixture.create(health = health, startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
-        fixture.actions.validateDamage(HealthFixture.TYPE) { _, _ -> false }
+        fixture.actions.validateDamage(fixture.citadels, HealthFixture.TYPE) { _, _ -> false }
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("DESTROY must bypass modifiers") })
         fixture.service.enable()
 
@@ -67,7 +67,7 @@ class HealthServiceTest {
             observed.add(actualContext to amount)
             amount
         })
-        fixture.actions.validateDamage(HealthFixture.TYPE)
+        fixture.actions.validateDamage(fixture.citadels, HealthFixture.TYPE)
         fixture.service.enable()
 
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(context, external.position, 5.0)))
@@ -219,7 +219,7 @@ class HealthServiceTest {
         val fixture = HealthFixture(createInitial = false)
         val health = Health(20.0)
         val citadel = fixture.create(health = health)
-        fixture.actions.validateDamage(HealthFixture.TYPE) { _, _ -> false }
+        fixture.actions.validateDamage(fixture.citadels, HealthFixture.TYPE) { _, _ -> false }
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("Denied actions must not calculate damage") })
         fixture.service.enable()
         fixture.chunk.resetDirty()
@@ -253,7 +253,7 @@ class HealthServiceTest {
         val component = Health(20.0)
         val citadel = fixture.create(health = component)
         var handled = 0
-        fixture.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+        fixture.actions.registerHandler(object : ActionHandler<ActionData> {
             override val actionClass = ActionData::class.java
             override fun handle(action: ActionData) { handled++ }
         })

@@ -7,6 +7,7 @@ import org.bukkit.event.HandlerList
 import org.bukkit.block.data.type.Bed
 import org.bukkit.block.data.type.Door
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import org.bukkit.plugin.Plugin
@@ -29,11 +30,11 @@ import java.util.logging.Level
 class PaperBreakingService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
+    private val manager: ComponentManager,
     private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService(),
     private val messages: PaperMessages = PaperMessages.defaults(),
     private val creativeModeEnabled: Boolean = true
 ) : LifecycleService {
-    private val manager = module.actions.componentManager
     private val listener = PaperBreakingListener(this)
     private var enabled = false
 

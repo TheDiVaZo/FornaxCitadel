@@ -191,7 +191,7 @@ class ChestReinforcementTest {
                 val selected = (if (selectLeft) left else right).testPosition()
                 val source = (if (selectLeft) right else left).testPosition()
                 val observed = mutableListOf<CitadelPosition>()
-                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         observed.add(action.position)
@@ -253,7 +253,7 @@ class ChestReinforcementTest {
                 val other = if (selectLeft) right else left
                 val handle = fixture.placeExact(selected)
                 var hits = 0
-                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         hits++

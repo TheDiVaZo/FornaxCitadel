@@ -256,7 +256,7 @@ class PaperChunkPersistenceTest {
             module.registerDefinition(
                 CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(module.health)))
             )
-            module.actions.validatorCoordinator.registerValidator(
+            module.actions.registerValidator(
                 PaperDamageValidator(module.citadels, paper.citadelTypes, true))
             module.enable()
         }

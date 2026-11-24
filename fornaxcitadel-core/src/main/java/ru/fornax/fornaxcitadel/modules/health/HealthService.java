@@ -6,6 +6,7 @@ import org.jetbrains.annotations.Nullable;
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind;
 import ru.fornax.fornaxcitadel.core.citadel.ReadableCitadelKind;
 import ru.fornax.fornaxcitadel.core.facade.ActionManager;
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager;
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle;
@@ -30,7 +31,7 @@ import java.util.Objects;
  * Direct calls do not notify action handlers.
  */
 public final class HealthService implements LifecycleService {
-    private final ActionManager actions;
+    private final CitadelFacade citadels;
     private final ComponentManager componentManager;
     private final RemoveService removeService;
     private final MaturationService maturation;
@@ -38,16 +39,18 @@ public final class HealthService implements LifecycleService {
     private List<DamageModifier> modifiers = List.of();
     private final ActionRegistration<DamageAction> registration;
 
-    public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService) {
-        this(actions, removeService, Clock.systemUTC());
+    public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
+                         @NotNull CitadelFacade citadels, @NotNull ComponentManager componentManager) {
+        this(actions, removeService, citadels, componentManager, Clock.systemUTC());
     }
 
     public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
+                         @NotNull CitadelFacade citadels, @NotNull ComponentManager componentManager,
                          @NotNull Clock clock) {
-        this.actions = Objects.requireNonNull(actions, "actions");
+        this.citadels = Objects.requireNonNull(citadels, "citadels");
+        this.componentManager = Objects.requireNonNull(componentManager, "componentManager");
         this.registration = new ActionRegistration<>(actions, new DamageProcessor(this),
-                List.of(new ExistingCitadelValidator<>(DamageAction.class, actions.getCitadels())));
-        this.componentManager = actions.getComponentManager();
+                List.of(new ExistingCitadelValidator<>(DamageAction.class, citadels)));
         this.removeService = Objects.requireNonNull(removeService, "removeService");
         componentManager.registerComponent(Health.KEY, Health.class);
         componentManager.registerComponent(Maturing.KEY, Maturing.class);
@@ -190,7 +193,7 @@ public final class HealthService implements LifecycleService {
     @NotNull
     protected ActionResult onDamage(@NotNull DamageAction action) {
         CitadelHandle citadel = Objects.requireNonNull(
-                actions.getCitadels().findProtecting(action.getPosition()), "Validated damage target is unavailable");
+                citadels.findProtecting(action.getPosition()), "Validated damage target is unavailable");
         if (action.getMode() == DamageAction.Mode.DESTROY) {
             return removeService.remove(citadel);
         }

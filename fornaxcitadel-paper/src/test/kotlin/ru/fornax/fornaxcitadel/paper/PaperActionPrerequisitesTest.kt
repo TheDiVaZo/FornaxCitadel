@@ -3,13 +3,13 @@ package ru.fornax.fornaxcitadel.paper
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
-import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
-import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator.Result
-import ru.fornax.fornaxcitadel.core.systems.action.ValidatorCoordinator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
@@ -30,11 +30,11 @@ class PaperActionPrerequisitesTest {
     @Test
     fun `typed prerequisites reject invalid targets without authorizing or changing valid targets`() {
         PaperTestFixture(resolveMaterials = false).use { f ->
-            val validators = f.prerequisites()
+            val actions = f.actionsWithPrerequisites()
             val invalid = listOf(f.position, f.position.copy(x = 16), f.position.copy(x = 524288),
                 f.position.copy(y = -65))
             for (position in invalid) for (kind in KINDS) {
-                assertSame(Result.Rejected, validators.validate(f.action(kind, position)), "$kind at $position")
+                assertFalse(actions.isAllowed(f.action(kind, position)), "$kind at $position")
             }
             assertFalse(f.manager.isChunkLoaded(f.worldId, 1, 0))
             f.place()
@@ -44,11 +44,12 @@ class PaperActionPrerequisitesTest {
             f.manager.saveAll().join()
             val saves = f.backend.saves
             val lookups = f.blockLookups
-            for (kind in KINDS) {
-                assertSame(Result.Neutral, validators.validate(f.action(kind)), kind)
+            val unrelated = ActionData(Key("test", "unrelated"), f.worldId, Int.MAX_VALUE, Int.MIN_VALUE, 0)
+            for (action in KINDS.map { f.action(it) } + unrelated) {
+                assertTrue(actions.isAllowed(action), action.type.toString())
+                actions.registerActionMeta(action.type, ActionMeta(false))
+                assertFalse(actions.isAllowed(action), action.type.toString())
             }
-            assertSame(Result.Neutral, validators.validate(ActionData(Key("test", "unrelated"),
-                f.worldId, Int.MAX_VALUE, Int.MIN_VALUE, 0)))
             assertTrue(target.isCurrent)
             assertNull(target.getComponent(CitadelOwner::class.java))
             assertNull(target.getComponent(Health::class.java))
@@ -64,15 +65,17 @@ class PaperActionPrerequisitesTest {
     fun `prerequisite rejection overrides earlier approval including unloaded stored data`() {
         PaperTestFixture(resolveMaterials = false).use { f ->
             f.place()
-            val validators = f.prerequisites(approve = true)
+            val actions = f.actionsWithPrerequisites(approve = true)
             for (kind in KINDS) {
-                assertSame(Result.Success, validators.validate(f.action(kind)), kind)
-                assertSame(Result.Rejected, validators.validate(f.action(kind, f.position.copy(x = 3))), kind)
-                assertSame(Result.Rejected, validators.validate(f.action(kind, f.position.copy(y = -65))), kind)
+                val action = f.action(kind)
+                actions.registerActionMeta(action.type, ActionMeta(false))
+                assertTrue(actions.isAllowed(action), kind)
+                assertFalse(actions.isAllowed(f.action(kind, f.position.copy(x = 3))), kind)
+                assertFalse(actions.isAllowed(f.action(kind, f.position.copy(y = -65))), kind)
             }
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             assertTrue(f.world.isChunkLoaded(0, 0))
-            for (kind in KINDS) assertSame(Result.Rejected, validators.validate(f.action(kind)), kind)
+            for (kind in KINDS) assertFalse(actions.isAllowed(f.action(kind)), kind)
             assertFalse(f.manager.isChunkLoaded(f.worldId, 0, 0))
         }
     }
@@ -96,32 +99,35 @@ class PaperActionPrerequisitesTest {
     fun `service prerequisites evaluate queued target availability when drained`() {
         for (kind in KINDS) PaperTestFixture(resolveMaterials = false).use { f ->
             f.place()
-            val action = f.action(kind)
-            val executed = mutableListOf<ActionData>()
-            val processors = f.module.actions.processorCoordinator
-            processors.unregisterProcessor(assertNotNull(processors.getProcessor(action.type)))
-            processors.registerProcessor(object : ActionProcessor<ActionData>() {
+            val itemType = if (kind == "upgrade") PaperCitadelTypes.MATURING else PaperCitadelTypes.REINFORCED
+            val action = if (kind == "upgrade") UpgradeAction(f.context(f.installer), f.position, itemType) else f.action(kind)
+            f.installer.held = f.reinforcementStack(itemType)
+            val completed = mutableListOf<ActionData>()
+            f.module.actions.registerHandler(object : ActionHandler<ActionData> {
                 override val actionClass = ActionData::class.java
-                override val actionKey = action.type
-                override fun execute(action: ActionData): ActionResult {
-                    executed.add(action)
-                    return ActionResult.SUCCESS
+                override fun handle(action: ActionData) {
+                    completed.add(action)
                 }
             })
-            f.module.actions.validatorCoordinator.registerValidator(approval())
+            f.module.actions.registerValidator(approval())
             f.module.actions.post(action)
             f.manager.removeCitadel(assertNotNull(f.module.citadels.findProtecting(f.position)))
             assertEquals(1, f.module.actions.drainPosted(), kind)
-            assertTrue(executed.isEmpty(), kind)
+            assertTrue(completed.isEmpty(), kind)
 
             f.module.actions.post(action)
             f.place()
+            completed.clear()
+            if (kind == "repair") {
+                val target = assertNotNull(f.module.citadels.findProtecting(f.position))
+                target.editComponent(Health::class.java) { it.health = 5.0 }
+            }
             assertEquals(1, f.module.actions.drainPosted(), kind)
-            assertEquals(listOf(action), executed, kind)
+            assertEquals(listOf(action), completed, kind)
         }
     }
 
-    private fun PaperTestFixture.prerequisites(approve: Boolean = false) = ValidatorCoordinator().apply {
+    private fun PaperTestFixture.actionsWithPrerequisites(approve: Boolean = false) = ActionManager(module.citadels).apply {
         if (approve) registerValidator(approval())
         registerValidator(ExistingCitadelValidator(RepairAction::class.java, module.citadels))
         registerValidator(UpgradeActionValidator(module.citadels, module.definitions))

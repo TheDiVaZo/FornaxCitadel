@@ -29,7 +29,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperDismantleServiceTest {
@@ -37,12 +36,12 @@ class PaperDismantleServiceTest {
     fun `ownership approves the source player while nonowners and administrators need another authorizer`() {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             fixture.place()
-            val coordinator = fixture.module.actions.validatorCoordinator
+            val actions = fixture.module.actions
             val owner = DismantleAction(ActionContext(fixture.stranger.id, PlayerSource(fixture.installer.player)), fixture.position)
             val stranger = fixture.action(fixture.stranger)
             fixture.stranger.permissions.add("fornaxcitadel.admin")
-            assertSame(ActionValidator.Result.Success, coordinator.validate(owner))
-            assertSame(ActionValidator.Result.Neutral, coordinator.validate(stranger))
+            assertTrue(actions.isAllowed(owner))
+            assertFalse(actions.isAllowed(stranger))
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
             assertTrue(fixture.playerBreaks.isEmpty())
 
@@ -50,13 +49,13 @@ class PaperDismantleServiceTest {
             val veto = fixture.validate { ActionValidator.Result.Rejected }
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
             assertTrue(fixture.playerBreaks.isEmpty())
-            coordinator.unregisterValidator(veto)
+            actions.unregisterValidator(veto)
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(stranger))
             assertTrue(fixture.playerBreaks.isEmpty())
             assertNull(fixture.module.citadels.findProtecting(fixture.position))
             assertEquals(Material.STONE, fixture.block().type)
             assertEquals(1, fixture.droppedItems.size)
-            coordinator.unregisterValidator(grant)
+            actions.unregisterValidator(grant)
         }
     }
 
@@ -66,7 +65,7 @@ class PaperDismantleServiceTest {
             fixture.place()
             val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
             val completed = mutableListOf<DismantleAction>()
-            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DismantleAction> {
+            fixture.module.actions.registerHandler(object : ActionHandler<DismantleAction> {
                 override val actionClass = DismantleAction::class.java
                 override fun handle(action: DismantleAction) {
                     assertFalse(original.isCurrent)
@@ -75,7 +74,7 @@ class PaperDismantleServiceTest {
                     completed.add(action)
                 }
             })
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result = error("Dismantle reentered damage")
             })
@@ -246,18 +245,18 @@ class PaperDismantleServiceTest {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.place()
             val action = fixture.action()
-            val coordinator = fixture.module.actions.validatorCoordinator
-            assertSame(ActionValidator.Result.Success, coordinator.validate(action))
+            val actions = fixture.module.actions
+            assertTrue(actions.isAllowed(action))
             val grant = fixture.validate { ActionValidator.Result.Success }
             fixture.dismantleService.disable()
             fixture.dismantleService.disable()
-            assertSame(ActionValidator.Result.Success, coordinator.validate(action))
+            assertTrue(actions.isAllowed(action))
             assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
             fixture.dismantleService.enable()
             fixture.dismantleService.enable()
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
             assertEquals(Material.IRON_INGOT, fixture.droppedItems.single().second.type)
-            assertTrue(coordinator.unregisterValidator(grant))
+            assertTrue(actions.unregisterValidator(grant))
         }
     }
 
@@ -274,5 +273,5 @@ class PaperDismantleServiceTest {
         object : ActionValidator<DismantleAction> {
             override val actionClass = DismantleAction::class.java
             override fun validate(action: DismantleAction) = check(action)
-        }.also(module.actions.validatorCoordinator::registerValidator)
+        }.also(module.actions::registerValidator)
 }

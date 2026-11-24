@@ -117,8 +117,12 @@ class ComponentManagerTest {
         )
         for (type in readTypes) {
             assertTrue(type.methods.none { it.name in mutators }, "Read contract exposes a mutator: ${type.name}")
-            assertTrue(type.methods.none { !it.isSynthetic && it.returnType == ComponentManager::class.java },
-                "Read contract exposes writable storage to Java: ${type.name}")
+        }
+        for (type in readTypes + listOf(CitadelFacade::class.java, CitadelHandle::class.java)) {
+            assertTrue(type.methods.none { it.returnType == ComponentManager::class.java },
+                "Public method exposes writable storage: ${type.name}")
+            assertTrue(type.fields.none { it.type == ComponentManager::class.java },
+                "Public field exposes writable storage: ${type.name}")
         }
         assertEquals(ReadableComponent::class.java,
             ReadableHandle::class.java.getMethod("getComponent", Class::class.java).returnType)

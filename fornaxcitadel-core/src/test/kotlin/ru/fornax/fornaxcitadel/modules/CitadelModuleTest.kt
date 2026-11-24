@@ -7,7 +7,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -73,7 +73,7 @@ class CitadelModuleTest {
         var observedKind: Key? = null
         var observedHealth: Double? = null
         var observedStart: Long? = null
-        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+        fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
             override val actionClass = PlaceAction::class.java
             override fun handle(action: PlaceAction) {
                 val handle = fixture.find(action.position) ?: return
@@ -165,7 +165,7 @@ class CitadelModuleTest {
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         var removalValidationCalls = 0
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<RemoveAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<RemoveAction> {
             override val actionClass = RemoveAction::class.java
             override fun validate(action: RemoveAction): ActionValidator.Result {
                 removalValidationCalls++
@@ -436,7 +436,7 @@ class CitadelModuleTest {
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         val validatedContexts = mutableListOf<ActionContext>()
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 validatedContexts.add(action.context)
@@ -586,11 +586,11 @@ class CitadelModuleTest {
         fixture.load()
         var laterPlaced = 0
         var laterRemoved = 0
-        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+        fixture.module.actions.registerHandler(object : ActionHandler<ActionData> {
             override val actionClass = ActionData::class.java
             override fun handle(action: ActionData) = error("Broken action handler")
         })
-        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+        fixture.module.actions.registerHandler(object : ActionHandler<ActionData> {
             override val actionClass = ActionData::class.java
             override fun handle(action: ActionData) {
                 when (action) {
@@ -617,7 +617,7 @@ class CitadelModuleTest {
         var nestedExecutionFailure: IllegalStateException? = null
         var nestedDrainFailure: IllegalStateException? = null
         var laterObserverSawEntity = false
-        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+        fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
             override val actionClass = PlaceAction::class.java
             override fun handle(action: PlaceAction) {
                 val position = action.position
@@ -634,7 +634,7 @@ class CitadelModuleTest {
                 fixture.module.actions.post(RemoveAction(PLACER_CONTEXT, position))
             }
         })
-        fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+        fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
             override val actionClass = PlaceAction::class.java
             override fun handle(action: PlaceAction) {
                 laterObserverSawEntity = fixture.find(action.position) != null
@@ -706,7 +706,7 @@ class CitadelModuleTest {
             executed.add(action.number)
             ActionResult.SUCCESS
         }
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<ProbeAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<ProbeAction> {
             override val actionClass = ProbeAction::class.java
             override fun validate(action: ProbeAction): ActionValidator.Result {
                 check(action.number != 1) { "Validator failure" }
@@ -782,8 +782,8 @@ class CitadelModuleTest {
     }
 
     private class Fixture(
-        authorizeRemoval: ((ActionContext, CitadelHandle) -> Boolean)? = null,
-        authorizeDestruction: ((ActionContext, CitadelHandle) -> Boolean)? = null
+        authorizeRemoval: ((ActionContext, ReadableHandle) -> Boolean)? = null,
+        authorizeDestruction: ((ActionContext, ReadableHandle) -> Boolean)? = null
     ) {
         val types = TypeManager()
         val mapper = ChunkCordSnapshotMapper(types)
@@ -792,8 +792,8 @@ class CitadelModuleTest {
         val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
         val module = CitadelModule(manager, scheduler).apply {
-            authorizeRemoval?.let { actions.validateRemoval(it) }
-            authorizeDestruction?.let { actions.validateDamage(mode = DamageAction.Mode.DESTROY, allowed = it) }
+            authorizeRemoval?.let { actions.validateRemoval(citadels, it) }
+            authorizeDestruction?.let { actions.validateDamage(citadels, mode = DamageAction.Mode.DESTROY, allowed = it) }
             enable()
         }
         val completed = mutableListOf<ActionData>()
@@ -804,7 +804,7 @@ class CitadelModuleTest {
         val damageSawExistingEntity = mutableListOf<Boolean>()
 
         init {
-            module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+            module.actions.registerHandler(object : ActionHandler<ActionData> {
                 override val actionClass = ActionData::class.java
                 override fun handle(action: ActionData) {
                     completed.add(action)
@@ -819,13 +819,13 @@ class CitadelModuleTest {
         fun register(
             key: Key = DEFAULT_KIND,
             maxHealth: Double? = 100.0,
-            authorizeDamage: (ActionContext, CitadelHandle) -> Boolean = { _, _ -> true },
+            authorizeDamage: (ActionContext, ReadableHandle) -> Boolean = { _, _ -> true },
             initializers: List<CitadelInitializer> = emptyList()
         ) {
             maxHealth?.let { module.health.registerDefinition(key, HealthDefinition(it)) }
             val prepared = initializers + HealthInitializer(module.health)
             module.registerDefinition(CitadelDefinition(key, prepared))
-            module.actions.validateDamage(key, allowed = authorizeDamage)
+            module.actions.validateDamage(module.citadels, key, allowed = authorizeDamage)
         }
 
         fun load() { manager.loadChunk(WORLD, 0, 0).join() }
@@ -853,14 +853,14 @@ class CitadelModuleTest {
         fun chunk() = assertNotNull(storage.getIfChunkLoaded(WXZCord(WORLD, 0, 0)))
 
         fun <T : ActionData> reject(type: Class<T>) {
-            module.actions.validatorCoordinator.registerValidator(object : ActionValidator<T> {
+            module.actions.registerValidator(object : ActionValidator<T> {
                 override val actionClass = type
                 override fun validate(action: T) = ActionValidator.Result.Rejected
             })
         }
 
         fun registerProbe(handler: (ProbeAction) -> ActionResult) {
-            module.actions.processorCoordinator.registerProcessor(object : ActionProcessor<ProbeAction>() {
+            module.actions.registerProcessor(object : ActionProcessor<ProbeAction>() {
                 override val actionClass = ProbeAction::class.java
                 override val actionKey = PROBE_KEY
                 override fun execute(action: ProbeAction): ActionResult = handler(action)

@@ -289,7 +289,7 @@ class ComponentManager(
         unavailable: () -> R? = { null },
         action: (ChunkCord, CitadelEntity) -> R
     ): R? {
-        if (handle.manager !== this) return unavailable()
+        if (!handle.belongsTo(this)) return unavailable()
         val chunk = findChunk(handle.world, handle.x, handle.y, handle.z) ?: return unavailable()
         val entity = chunk.getCitadel(handle.x and 15, handle.y, handle.z and 15) ?: return unavailable()
         if (entity.id != handle.runtimeId) return unavailable()

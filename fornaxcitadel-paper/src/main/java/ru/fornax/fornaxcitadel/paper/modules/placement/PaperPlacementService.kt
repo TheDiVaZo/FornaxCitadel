@@ -44,8 +44,8 @@ class PaperPlacementService @JvmOverloads constructor(
     override fun enable() {
         if (enabled) return
         try {
-            module.actions.validatorCoordinator.registerValidator(blockValidator)
-            module.actions.validatorCoordinator.registerValidator(blockListValidator)
+            module.actions.registerValidator(blockValidator)
+            module.actions.registerValidator(blockListValidator)
             plugin.server.pluginManager.registerEvents(listener, plugin)
             enabled = true
         } catch (failure: Throwable) {
@@ -62,8 +62,8 @@ class PaperPlacementService @JvmOverloads constructor(
 
     private fun unregister() {
         HandlerList.unregisterAll(listener)
-        module.actions.validatorCoordinator.unregisterValidator(blockListValidator)
-        module.actions.validatorCoordinator.unregisterValidator(blockValidator)
+        module.actions.unregisterValidator(blockListValidator)
+        module.actions.unregisterValidator(blockValidator)
     }
 
     /**

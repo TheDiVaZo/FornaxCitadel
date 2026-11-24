@@ -8,6 +8,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
@@ -16,7 +17,8 @@ import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
-import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
+import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -54,17 +56,17 @@ class ServiceLifecycleTest {
         val approval = fixture.approveAll()
         val requests = invalidRequests()
         for ((service, request) in fixture.services.zip(requests)) {
-            assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(request))
+            assertTrue(fixture.actions.isAllowed(request))
             repeat(2) { service.enable() }
-            assertEquals(ActionValidator.Result.Rejected, fixture.actions.validatorCoordinator.validate(request))
+            assertFalse(fixture.actions.isAllowed(request))
             assertEquals(ActionResult.DENIED, fixture.actions.execute(request))
             for (other in requests.filter { it !== request }) {
-                assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(other))
+                assertTrue(fixture.actions.isAllowed(other))
             }
             repeat(2) { service.disable() }
-            assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(request))
+            assertTrue(fixture.actions.isAllowed(request))
         }
-        assertTrue(fixture.actions.validatorCoordinator.unregisterValidator(approval))
+        assertTrue(fixture.actions.unregisterValidator(approval))
         assertNull(fixture.find())
     }
 
@@ -81,84 +83,73 @@ class ServiceLifecycleTest {
                 override val actionKey = request.type
                 override fun execute(action: ActionData) = ActionResult.SUCCESS
             }
-            val processors = fixture.actions.processorCoordinator
-            processors.registerProcessor(external)
+            fixture.actions.registerProcessor(external)
             assertFailsWith<IllegalArgumentException> { service.enable() }
-            assertSame(external, processors.getProcessor(request.type))
-            assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(request))
-            service.disable()
-            assertSame(external, processors.getProcessor(request.type))
-            assertTrue(processors.unregisterProcessor(external))
-            service.enable()
-            assertEquals(ActionValidator.Result.Rejected, fixture.actions.validatorCoordinator.validate(request))
-            service.disable()
-            assertEquals(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(request))
-            assertTrue(fixture.actions.validatorCoordinator.unregisterValidator(approval))
-        }
-    }
-
-    @Test
-    fun `repeated core enable restores an externally removed processor and preserves prerequisites`() {
-        for ((index, request) in invalidRequests().withIndex()) {
-            val fixture = Fixture()
-            fixture.prepare()
-            val approval = fixture.approveAll()
-            val service = fixture.services[index]
-            val processors = fixture.actions.processorCoordinator
-            val validators = fixture.actions.validatorCoordinator
-            service.enable()
-            val own = assertNotNull(processors.getProcessor(request.type))
-
-            assertTrue(processors.unregisterProcessor(own))
-            assertEquals(ActionValidator.Result.Rejected, validators.validate(request))
-            service.enable()
-            assertSame(own, processors.getProcessor(request.type))
-            assertEquals(ActionValidator.Result.Rejected, validators.validate(request))
-            assertEquals(ActionResult.DENIED, fixture.actions.execute(request))
-
-            service.disable()
-            assertNull(processors.getProcessor(request.type))
-            assertEquals(ActionValidator.Result.Success, validators.validate(request))
-            assertTrue(validators.unregisterValidator(approval))
-        }
-    }
-
-    @Test
-    fun `repeated core enable rejects a replacement processor without losing existing prerequisites`() {
-        for ((index, request) in invalidRequests().withIndex()) {
-            val fixture = Fixture()
-            fixture.prepare()
-            val approval = fixture.approveAll()
-            val service = fixture.services[index]
-            val processors = fixture.actions.processorCoordinator
-            val validators = fixture.actions.validatorCoordinator
-            service.enable()
-            val own = assertNotNull(processors.getProcessor(request.type))
-            assertTrue(processors.unregisterProcessor(own))
-            var externalExecutions = 0
-            val replacement = object : ActionProcessor<ActionData>() {
-                override val actionClass = ActionData::class.java
-                override val actionKey = request.type
-                override fun execute(action: ActionData): ActionResult {
-                    externalExecutions++
-                    return ActionResult.SUCCESS
-                }
-            }
-            processors.registerProcessor(replacement)
-
-            assertFailsWith<IllegalArgumentException> { service.enable() }
-            assertSame(replacement, processors.getProcessor(request.type))
-            assertEquals(ActionValidator.Result.Rejected, validators.validate(request))
-            assertEquals(ActionResult.DENIED, fixture.actions.execute(request))
-            assertEquals(0, externalExecutions)
-
-            service.disable()
-            assertSame(replacement, processors.getProcessor(request.type))
-            assertEquals(ActionValidator.Result.Success, validators.validate(request))
             assertEquals(ActionResult.SUCCESS, fixture.actions.execute(request))
-            assertEquals(1, externalExecutions)
-            assertTrue(validators.unregisterValidator(approval))
+            assertTrue(fixture.actions.isAllowed(request))
+            service.disable()
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(request))
+            assertTrue(fixture.actions.unregisterProcessor(external))
+            service.enable()
+            assertFalse(fixture.actions.isAllowed(request))
+            service.disable()
+            assertTrue(fixture.actions.isAllowed(request))
+            assertTrue(fixture.actions.unregisterValidator(approval))
         }
+    }
+
+    @Test
+    fun `repeated enable restores the owned processor and preserves the prerequisite`() {
+        val actions = Fixture().actions
+        val own = damageProcessor()
+        val service = ActionRegistration(actions, own, listOf(rejectDamage()))
+        val request = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
+        actions.registerActionMeta(request.type, ActionMeta(true))
+        service.enable()
+
+        assertTrue(actions.unregisterProcessor(own))
+        assertFalse(actions.isAllowed(request))
+        service.enable()
+        assertFalse(actions.isAllowed(request))
+        assertEquals(ActionResult.DENIED, actions.execute(request))
+        assertTrue(actions.unregisterProcessor(own))
+
+        service.disable()
+        assertTrue(actions.isAllowed(request))
+        assertSlotAvailable(actions, request.type)
+    }
+
+    @Test
+    fun `repeated enable rejects a replacement without losing prerequisites or removing it on disable`() {
+        val actions = Fixture().actions
+        val own = damageProcessor()
+        val service = ActionRegistration(actions, own, listOf(rejectDamage()))
+        val request = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
+        actions.registerActionMeta(request.type, ActionMeta(true))
+        service.enable()
+        assertTrue(actions.unregisterProcessor(own))
+        var externalExecutions = 0
+        val replacement = object : ActionProcessor<DamageAction>() {
+            override val actionClass = DamageAction::class.java
+            override val actionKey = DamageAction.KEY
+            override fun execute(action: DamageAction): ActionResult {
+                externalExecutions++
+                return ActionResult.SUCCESS
+            }
+        }
+        actions.registerProcessor(replacement)
+
+        assertFailsWith<IllegalArgumentException> { service.enable() }
+        assertFalse(actions.isAllowed(request))
+        assertEquals(ActionResult.DENIED, actions.execute(request))
+        assertEquals(0, externalExecutions)
+
+        service.disable()
+        assertTrue(actions.isAllowed(request))
+        assertFalse(actions.unregisterProcessor(own))
+        assertEquals(ActionResult.SUCCESS, actions.execute(request))
+        assertEquals(1, externalExecutions)
+        assertTrue(actions.unregisterProcessor(replacement))
     }
 
     @Test
@@ -171,7 +162,7 @@ class ServiceLifecycleTest {
         assertNotNull(fixture.types.getType(Health::class.java))
         assertNotNull(fixture.types.getType(Maturing::class.java))
         assertEquals(ActionResult.DENIED, fixture.place())
-        ACTION_KEYS.forEach { assertNull(fixture.actions.processorCoordinator.getProcessor(it)) }
+        ACTION_KEYS.forEach { assertSlotAvailable(fixture.actions, it) }
 
         fixture.enable()
         assertEquals(ActionResult.SUCCESS, fixture.place())
@@ -211,7 +202,7 @@ class ServiceLifecycleTest {
         repeat(2) {
             fixture.disable()
             fixture.disable()
-            ACTION_KEYS.forEach { assertNull(fixture.actions.processorCoordinator.getProcessor(it)) }
+            ACTION_KEYS.forEach { assertSlotAvailable(fixture.actions, it) }
             assertEquals(ActionResult.DENIED, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 50.0)))
             assertSame(health, fixture.find()?.getComponent(Health::class.java))
             assertSame(maturation, fixture.find()?.getComponent(Maturing::class.java))
@@ -243,37 +234,21 @@ class ServiceLifecycleTest {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
         }
-        fixture.actions.validatorCoordinator.registerValidator(external)
+        fixture.actions.registerValidator(external)
         assertEquals(ActionResult.DENIED, fixture.actions.execute(damage))
 
         fixture.health.disable()
         fixture.health.disable()
-        assertNull(fixture.actions.processorCoordinator.getProcessor(DamageAction.KEY))
-        assertSame(ActionValidator.Result.Rejected, fixture.actions.validatorCoordinator.validate(damage))
+        assertSlotAvailable(fixture.actions, DamageAction.KEY)
+        assertFalse(fixture.actions.isAllowed(damage))
         fixture.health.enable()
         fixture.health.enable()
         assertEquals(ActionResult.DENIED, fixture.actions.execute(damage))
         assertEquals(10.0, fixture.currentHealth())
         fixture.disable()
-        assertSame(ActionValidator.Result.Rejected, fixture.actions.validatorCoordinator.validate(damage))
-        assertTrue(fixture.actions.validatorCoordinator.unregisterValidator(external))
-        assertSame(ActionValidator.Result.Success, fixture.actions.validatorCoordinator.validate(damage))
-    }
-
-    @Test
-    fun `disable never removes a replacement processor for the same action`() {
-        val fixture = Fixture()
-        fixture.enable()
-        val coordinator = fixture.actions.processorCoordinator
-        val own = assertNotNull(coordinator.getProcessor(DamageAction.KEY))
-        assertTrue(coordinator.unregisterProcessor(own))
-        val replacement = damageProcessor()
-        coordinator.registerProcessor(replacement)
-
-        fixture.disable()
-        assertSame(replacement, coordinator.getProcessor(DamageAction.KEY))
-        assertFalse(coordinator.unregisterProcessor(own))
-        assertSame(replacement, coordinator.getProcessor(DamageAction.KEY))
+        assertFalse(fixture.actions.isAllowed(damage))
+        assertTrue(fixture.actions.unregisterValidator(external))
+        assertTrue(fixture.actions.isAllowed(damage))
     }
 
     @Test
@@ -296,7 +271,7 @@ class ServiceLifecycleTest {
         module.disable()
         module.disable()
         assertTrue(firstTimer.isCancelled)
-        ACTION_KEYS.forEach { assertNull(module.actions.processorCoordinator.getProcessor(it)) }
+        ACTION_KEYS.forEach { assertSlotAvailable(module.actions, it) }
         assertTrue(original.isCurrent)
         assertSame(health, original.getComponent(Health::class.java))
         assertNotNull(module.definitions.find(TYPE))
@@ -313,20 +288,19 @@ class ServiceLifecycleTest {
         val fixture = RootFixture()
         val module = fixture.module
         val external = damageProcessor()
-        module.actions.processorCoordinator.registerProcessor(external)
+        module.actions.registerProcessor(external)
 
         assertFailsWith<IllegalArgumentException> { module.enable() }
         assertTrue(fixture.scheduler.tasks.isEmpty())
-        assertSame(external, module.actions.processorCoordinator.getProcessor(DamageAction.KEY))
-        for (key in ACTION_KEYS - DamageAction.KEY) assertNull(module.actions.processorCoordinator.getProcessor(key))
+        for (key in ACTION_KEYS - DamageAction.KEY) assertSlotAvailable(module.actions, key)
         assertNotNull(fixture.types.getType(Health::class.java))
-        assertTrue(module.actions.processorCoordinator.unregisterProcessor(external))
+        assertTrue(module.actions.unregisterProcessor(external))
 
         module.enable()
         assertEquals(1, fixture.scheduler.tasks.size)
-        ACTION_KEYS.forEach { assertNotNull(module.actions.processorCoordinator.getProcessor(it)) }
+        ACTION_KEYS.forEach { assertSlotOccupied(module.actions, it) }
         module.disable()
-        ACTION_KEYS.forEach { assertNull(module.actions.processorCoordinator.getProcessor(it)) }
+        ACTION_KEYS.forEach { assertSlotAvailable(module.actions, it) }
     }
 
     @Test
@@ -355,7 +329,7 @@ class ServiceLifecycleTest {
         fixture.load()
         val failure = IllegalStateException("External validation failed")
         fixture.module.enable()
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<PlaceAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<PlaceAction> {
             override val actionClass = PlaceAction::class.java
             override fun validate(action: PlaceAction): ActionValidator.Result = throw failure
         })
@@ -373,13 +347,13 @@ class ServiceLifecycleTest {
         fixture.module.actions.post(placeAction())
 
         assertSame(failure, assertFailsWith<IllegalStateException> { fixture.module.enable() })
-        ACTION_KEYS.forEach { assertNull(fixture.module.actions.processorCoordinator.getProcessor(it)) }
+        ACTION_KEYS.forEach { assertSlotAvailable(fixture.module.actions, it) }
         assertEquals(0, fixture.module.actions.drainPosted())
         assertNotNull(fixture.types.getType(Health::class.java))
 
         fixture.scheduler.timerFailure = null
         fixture.module.enable()
-        ACTION_KEYS.forEach { assertNotNull(fixture.module.actions.processorCoordinator.getProcessor(it)) }
+        ACTION_KEYS.forEach { assertSlotOccupied(fixture.module.actions, it) }
         assertEquals(1, fixture.scheduler.tasks.size)
     }
 
@@ -392,7 +366,7 @@ class ServiceLifecycleTest {
         fixture.module.actions.post(placeAction())
 
         assertSame(failure, assertFailsWith<IllegalStateException> { fixture.module.disable() })
-        ACTION_KEYS.forEach { assertNull(fixture.module.actions.processorCoordinator.getProcessor(it)) }
+        ACTION_KEYS.forEach { assertSlotAvailable(fixture.module.actions, it) }
         assertEquals(0, fixture.module.actions.drainPosted())
         fixture.module.disable()
         fixture.module.enable()
@@ -403,15 +377,16 @@ class ServiceLifecycleTest {
         val types = TypeManager()
         val storage = MemoryStorage()
         private val manager = ComponentManager(storage, types)
-        val actions = ActionManager(manager).apply {
-            actionMetaRegistry.register(DamageAction.KEY, ActionMetaRegistry.ActionMeta(false))
-            actionMetaRegistry.register(RemoveAction.KEY, ActionMetaRegistry.ActionMeta(false))
-            validateRemoval()
+        val citadels = CitadelFacade(manager)
+        val actions = ActionManager(citadels).apply {
+            registerActionMeta(DamageAction.KEY, ActionMeta(false))
+            registerActionMeta(RemoveAction.KEY, ActionMeta(false))
+            validateRemoval(citadels)
         }
         private val definitions = CitadelDefinitionRegistry()
-        private val place = PlaceService(actions, definitions)
-        private val remove = RemoveService(actions)
-        val health = HealthService(actions, remove)
+        private val place = PlaceService(actions, definitions, citadels, manager)
+        private val remove = RemoveService(actions, citadels, manager)
+        val health = HealthService(actions, remove, citadels, manager)
         val services: List<LifecycleService> = listOf(remove, health, place)
 
         fun enable() = services.forEach { it.enable() }
@@ -420,12 +395,12 @@ class ServiceLifecycleTest {
         fun approveAll(): ActionValidator<ActionData> = object : ActionValidator<ActionData> {
             override val actionClass = ActionData::class.java
             override fun validate(action: ActionData) = ActionValidator.Result.Success
-        }.also(actions.validatorCoordinator::registerValidator)
+        }.also(actions::registerValidator)
 
         fun prepare() {
             definitions.register(CitadelDefinition(TYPE, initializers()))
             health.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
-            actions.validateDamage(TYPE)
+            actions.validateDamage(citadels, TYPE)
             storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0))
         }
 
@@ -442,7 +417,7 @@ class ServiceLifecycleTest {
         val failures = mutableListOf<Exception>()
         val module = CitadelModule(manager, scheduler, maxActionsPerTick = maxActionsPerTick,
             actionFailureHandler = failures::add).apply {
-            actions.validateDamage(TYPE)
+            actions.validateDamage(citadels, TYPE)
             health.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
         }
 
@@ -475,6 +450,27 @@ class ServiceLifecycleTest {
             CitadelInitializer { _, draft -> draft.addComponent(Health::class.java, Health(10.0)) },
             MaturingInitializer(Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))
         )
+
+        fun rejectDamage() = object : ActionValidator<DamageAction> {
+            override val actionClass = DamageAction::class.java
+            override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
+        }
+
+        fun probeProcessor(key: Key) = object : ActionProcessor<ActionData>() {
+            override val actionClass = ActionData::class.java
+            override val actionKey = key
+            override fun execute(action: ActionData) = ActionResult.SUCCESS
+        }
+
+        fun assertSlotAvailable(actions: ActionManager, key: Key) {
+            val probe = probeProcessor(key)
+            actions.registerProcessor(probe)
+            assertTrue(actions.unregisterProcessor(probe))
+        }
+
+        fun assertSlotOccupied(actions: ActionManager, key: Key) {
+            assertFailsWith<IllegalArgumentException> { actions.registerProcessor(probeProcessor(key)) }
+        }
 
         fun damageProcessor() = object : ActionProcessor<DamageAction>() {
             override val actionClass = DamageAction::class.java

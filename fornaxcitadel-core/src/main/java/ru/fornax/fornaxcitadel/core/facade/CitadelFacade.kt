@@ -13,7 +13,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
  * This is a trusted data operation: external mutations must still enter through ActionManager.
  */
 class CitadelFacade @JvmOverloads constructor(
-    internal val componentManager: ComponentManager,
+    private val componentManager: ComponentManager,
     private val resolver: CitadelResolver = DirectCitadelResolver(componentManager)
 ) : ReadableCitadelFacade {
     override fun getResponsiblePosition(position: CitadelPosition): CitadelPosition {

@@ -132,7 +132,7 @@ class PaperCrackHealthObservationSystemTest {
         Fixture().use { fixture ->
             fixture.observe(fixture.paper.installer)
             val completed = mutableListOf<ActionData>()
-            fixture.paper.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+            fixture.paper.module.actions.registerHandler(object : ActionHandler<ActionData> {
                 override val actionClass = ActionData::class.java
                 override fun handle(action: ActionData) { completed.add(action) }
             })

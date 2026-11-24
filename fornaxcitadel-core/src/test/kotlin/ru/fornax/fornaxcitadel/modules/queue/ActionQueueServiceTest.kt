@@ -2,6 +2,7 @@ package ru.fornax.fornaxcitadel.modules.queue
 
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
@@ -103,14 +104,14 @@ class ActionQueueServiceTest {
 
     private class Fixture(maxPerTick: Int = 1024) {
         val scheduler = ManualScheduler()
-        val actions = ActionManager(ComponentManager(UnusedStorage, TypeManager()))
+        val actions = ActionManager(CitadelFacade(ComponentManager(UnusedStorage, TypeManager())))
         val executed = mutableListOf<Int>()
         val failures = mutableListOf<Exception>()
         val failuresByNumber = mutableMapOf<Int, Exception>()
         val service = ActionQueueService(actions, scheduler, maxPerTick, failures::add)
 
         init {
-            actions.processorCoordinator.registerProcessor(object : ActionProcessor<ProbeAction>() {
+            actions.registerProcessor(object : ActionProcessor<ProbeAction>() {
                 override val actionClass = ProbeAction::class.java
                 override val actionKey = PROBE_KEY
                 override fun execute(action: ProbeAction): ActionResult {

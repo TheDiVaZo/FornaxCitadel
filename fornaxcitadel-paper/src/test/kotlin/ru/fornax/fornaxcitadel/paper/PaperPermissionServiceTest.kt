@@ -3,6 +3,7 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.GameMode
 import org.bukkit.Material
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
@@ -94,7 +95,7 @@ class PaperPermissionServiceTest {
         PaperTestFixture(initializeSystems = false).use { fixture ->
             val validator = PaperPermissionValidator(fixture.citadelTypes)
             val service = ValidatorRegistration(fixture.module.actions, validator)
-            val coordinator = fixture.module.actions.validatorCoordinator
+            val actions = fixture.module.actions
             val action = PlaceAction(fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.REINFORCED)
             var externalCalls = 0
             val external = object : ActionValidator<PlaceAction> {
@@ -104,29 +105,30 @@ class PaperPermissionServiceTest {
                     return ActionValidator.Result.Neutral
                 }
             }
-            coordinator.registerValidator(external)
+            actions.registerValidator(external)
             fixture.installer.permissions.clear()
 
             service.disable()
             service.enable()
             service.enable()
-            assertSame(ActionValidator.Result.Rejected, coordinator.validate(action))
+            assertFalse(actions.isAllowed(action))
             service.disable()
             service.disable()
-            assertSame(ActionValidator.Result.Neutral, coordinator.validate(action))
+            assertTrue(actions.isAllowed(action))
             assertEquals(2, externalCalls)
+            actions.registerActionMeta(PlaceAction.KEY, ActionMeta(false))
 
             service.enable()
-            assertSame(ActionValidator.Result.Rejected, coordinator.validate(action))
+            assertFalse(actions.isAllowed(action))
             fixture.installer.permissions.add("fornaxcitadel.place")
-            assertSame(ActionValidator.Result.Success, coordinator.validate(action))
-            assertTrue(coordinator.unregisterValidator(validator))
-            assertSame(ActionValidator.Result.Neutral, coordinator.validate(action))
+            assertTrue(actions.isAllowed(action))
+            assertTrue(actions.unregisterValidator(validator))
+            assertFalse(actions.isAllowed(action))
             service.enable()
-            assertSame(ActionValidator.Result.Success, coordinator.validate(action))
+            assertTrue(actions.isAllowed(action))
             service.disable()
-            assertSame(ActionValidator.Result.Neutral, coordinator.validate(action))
-            assertTrue(coordinator.unregisterValidator(external))
+            assertFalse(actions.isAllowed(action))
+            assertTrue(actions.unregisterValidator(external))
         }
     }
 }

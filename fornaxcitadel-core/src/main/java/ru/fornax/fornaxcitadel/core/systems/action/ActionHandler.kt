@@ -1,10 +1,9 @@
 package ru.fornax.fornaxcitadel.core.systems.action
 
 /**
- * Receives an action notification from [HandlerCoordinator], carrying the original intent.
+ * Receives an action notification carrying the original intent.
  * ActionManager notifies handlers only after the processor or entire batch commit succeeds.
- * Calling the coordinator directly is a manual
- * notification without execution or result validation. The action contains no resolved target snapshot.
+ * The action contains no resolved target snapshot.
  * Runs on the owning game thread. Handlers may react to notifications and read citadel state.
  * Modifying citadels from a handler has undefined behavior and is not checked at runtime;
  * post another action to request changes. Nested action execution is rejected until handling finishes.

@@ -302,11 +302,11 @@ internal class PaperTestFixture(
     val dismantleService = PaperDismantleService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
     val repairService = PaperRepairService(module, citadelTypes, materials)
     val upgradeService = PaperUpgradeService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
-    val breakingService = PaperBreakingService(plugin, module, playerDamage, messages, creativeModeEnabled)
+    val breakingService = PaperBreakingService(plugin, module, manager, playerDamage, messages, creativeModeEnabled)
     val acidService = acidSettings?.let {
-        AcidService(plugin, module, citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it))
+        AcidService(plugin, module, manager, citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it))
     }
-    val explosionService = PaperExplosionService(plugin, module, explosionPowers)
+    val explosionService = PaperExplosionService(plugin, module, manager, explosionPowers)
     val environmentService = PaperEnvironmentService(plugin, module)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
     val breakingListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperBreakingListener>().single()

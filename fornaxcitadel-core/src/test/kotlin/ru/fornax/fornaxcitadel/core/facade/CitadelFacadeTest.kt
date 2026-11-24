@@ -51,7 +51,6 @@ class CitadelFacadeTest {
     fun `default facade keeps exact coordinates and distinguishes unavailable data`() {
         Fixture(useRules = false).use { fixture ->
             val facade = fixture.module.citadels
-            assertSame(facade, fixture.module.actions.citadels)
             assertNull(facade.findProtecting(TOP))
             val placed = assertNotNull(facade.createCitadel(TOP, fixture::fill))
             assertEquals(TOP, placed.position)
@@ -147,8 +146,8 @@ class CitadelFacadeTest {
             fixture.module.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
                 CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(fixture.module.health)
             )))
-            fixture.module.actions.validateDamage(CUSTOM_TYPE)
-            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+            fixture.module.actions.validateDamage(fixture.module.citadels, CUSTOM_TYPE)
+            fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
                 override val actionClass = PlaceAction::class.java
                 override fun handle(action: PlaceAction) { placed.add(action) }
             })
@@ -161,7 +160,7 @@ class CitadelFacadeTest {
 
             val request = SpecializedDamage(TOP, 7.0)
             var seen = false
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<SpecializedDamage> {
+            fixture.module.actions.registerValidator(object : ActionValidator<SpecializedDamage> {
                 override val actionClass = SpecializedDamage::class.java
                 override fun validate(action: SpecializedDamage): ActionValidator.Result {
                     assertSame(request, action)
@@ -272,11 +271,11 @@ class CitadelFacadeTest {
             module.health.registerDefinition(TYPE, HealthDefinition(100.0))
             module.health.registerDefinition(BLOCKED_TYPE, HealthDefinition(100.0))
             module.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(module.health))))
-            module.actions.validateDamage(TYPE)
+            module.actions.validateDamage(module.citadels, TYPE)
             module.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(module.health))))
-            module.actions.validateDamage(BLOCKED_TYPE) { _, _ -> false }
-            module.actions.validateDamage(mode = DamageAction.Mode.DESTROY)
-            module.actions.validateRemoval()
+            module.actions.validateDamage(module.citadels, BLOCKED_TYPE) { _, _ -> false }
+            module.actions.validateDamage(module.citadels, mode = DamageAction.Mode.DESTROY)
+            module.actions.validateRemoval(module.citadels)
             module.enable()
             manager.loadChunk(WORLD, 0, 0).join()
         }

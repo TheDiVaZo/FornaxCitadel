@@ -4,6 +4,8 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -14,12 +16,13 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
  * Direct calls do not notify action handlers.
  */
 class PlaceService(
-    private val actions: ActionManager,
-    private val definitions: CitadelDefinitionRegistry
+    actions: ActionManager,
+    private val definitions: CitadelDefinitionRegistry,
+    private val citadels: CitadelFacade,
+    manager: ComponentManager
 ) : LifecycleService {
-    private val manager = actions.componentManager
     private val registration = ActionRegistration(
-        actions, PlaceProcessor(this), listOf(PlaceActionValidator(actions.citadels, definitions))
+        actions, PlaceProcessor(this), listOf(PlaceActionValidator(citadels, definitions))
     )
 
     init {
@@ -32,7 +35,7 @@ class PlaceService(
 
     fun place(action: PlaceAction): ActionResult {
         val definition = definitions.require(action.definitionKey)
-        actions.citadels.createCitadel(action.position) { draft ->
+        citadels.createCitadel(action.position) { draft ->
             draft.addComponent(CitadelKind::class.java, CitadelKind(definition.key))
             action.context.actorId?.let { draft.addComponent(CitadelOwner::class.java, CitadelOwner(it)) }
             for (initializer in definition.initializers) initializer.initialize(action.context, draft)

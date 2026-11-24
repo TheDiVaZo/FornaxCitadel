@@ -122,7 +122,7 @@ class PaperGameplayMessagesTest {
                 fixture.installer.held = fixture.reinforcementStack()
                 fixture.installer.failIfActionBarDisabled(channel)
                 fixture.stranger.failIfActionBarDisabled(channel)
-                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<PlaceAction> {
+                fixture.module.actions.registerValidator(object : ActionValidator<PlaceAction> {
                     override val actionClass = PlaceAction::class.java
                     override fun validate(action: PlaceAction): ActionValidator.Result =
                         throw IllegalStateException("Placement validation failed")

@@ -87,9 +87,9 @@ class LiveCitadelSettingsTest {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
             }
-            f.module.actions.validatorCoordinator.registerValidator(reject)
+            f.module.actions.registerValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 10.0))
-            f.module.actions.validatorCoordinator.unregisterValidator(reject)
+            f.module.actions.unregisterValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 0.0))
             val zero = DamageModifier { _, _, _ -> 0.0 }
             f.module.health.registerModifier(zero)
@@ -124,10 +124,10 @@ class LiveCitadelSettingsTest {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
             }
-            f.module.actions.validatorCoordinator.registerValidator(reject)
+            f.module.actions.registerValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 1.0))
             assertEquals(80.0, f.health())
-            f.module.actions.validatorCoordinator.unregisterValidator(reject)
+            f.module.actions.unregisterValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 0.0))
             assertEquals(80.0, f.health())
             assertEquals(ActionResult.SUCCESS, damage(f, 1.0))

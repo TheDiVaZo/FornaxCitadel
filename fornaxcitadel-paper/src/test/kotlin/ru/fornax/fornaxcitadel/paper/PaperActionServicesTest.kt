@@ -18,9 +18,9 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class PaperActionServicesTest {
     @Test
@@ -49,8 +49,7 @@ class PaperActionServicesTest {
                     else -> DismantleAction(f.context(f.installer), missingTarget)
                 }
                 service.disable()
-                val processors = f.module.actions.processorCoordinator
-                val validators = f.module.actions.validatorCoordinator
+                val actions = f.module.actions
                 var externalExecutions = 0
                 val externalProcessor = object : ActionProcessor<ActionData>() {
                     override val actionClass = ActionData::class.java
@@ -64,28 +63,30 @@ class PaperActionServicesTest {
                     override val actionClass = ActionData::class.java
                     override fun validate(action: ActionData) = ActionValidator.Result.Success
                 }
-                processors.registerProcessor(externalProcessor)
-                validators.registerValidator(externalValidator)
+                actions.registerProcessor(externalProcessor)
+                actions.registerValidator(externalValidator)
 
                 assertFailsWith<IllegalArgumentException>(kind) { service.enable() }
-                assertSame(ActionValidator.Result.Success, validators.validate(unavailableAction), kind)
+                assertTrue(actions.isAllowed(unavailableAction), kind)
                 repeat(2) { service.disable() }
-                assertSame(externalProcessor, processors.getProcessor(action.type), kind)
-                assertEquals(ActionResult.SUCCESS, f.module.actions.execute(action), kind)
+                assertEquals(ActionResult.SUCCESS, actions.execute(action), kind)
                 assertEquals(1, externalExecutions, kind)
                 assertEquals(2, f.installer.held.amount, kind)
-                validators.unregisterValidator(externalValidator)
-                assertSame(ActionValidator.Result.Neutral, validators.validate(action), kind)
+                actions.unregisterValidator(externalValidator)
+                assertFalse(actions.isAllowed(action), kind)
 
-                processors.unregisterProcessor(externalProcessor)
+                actions.unregisterProcessor(externalProcessor)
                 repeat(2) { service.enable() }
-                assertSame(ActionValidator.Result.Rejected, validators.validate(unavailableAction), kind)
-                assertEquals(ActionResult.SUCCESS, f.module.actions.execute(action), kind)
+                actions.registerValidator(externalValidator)
+                assertFalse(actions.isAllowed(unavailableAction), kind)
+                actions.unregisterValidator(externalValidator)
+                assertEquals(ActionResult.SUCCESS, actions.execute(action), kind)
                 assertEquals(1, externalExecutions, kind)
                 assertEquals(if (kind == "repair" || kind == "upgrade") 1 else 2, f.installer.held.amount, kind)
                 repeat(2) { service.disable() }
-                assertNull(processors.getProcessor(action.type), kind)
-                assertSame(ActionValidator.Result.Neutral, validators.validate(unavailableAction), kind)
+                actions.registerValidator(externalValidator)
+                assertTrue(actions.isAllowed(unavailableAction), kind)
+                assertEquals(ActionResult.DENIED, actions.execute(unavailableAction), kind)
             }
         }
     }

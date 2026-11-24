@@ -1,7 +1,9 @@
 package ru.fornax.fornaxcitadel.modules.remove
 
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -13,11 +15,12 @@ import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
  * Direct calls do not notify action handlers.
  */
 class RemoveService(
-    private val actions: ActionManager
+    actions: ActionManager,
+    private val citadels: CitadelFacade,
+    private val manager: ComponentManager
 ) : LifecycleService {
-    private val manager = actions.componentManager
     private val registration = ActionRegistration(
-        actions, RemoveProcessor(this), listOf(ExistingCitadelValidator(RemoveAction::class.java, actions.citadels))
+        actions, RemoveProcessor(this), listOf(ExistingCitadelValidator(RemoveAction::class.java, citadels))
     )
 
     override fun enable() = registration.enable()
@@ -25,7 +28,7 @@ class RemoveService(
 
     /** Executes a validated request with an available target. External requests must enter through actions. */
     fun request(action: RemoveAction): ActionResult {
-        val citadel = checkNotNull(actions.citadels.findProtecting(action.position)) {
+        val citadel = checkNotNull(citadels.findProtecting(action.position)) {
             "Validated removal target is unavailable"
         }
         return remove(citadel)

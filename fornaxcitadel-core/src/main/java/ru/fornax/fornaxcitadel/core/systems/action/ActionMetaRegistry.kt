@@ -9,16 +9,6 @@ class ActionMetaRegistry(
 
     private val actionsMeta: MutableMap<Key, ActionMeta> = HashMap()
 
-    data class ActionMeta(
-        /** Whether execution is allowed when no validator explicitly authorizes or rejects it. */
-        val executeIfNeutralActionResult: Boolean
-    ) {
-        companion object {
-            @JvmStatic
-            val DEFAULT = ActionMeta(true)
-        }
-    }
-
     fun unregister(type: Key) {
         actionsMeta.remove(type)
     }

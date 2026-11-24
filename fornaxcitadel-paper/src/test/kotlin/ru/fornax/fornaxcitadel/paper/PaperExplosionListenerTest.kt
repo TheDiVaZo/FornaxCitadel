@@ -73,7 +73,7 @@ class PaperExplosionListenerTest {
                 val target = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
                 assertTrue(target.editComponent(Maturing::class.java) { it.startedAtMillis = Long.MAX_VALUE })
                 val sourceDamage = mutableListOf<Double>()
-                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         sourceDamage.add(action.damage)
@@ -108,7 +108,7 @@ class PaperExplosionListenerTest {
                 return ActionValidator.Result.Rejected
             }
         }
-        fixture.module.actions.validatorCoordinator.registerValidator(validator)
+        fixture.module.actions.registerValidator(validator)
 
         repeat(2) {
             val breaking = BlockBreakEvent(fixture.block(), fixture.stranger.player)
@@ -125,7 +125,7 @@ class PaperExplosionListenerTest {
         }
         assertEquals(listOf(fixture.stranger.id, null, fixture.stranger.id, null), observedActors)
 
-        assertTrue(fixture.module.actions.validatorCoordinator.unregisterValidator(validator))
+        assertTrue(fixture.module.actions.unregisterValidator(validator))
         dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
         assertEquals(99.0, fixture.health())
         dispatch(fixture.explosionListener, fixture.entityExplosion(fixture.block()), fixture.plugin)
@@ -154,7 +154,7 @@ class PaperExplosionListenerTest {
         val entityEvent = fixture.entityExplosion(fixture.block(), ordinary, sourceEntity = entity, center = center)
         val blockEvent = fixture.blockExplosion(fixture.block(), ordinary, source = source)
         val actions = mutableListOf<DamageAction>()
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 assertEquals(DamageAction::class.java, action.javaClass)
@@ -204,7 +204,7 @@ class PaperExplosionListenerTest {
                     event to event.blockList()
                 }
                 val visited = mutableListOf<Int>()
-                fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         assertEquals(listOf(ordinary), affectedBlocks)
@@ -214,7 +214,7 @@ class PaperExplosionListenerTest {
                     }
                 })
                 var completed = 0
-                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+                fixture.module.actions.registerHandler(object : ActionHandler<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun handle(action: DamageAction) {
                         assertEquals(listOf(ordinary), affectedBlocks)
@@ -397,7 +397,7 @@ class PaperExplosionListenerTest {
     fun `damage validator can select explosion origins directly from the context`() {
         val observed = mutableListOf<ExplosionSource.Entity>()
         val fixture = PaperTestFixture(permissions = true)
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 val source = action.context.source as? ExplosionSource.Entity
@@ -428,7 +428,7 @@ class PaperExplosionListenerTest {
         val ordinary = fixture.block(3, 64, 2)
         val event = fixture.entityExplosion(fixture.block(), ordinary)
         var validated = false
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 validated = true
@@ -464,7 +464,7 @@ class PaperExplosionListenerTest {
         val event = fixture.entityExplosion(fixture.block(), second, ordinary,
             sourceEntity = entity, center = Location(fixture.world, 2.0, 64.0, 2.0))
         val visited = mutableListOf<Int>()
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 assertEquals(listOf(ordinary), event.blockList())
@@ -492,7 +492,7 @@ class PaperExplosionListenerTest {
         fixture.placeAt(second)
         val center = Location(fixture.world, 2.0, 64.0, 2.0)
         val expectedCenter = ExplosionPosition(fixture.worldId, 2.0, 64.0, 2.0)
-        fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 assertEquals(expectedCenter, assertIs<ExplosionSource>(action.context.source).position)
@@ -523,7 +523,7 @@ class PaperExplosionListenerTest {
             val ordinaryTarget = fixture.block(3, 64, 2)
             fixture.placeAt(ordinaryTarget)
             val completed = mutableListOf<ActionData>()
-            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+            fixture.module.actions.registerHandler(object : ActionHandler<ActionData> {
                 override val actionClass = ActionData::class.java
                 override fun handle(action: ActionData) {
                     completed.add(action)

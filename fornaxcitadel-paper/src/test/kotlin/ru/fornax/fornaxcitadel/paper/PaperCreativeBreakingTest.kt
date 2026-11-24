@@ -46,7 +46,7 @@ class PaperCreativeBreakingTest {
                     error("Creative destruction must not calculate damage")
                 })
                 val completed = mutableListOf<DamageAction>()
-                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+                fixture.module.actions.registerHandler(object : ActionHandler<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun handle(action: DamageAction) {
                         assertFalse(target.isCurrent)
@@ -141,7 +141,7 @@ class PaperCreativeBreakingTest {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.prepareInvulnerable()
             var actionCalls = 0
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result {
                     actionCalls++
@@ -250,7 +250,7 @@ class PaperCreativeBreakingTest {
             fixture.prepareInvulnerable()
             val event = BlockBreakEvent(fixture.block(), fixture.stranger.player)
             var validationCalls = 0
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<T> {
+            fixture.module.actions.registerValidator(object : ActionValidator<T> {
                 override val actionClass = acceptedClass
                 override fun validate(action: T): ActionValidator.Result {
                     validationCalls++

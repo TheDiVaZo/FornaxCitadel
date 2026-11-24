@@ -128,7 +128,7 @@ class PaperActionQueueIntegrationTest {
     )
 
     private fun registerProcessor(fixture: PaperTestFixture, process: (ProbeAction) -> ActionResult) {
-        fixture.module.actions.processorCoordinator.registerProcessor(object : ActionProcessor<ProbeAction>() {
+        fixture.module.actions.registerProcessor(object : ActionProcessor<ProbeAction>() {
             override val actionClass = ProbeAction::class.java
             override val actionKey = ProbeAction.KEY
             override fun execute(action: ProbeAction) = process(action)

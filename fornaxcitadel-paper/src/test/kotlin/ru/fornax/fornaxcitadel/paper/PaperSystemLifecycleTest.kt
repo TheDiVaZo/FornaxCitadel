@@ -5,6 +5,7 @@ import org.bukkit.event.Listener
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -69,16 +70,16 @@ class PaperSystemLifecycleTest {
                     return ActionValidator.Result.Neutral
                 }
             }
-            val validators = fixture.module.actions.validatorCoordinator
-            validators.registerValidator(external)
+            val actions = fixture.module.actions
+            actions.registerValidator(external)
             val validationPosition = fixture.position.copy(x = 3)
             val action = PlaceAction(fixture.context(fixture.installer), validationPosition, PaperCitadelTypes.REINFORCED)
             fixture.material(Material.PISTON, validationPosition)
-            assertEquals(ActionValidator.Result.Rejected, validators.validate(action))
+            assertFalse(actions.isAllowed(action))
 
             fixture.placementService.disable()
 
-            assertEquals(ActionValidator.Result.Neutral, validators.validate(action))
+            assertTrue(actions.isAllowed(action))
             assertEquals(1, externalCalls)
             assertSame(kindType, fixture.types.getType(CitadelKind::class.java))
             assertSame(healthType, fixture.types.getType(Health::class.java))
@@ -93,9 +94,10 @@ class PaperSystemLifecycleTest {
 
             fixture.placementService.enable()
 
-            assertEquals(ActionValidator.Result.Rejected, validators.validate(action))
+            assertFalse(actions.isAllowed(action))
+            actions.registerActionMeta(PlaceAction.KEY, ActionMeta(false))
             fixture.material(Material.STONE, validationPosition)
-            assertEquals(ActionValidator.Result.Success, validators.validate(action))
+            assertTrue(actions.isAllowed(action))
             assertEquals(3, externalCalls)
             assertSame(health, handle.getComponent(Health::class.java))
             assertEquals(material.getKey(), fixture.placementService.heldMaterialKey(fixture.installer.player, fixture.installer.held))
@@ -114,13 +116,13 @@ class PaperSystemLifecycleTest {
             assertTrue(fixture.listenerRegistrations.isEmpty())
             fixture.material(Material.PISTON)
             val action = PlaceAction(fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.REINFORCED)
-            assertEquals(ActionValidator.Result.Neutral, fixture.module.actions.validatorCoordinator.validate(action))
+            assertTrue(fixture.module.actions.isAllowed(action))
 
             fixture.listenerRegistrationFailure = null
             fixture.placementService.enable()
 
             assertEquals(1, fixture.listenerRegistrations.size)
-            assertEquals(ActionValidator.Result.Rejected, fixture.module.actions.validatorCoordinator.validate(action))
+            assertFalse(fixture.module.actions.isAllowed(action))
         }
     }
 
@@ -130,24 +132,24 @@ class PaperSystemLifecycleTest {
             fixture.place()
             val source = ExplosionSource.Block(ExplosionPosition(UUID(9L, 10L), 1.0, 64.0, 2.0), 4.0f, Material.TNT)
             val action = DamageAction(ActionContext(null, source), fixture.position, 10.0)
-            val validators = fixture.module.actions.validatorCoordinator
+            val actions = fixture.module.actions
             val external = object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Success
             }
-            validators.registerValidator(external)
-            assertEquals(ActionValidator.Result.Success, validators.validate(action))
+            actions.registerValidator(external)
+            assertTrue(actions.isAllowed(action))
 
             repeat(2) {
                 fixture.explosionService.enable()
                 fixture.explosionService.enable()
-                assertEquals(ActionValidator.Result.Rejected, validators.validate(action))
+                assertFalse(actions.isAllowed(action))
                 fixture.explosionService.disable()
                 fixture.explosionService.disable()
-                assertEquals(ActionValidator.Result.Success, validators.validate(action))
+                assertTrue(actions.isAllowed(action))
             }
 
-            assertTrue(validators.unregisterValidator(external))
+            assertTrue(actions.unregisterValidator(external))
             assertEquals(100.0, fixture.health())
         }
     }
@@ -163,11 +165,11 @@ class PaperSystemLifecycleTest {
 
             assertSame(failure, assertFailsWith<IllegalStateException> { fixture.explosionService.enable() })
             assertTrue(fixture.listenerRegistrations.isEmpty())
-            assertEquals(ActionValidator.Result.Success, fixture.module.actions.validatorCoordinator.validate(action))
+            assertTrue(fixture.module.actions.isAllowed(action))
 
             fixture.listenerRegistrationFailure = null
             fixture.explosionService.enable()
-            assertEquals(ActionValidator.Result.Rejected, fixture.module.actions.validatorCoordinator.validate(action))
+            assertFalse(fixture.module.actions.isAllowed(action))
         }
     }
 

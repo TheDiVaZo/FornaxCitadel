@@ -76,7 +76,7 @@ class PaperDamageValidationTest {
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
             f.module.health.unregisterDefinition(type)
             if (reason == "permission") f.stranger.permissions.remove("fornaxcitadel.damage")
-            f.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            f.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = if (reason == "veto") ActionValidator.Result.Rejected else ActionValidator.Result.Success
             })
@@ -102,7 +102,7 @@ class PaperDamageValidationTest {
             val action = DamageAction(context, f.position, 10.0)
             assertNull(target.getComponent(Health::class.java))
             f.module.health.registerDefinition(type, HealthDefinition(100.0))
-            assertEquals(ActionValidator.Result.Success, f.module.actions.validatorCoordinator.validate(action))
+            assertTrue(f.module.actions.isAllowed(action))
             assertNull(target.getComponent(Health::class.java))
             assertEquals(ActionResult.SUCCESS, f.module.actions.execute(action))
             assertEquals(90.0, target.getComponent(Health::class.java)?.health)
@@ -117,7 +117,7 @@ class PaperDamageValidationTest {
             f.place(type)
             val target = assertNotNull(f.module.citadels.findProtecting(f.position))
             f.module.health.registerDefinition(type, HealthDefinition(100.0))
-            f.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            f.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Success
             })
@@ -146,7 +146,7 @@ class PaperDamageValidationTest {
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(explosion))
             assertEquals(80.0, fixture.health())
 
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result {
                     val kind = fixture.module.citadels.findProtecting(action.position)
@@ -169,7 +169,7 @@ class PaperDamageValidationTest {
         PaperTestFixture(permissions = true, citadelSettings = settings).use { fixture ->
             fixture.installer.permissions.add("fornaxcitadel.admin")
             fixture.place(Key("fornaxcitadel", "protected"))
-            fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Success
             })
@@ -194,26 +194,26 @@ class PaperDamageValidationTest {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.place()
             val action = DamageAction(fixture.context(fixture.stranger), fixture.position, 10.0)
-            val coordinator = fixture.module.actions.validatorCoordinator
+            val actions = fixture.module.actions
             val external = object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Neutral
             }
-            coordinator.registerValidator(external)
+            actions.registerValidator(external)
             fixture.breakingService.disable()
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
 
             repeat(2) {
                 fixture.damageValidationService.disable()
                 fixture.damageValidationService.disable()
-                assertSame(ActionValidator.Result.Neutral, coordinator.validate(action))
+                assertFalse(actions.isAllowed(action))
                 assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
                 fixture.damageValidationService.enable()
                 fixture.damageValidationService.enable()
-                assertSame(ActionValidator.Result.Success, coordinator.validate(action))
+                assertTrue(actions.isAllowed(action))
             }
 
-            assertTrue(coordinator.unregisterValidator(external))
+            assertTrue(actions.unregisterValidator(external))
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
             assertEquals(80.0, fixture.health())
         }

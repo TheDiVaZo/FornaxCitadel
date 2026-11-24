@@ -86,7 +86,7 @@ class PaperUpgradeServiceTest {
                 f.installer.gameMode = mode
                 f.installer.held = f.reinforcementStack(HEAVY, amount)
                 var completed = 0
-                f.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<ActionData> {
+                f.module.actions.registerHandler(object : ActionHandler<ActionData> {
                     override val actionClass = ActionData::class.java
                     override fun handle(action: ActionData) {
                         assertIs<UpgradeAction>(action)
@@ -388,7 +388,7 @@ class PaperUpgradeServiceTest {
             assertEquals(20.0, f.health())
             assertEquals(2, f.stranger.held.amount)
             assertTrue(f.droppedItems.isEmpty())
-            f.module.actions.validatorCoordinator.unregisterValidator(veto)
+            f.module.actions.unregisterValidator(veto)
             assertEquals(ActionResult.SUCCESS, f.module.actions.execute(request))
             assertEquals(f.installer.id, f.citadel().getComponent(CitadelOwner::class.java)?.playerId)
         }
@@ -472,7 +472,7 @@ class PaperUpgradeServiceTest {
                     "permission" -> f.installer.permissions.remove("fornaxcitadel.repair")
                 }
                 var completed = 0
-                f.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<UpgradeAction> {
+                f.module.actions.registerHandler(object : ActionHandler<UpgradeAction> {
                     override val actionClass = UpgradeAction::class.java
                     override fun handle(action: UpgradeAction) { completed++ }
                 })
@@ -652,7 +652,7 @@ class PaperUpgradeServiceTest {
         object : ActionValidator<UpgradeAction> {
             override val actionClass = UpgradeAction::class.java
             override fun validate(action: UpgradeAction) = check(action)
-        }.also(module.actions.validatorCoordinator::registerValidator)
+        }.also(module.actions::registerValidator)
 
     interface ReadableMarker : ReadableComponent {
         val value: Int

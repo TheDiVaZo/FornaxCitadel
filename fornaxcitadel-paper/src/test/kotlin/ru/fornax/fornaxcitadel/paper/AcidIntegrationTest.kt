@@ -408,7 +408,7 @@ class AcidIntegrationTest {
         assertEquals(ActionResult.SUCCESS, f.module.actions.execute(PlaceAction(f.context(f.installer), block.testPosition(), type)))
     }
     private fun PaperTestFixture.vetoAcid(predicate: (AcidDestroyAction) -> Boolean) {
-        module.actions.validatorCoordinator.registerValidator(object : ActionValidator<AcidDestroyAction> {
+        module.actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
             override val actionClass = AcidDestroyAction::class.java
             override fun validate(action: AcidDestroyAction) = if (predicate(action))
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
@@ -417,7 +417,7 @@ class AcidIntegrationTest {
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
         val original = assertNotNull(f.acidService)
         original.disable()
-        val service = AcidService(f.plugin, f.module, f.citadelTypes, materials, f.materialPlacement,
+        val service = AcidService(f.plugin, f.module, f.manager, f.citadelTypes, materials, f.materialPlacement,
             f.breakingService, original.registry)
         service.enable()
         try { body(service) } finally { service.disable() }

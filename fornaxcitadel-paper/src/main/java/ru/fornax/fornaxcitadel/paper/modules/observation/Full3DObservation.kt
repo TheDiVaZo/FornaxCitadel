@@ -15,6 +15,8 @@ import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.observation.Observation
@@ -40,10 +42,11 @@ import java.util.logging.Level
 class Full3DObservation @JvmOverloads constructor(
     private val plugin: Plugin,
     private val actions: ActionManager,
+    private val citadels: ReadableCitadelFacade,
+    private val manager: ComponentManager,
     private val chunks: PaperChunkService,
     private val settings: Full3DObservationSettings = Full3DObservationSettings()
 ) : Observation<Player>, Listener, AutoCloseable {
-    private val manager = actions.componentManager
     private val sessions = LinkedHashMap<UUID, Session>()
     private val dirty = LinkedHashMap<Session, Boolean>()
     private var generation: Any? = null
@@ -57,7 +60,7 @@ class Full3DObservation @JvmOverloads constructor(
     private val placementHandler = object : ActionHandler<PlaceAction> {
         override val actionClass = PlaceAction::class.java
         override fun handle(action: PlaceAction) {
-            actions.citadels.findProtecting(action.position)?.let { changed(it.position) }
+            citadels.findProtecting(action.position)?.let { changed(it.position) }
         }
     }
 
@@ -130,7 +133,7 @@ class Full3DObservation @JvmOverloads constructor(
     private fun attach() {
         generation = Any()
         try {
-            actions.handlerCoordinator.registerHandler(placementHandler)
+            actions.registerHandler(placementHandler)
             chunks.addDataListener(chunkListener)
             plugin.server.pluginManager.registerEvents(this, plugin)
         } catch (failure: Throwable) {
@@ -145,7 +148,7 @@ class Full3DObservation @JvmOverloads constructor(
         pending = null
         dirty.clear()
         HandlerList.unregisterAll(this)
-        actions.handlerCoordinator.unregisterHandler(placementHandler)
+        actions.unregisterHandler(placementHandler)
         chunks.removeDataListener(chunkListener)
         previous?.task?.cancel()
     }

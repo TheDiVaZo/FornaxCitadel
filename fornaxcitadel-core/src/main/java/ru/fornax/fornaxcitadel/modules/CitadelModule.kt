@@ -9,7 +9,7 @@ import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
-import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry.ActionMeta
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.HealthService
@@ -24,16 +24,16 @@ import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
  * Core lifecycle entry point. Construct and register definitions before loading chunks;
  * call [enable] to attach processors and prerequisite validators and [disable] to detach them.
  *
- * Register read-only authorization checks on [actions.validatorCoordinator]. Damage, explicit
+ * Register read-only authorization checks with [ActionManager.registerValidator]. Damage, explicit
  * destruction, administrative removal, dismantling, repair and upgrade require a validator's Success; a rejection always wins.
  * Enabled services validate target availability and placement prerequisites before execution.
  * These prerequisite checks never grant authorization. Definitions configure initial components;
  * source keys are attribution.
  *
  * Services and the component manager expose trusted low-level operations; external requests
- * must enter through [actions]. Successful actions notify [actions.handlerCoordinator]; direct
- * service calls are silent. All access is on the owning game thread. Handlers may post actions;
- * [actionQueue] drains them on subsequent ticks while this module is enabled.
+ * must enter through [actions]. Successful actions notify handlers registered with
+ * [ActionManager.registerHandler]. Direct service calls are silent. All access is on the owning
+ * game thread. Handlers may post actions for [actionQueue] to drain on subsequent ticks while enabled.
  * This module changes component data only; it has no Minecraft/Paper dependencies.
  */
 class CitadelModule @JvmOverloads constructor(
@@ -46,16 +46,16 @@ class CitadelModule @JvmOverloads constructor(
 
     val definitions = CitadelDefinitionRegistry()
     val citadels = CitadelFacade(manager, resolver)
-    val actions = ActionManager(manager, citadels = citadels).apply {
-        actionMetaRegistry.register(RemoveAction.KEY, ActionMeta(false))
-        actionMetaRegistry.register(DamageAction.KEY, ActionMeta(false))
-        actionMetaRegistry.register(DismantleAction.KEY, ActionMeta(false))
-        actionMetaRegistry.register(RepairAction.KEY, ActionMeta(false))
-        actionMetaRegistry.register(UpgradeAction.KEY, ActionMeta(false))
+    val actions = ActionManager(citadels).apply {
+        registerActionMeta(RemoveAction.KEY, ActionMeta(false))
+        registerActionMeta(DamageAction.KEY, ActionMeta(false))
+        registerActionMeta(DismantleAction.KEY, ActionMeta(false))
+        registerActionMeta(RepairAction.KEY, ActionMeta(false))
+        registerActionMeta(UpgradeAction.KEY, ActionMeta(false))
     }
-    val place = PlaceService(actions, definitions)
-    val remove = RemoveService(actions)
-    val health = HealthService(actions, remove)
+    val place = PlaceService(actions, definitions, citadels, manager)
+    val remove = RemoveService(actions, citadels, manager)
+    val health = HealthService(actions, remove, citadels, manager)
     val actionQueue = ActionQueueService(actions, scheduler, maxActionsPerTick, actionFailureHandler)
     private val services: List<LifecycleService> = listOf(remove, health, place, actionQueue)
 

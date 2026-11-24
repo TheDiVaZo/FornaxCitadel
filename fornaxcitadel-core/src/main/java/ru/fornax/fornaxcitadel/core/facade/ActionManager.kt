@@ -1,33 +1,44 @@
 package ru.fornax.fornaxcitadel.core.facade
 
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
-import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.HandlerCoordinator
 import ru.fornax.fornaxcitadel.core.systems.action.ProcessorCoordinator
 import ru.fornax.fornaxcitadel.core.systems.action.ValidatorCoordinator
+import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.ArrayDeque
 
 /**
- * Validates and executes actions synchronously on the calling thread.
- * Not thread-safe; use on the owning game thread, like [componentManager].
+ * Validates and executes actions synchronously on the owning game thread.
  */
-class ActionManager @JvmOverloads constructor(
-    val componentManager: ComponentManager,
-    val processorCoordinator: ProcessorCoordinator = ProcessorCoordinator(),
-    val validatorCoordinator: ValidatorCoordinator = ValidatorCoordinator(),
-    val citadels: CitadelFacade = CitadelFacade(componentManager),
-    val actionMetaRegistry: ActionMetaRegistry = ActionMetaRegistry(ActionMetaRegistry.ActionMeta.DEFAULT),
-    val handlerCoordinator: HandlerCoordinator = HandlerCoordinator()
-) {
-
-    init {
-        require(citadels.componentManager === componentManager) { "Actions and citadel facade must share their storage" }
-    }
-
+class ActionManager(private val citadels: CitadelFacade) {
+    private val processorCoordinator = ProcessorCoordinator()
+    private val validatorCoordinator = ValidatorCoordinator()
+    private val handlerCoordinator = HandlerCoordinator()
+    private val actionMetaRegistry = ActionMetaRegistry(ActionMeta.DEFAULT)
     private var executing = false
     private val posted = ArrayDeque<ActionData>()
+
+    /** Registers one processor per action key. Registering the same instance again is a no-op. */
+    fun registerProcessor(processor: ActionProcessor<*>) = processorCoordinator.registerProcessor(processor)
+
+    fun unregisterProcessor(processor: ActionProcessor<*>): Boolean = processorCoordinator.unregisterProcessor(processor)
+
+    fun registerValidator(validator: ActionValidator<*>) = validatorCoordinator.registerValidator(validator)
+
+    fun unregisterValidator(validator: ActionValidator<*>): Boolean = validatorCoordinator.unregisterValidator(validator)
+
+    fun registerHandler(handler: ActionHandler<*>) = handlerCoordinator.registerHandler(handler)
+
+    fun unregisterHandler(handler: ActionHandler<*>): Boolean = handlerCoordinator.unregisterHandler(handler)
+
+    /** Sets the execution policy for [key] when all applicable validators are neutral. */
+    fun registerActionMeta(key: Key, meta: ActionMeta) = actionMetaRegistry.register(key, meta)
 
     /** Read-only authorization using the same metadata as execute. Does not notify handlers. */
     fun isAllowed(action: ActionData): Boolean = runRoot { validate(action) }
@@ -57,7 +68,7 @@ class ActionManager @JvmOverloads constructor(
 
     /**
      * Returns DENIED without executing the processor if any validator rejects the action.
-     * A Success authorizes execution; an aggregate Neutral uses [actionMetaRegistry].
+     * A Success authorizes execution. An aggregate Neutral uses the action's configured metadata.
      * Allowed execution returns the processor's result (or DENIED if none is registered).
      * Validators must leave gameplay state unchanged. Validator and processor exceptions propagate.
      * On SUCCESS, handlers are notified after the processor finishes.

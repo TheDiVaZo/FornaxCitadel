@@ -10,6 +10,7 @@ import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
@@ -26,11 +27,11 @@ import kotlin.math.sqrt
 class PaperExplosionService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val module: CitadelModule,
+    private val manager: ComponentManager,
     powers: ExplosionPowerSettings = ExplosionPowerSettings()
 ) : LifecycleService {
     private val powers = powers.copy(blockPowers = powers.blockPowers.toMap())
     private val entityPowers = mutableMapOf<UUID, PrimedPower>()
-    private val manager = module.actions.componentManager
     private val listener = PaperExplosionListener(this)
     private val sourceValidator = ExplosionSourceValidator()
     private var enabled = false
@@ -38,12 +39,12 @@ class PaperExplosionService @JvmOverloads constructor(
     override fun enable() {
         if (enabled) return
         try {
-            module.actions.validatorCoordinator.registerValidator(sourceValidator)
+            module.actions.registerValidator(sourceValidator)
             plugin.server.pluginManager.registerEvents(listener, plugin)
             enabled = true
         } catch (failure: Throwable) {
             HandlerList.unregisterAll(listener)
-            module.actions.validatorCoordinator.unregisterValidator(sourceValidator)
+            module.actions.unregisterValidator(sourceValidator)
             throw failure
         }
     }
@@ -51,7 +52,7 @@ class PaperExplosionService @JvmOverloads constructor(
     override fun disable() {
         if (!enabled) return
         HandlerList.unregisterAll(listener)
-        module.actions.validatorCoordinator.unregisterValidator(sourceValidator)
+        module.actions.unregisterValidator(sourceValidator)
         enabled = false
         val primed = entityPowers.values.toList()
         entityPowers.clear()

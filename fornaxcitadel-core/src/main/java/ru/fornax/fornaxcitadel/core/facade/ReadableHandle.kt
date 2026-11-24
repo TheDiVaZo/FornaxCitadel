@@ -13,11 +13,14 @@ import ru.fornax.fornaxcitadel.core.component.ReadableComponent
  */
 abstract class ReadableHandle internal constructor(
     @get:JvmSynthetic
-    internal val manager: ComponentManager,
+    protected val manager: ComponentManager,
     val position: CitadelPosition,
     val runtimeId: Int
 ) : ICitadelReference by position {
     val isCurrent: Boolean get() = manager.isCurrent(this)
+
+    @JvmSynthetic
+    internal fun belongsTo(candidate: ComponentManager): Boolean = manager === candidate
 
     /** Returns current component state without refreshing, mutating, or marking it dirty. */
     fun <R : ReadableComponent> getComponent(componentClass: Class<out Component<out R>>): R? =

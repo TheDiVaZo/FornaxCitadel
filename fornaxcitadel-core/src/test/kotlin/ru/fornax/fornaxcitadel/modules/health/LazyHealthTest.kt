@@ -85,7 +85,7 @@ class LazyHealthTest {
         f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(100.0))
         f.storage.chunk = mapper.restore(ChunkCordSnapshot.fromByteArray(saved))
         val restored = f.citadel
-        f.actions.validateDamage(HealthFixture.TYPE)
+        f.actions.validateDamage(f.citadels, HealthFixture.TYPE)
         f.service.enable()
         val amounts = mutableListOf<Double>()
         f.service.registerModifier { _, target, amount ->
@@ -96,7 +96,7 @@ class LazyHealthTest {
             amount * 2.0
         }
         var handled = 0
-        f.actions.handlerCoordinator.registerHandler(object : ActionHandler<DamageAction> {
+        f.actions.registerHandler(object : ActionHandler<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun handle(action: DamageAction) {
                 assertEquals(84.0, restored.getComponent(Health::class.java)?.health)
@@ -128,7 +128,7 @@ class LazyHealthTest {
         f.service.unregisterModifier(zero)
         f.service.registerModifier { _, _, _ -> error("Cancelled action must not calculate damage") }
         f.service.enable()
-        f.actions.validateDamage(HealthFixture.TYPE) { _, _ -> false }
+        f.actions.validateDamage(f.citadels, HealthFixture.TYPE) { _, _ -> false }
         assertEquals(ActionResult.DENIED, f.actions.execute(DamageAction(ActionContext.SYSTEM, citadel.position, 5.0)))
         assertNull(citadel.getComponent(Health::class.java))
         assertEquals(100.0, f.service.currentHealth(citadel))

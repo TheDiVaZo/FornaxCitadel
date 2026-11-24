@@ -50,7 +50,7 @@ class PlacementMetadataTest {
             var observerCalls = 0
             var observedOwner: UUID? = null
             var observedKind: Key? = null
-            fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+            fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
                 override val actionClass = PlaceAction::class.java
                 override fun handle(action: PlaceAction) {
                     observerCalls++
@@ -88,14 +88,14 @@ class PlacementMetadataTest {
             }) else emptyList()
             Fixture(initializers).use { fixture ->
                 var notifications = 0
-                fixture.module.actions.handlerCoordinator.registerHandler(object : ActionHandler<PlaceAction> {
+                fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
                     override val actionClass = PlaceAction::class.java
                     override fun handle(action: PlaceAction) { notifications++ }
                 })
                 if (initializerFails) {
                     assertFailsWith<IllegalStateException> { fixture.place() }
                 } else {
-                    fixture.module.actions.validatorCoordinator.registerValidator(object : ActionValidator<PlaceAction> {
+                    fixture.module.actions.registerValidator(object : ActionValidator<PlaceAction> {
                         override val actionClass = PlaceAction::class.java
                         override fun validate(action: PlaceAction) = ActionValidator.Result.Rejected
                     })
@@ -170,7 +170,7 @@ class PlacementMetadataTest {
         Fixture().use { fixture ->
             assertEquals(ActionResult.SUCCESS, fixture.place())
             var executed = 0
-            fixture.module.actions.processorCoordinator.registerProcessor(object : ActionProcessor<DismantleAction>() {
+            fixture.module.actions.registerProcessor(object : ActionProcessor<DismantleAction>() {
                 override val actionClass = DismantleAction::class.java
                 override val actionKey = DismantleAction.KEY
                 override fun execute(action: DismantleAction): ActionResult {
@@ -235,7 +235,7 @@ class PlacementMetadataTest {
         }
 
         fun validateDismantle(result: ActionValidator.Result) {
-            module.actions.validatorCoordinator.registerValidator(object : ActionValidator<DismantleAction> {
+            module.actions.registerValidator(object : ActionValidator<DismantleAction> {
                 override val actionClass = DismantleAction::class.java
                 override fun validate(action: DismantleAction) = result
             })

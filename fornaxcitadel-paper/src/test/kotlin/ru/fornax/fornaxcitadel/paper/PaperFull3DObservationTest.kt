@@ -241,7 +241,7 @@ class PaperFull3DObservationTest {
             val scheduler = PaperScheduler(paper.plugin)
             val backend = PersistContainerChunkStorage(paper.plugin, scheduler)
             val chunks = PaperChunkService(paper.plugin, paper.manager, backend, 100)
-            val provider = Full3DObservation(paper.plugin, paper.module.actions, chunks,
+            val provider = Full3DObservation(paper.plugin, paper.module.actions, paper.module.citadels, paper.manager, chunks,
                 Full3DObservationSettings(0, 0))
             try {
                 val (lower, upper) = paper.door(y = 79)
@@ -425,7 +425,7 @@ class PaperFull3DObservationTest {
         private val manager = ComponentManager(storage, types)
         private val module = CitadelModule(manager, ManualScheduler())
         val chunks = PaperChunkService(paper.plugin, manager, backend, 100)
-        private val provider = Full3DObservation(paper.plugin, module.actions, chunks,
+        private val provider = Full3DObservation(paper.plugin, module.actions, module.citadels, manager, chunks,
             Full3DObservationSettings(0, 0))
 
         init {
@@ -467,13 +467,13 @@ class PaperFull3DObservationTest {
         private val scheduler = PaperScheduler(paper.plugin)
         private val backend = PersistContainerChunkStorage(paper.plugin, scheduler)
         val chunks = PaperChunkService(paper.plugin, paper.manager, backend, 100)
-        val provider = Full3DObservation(paper.plugin, module.actions, chunks, settings)
+        val provider = Full3DObservation(paper.plugin, module.actions, module.citadels, manager, chunks, settings)
         private val subscriptions = mutableListOf<ObservationSubscription>()
 
         init {
             paper.citadelTypes.register(module)
             module.enable()
-            module.actions.validatorCoordinator.registerValidator(object : ActionValidator<RemoveAction> {
+            module.actions.registerValidator(object : ActionValidator<RemoveAction> {
                 override val actionClass = RemoveAction::class.java
                 override fun validate(action: RemoveAction) = ActionValidator.Result.Success
             })
