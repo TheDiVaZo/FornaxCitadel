@@ -1,13 +1,7 @@
 package ru.fornax.fornaxcitadel.modules.queue
 
-import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
-import ru.fornax.fornaxcitadel.core.storage.ChunkCord
-import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
-import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -104,7 +98,7 @@ class ActionQueueServiceTest {
 
     private class Fixture(maxPerTick: Int = 1024) {
         val scheduler = ManualScheduler()
-        val actions = ActionManager(CitadelFacade(ComponentManager(UnusedStorage, TypeManager())))
+        val actions = ActionManager()
         val executed = mutableListOf<Int>()
         val failures = mutableListOf<Exception>()
         val failuresByNumber = mutableMapOf<Int, Exception>()
@@ -124,16 +118,6 @@ class ActionQueueServiceTest {
     }
 
     private class ProbeAction(val number: Int) : ActionData(PROBE_KEY, UUID(0, 1), 0, 0, 0)
-
-    private object UnusedStorage : CitadelStorage {
-        override fun getIfChunkLoaded(location: WXZCord): ChunkCord? = null
-        override fun loadChunk(location: WXZCord): Nothing = error("Unexpected chunk load")
-        override fun unloadChunk(location: WXZCord): Nothing = error("Unexpected chunk unload")
-        override fun updateOpaque(chunk: ChunkCord): Nothing = error("Unexpected opaque update")
-        override fun updateOpaque(key: Key): Nothing = error("Unexpected opaque update")
-        override fun saveAll(): Nothing = error("Unexpected save")
-        override fun closeAndSaveAll(): Nothing = error("Unexpected close")
-    }
 
     private companion object {
         val PROBE_KEY = Key("test", "queued_probe")

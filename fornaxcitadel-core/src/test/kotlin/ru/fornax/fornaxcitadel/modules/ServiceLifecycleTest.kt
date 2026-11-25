@@ -7,7 +7,6 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
-import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
@@ -63,7 +62,7 @@ class ServiceLifecycleTest {
 
     @Test
     fun `repeated enable restores the owned processor and preserves the prerequisite`() {
-        val actions = newActionManager()
+        val actions = ActionManager()
         val own = damageProcessor()
         val registration = ActionRegistration(actions, own, listOf(rejectDamage()))
         val request = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
@@ -83,7 +82,7 @@ class ServiceLifecycleTest {
 
     @Test
     fun `repeated enable rejects a replacement without losing prerequisites or removing it on disable`() {
-        val actions = newActionManager()
+        val actions = ActionManager()
         val own = damageProcessor()
         val registration = ActionRegistration(actions, own, listOf(rejectDamage()))
         val request = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
@@ -405,8 +404,6 @@ class ServiceLifecycleTest {
         val POSITION = CitadelPosition(UUID(1L, 2L), 1, 64, 2)
         val TYPE = Key("test", "standalone")
         val ACTION_KEYS = listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY)
-
-        fun newActionManager() = ActionManager(CitadelFacade(ComponentManager(MemoryStorage(), TypeManager())))
 
         fun placeAction() = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
         fun initializers(): List<CitadelInitializer> = listOf(

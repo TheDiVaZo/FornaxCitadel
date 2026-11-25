@@ -16,7 +16,7 @@ import java.util.ArrayDeque
 /**
  * Validates and executes actions synchronously on the owning game thread.
  */
-class ActionManager(private val citadels: CitadelFacade) {
+class ActionManager {
     private val processorCoordinator = ProcessorCoordinator()
     private val validatorCoordinator = ValidatorCoordinator()
     private val handlerCoordinator = HandlerCoordinator()

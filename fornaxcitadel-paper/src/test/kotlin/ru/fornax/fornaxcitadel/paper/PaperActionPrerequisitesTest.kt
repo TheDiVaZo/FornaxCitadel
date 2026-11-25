@@ -127,7 +127,7 @@ class PaperActionPrerequisitesTest {
         }
     }
 
-    private fun PaperTestFixture.actionsWithPrerequisites(approve: Boolean = false) = ActionManager(module.citadels).apply {
+    private fun PaperTestFixture.actionsWithPrerequisites(approve: Boolean = false) = ActionManager().apply {
         if (approve) registerValidator(approval())
         registerValidator(ExistingCitadelValidator(RepairAction::class.java, module.citadels))
         registerValidator(UpgradeActionValidator(module.citadels, module.definitions))

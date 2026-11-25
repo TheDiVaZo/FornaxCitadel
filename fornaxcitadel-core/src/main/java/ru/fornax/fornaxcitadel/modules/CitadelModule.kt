@@ -29,7 +29,7 @@ class CitadelModule @JvmOverloads constructor(
 ) : LifecycleService {
     val definitions = CitadelDefinitionRegistry()
     val citadels = CitadelFacade(componentManager, resolver)
-    val actions = ActionManager(citadels)
+    val actions = ActionManager()
     val actionQueue = ActionQueueService(actions, scheduler, actionSettings)
     val coreAddon = CoreAddon(this)
 

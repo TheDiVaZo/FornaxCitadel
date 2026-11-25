@@ -36,7 +36,7 @@ internal class HealthFixture(
     val manager = ComponentManager(storage, types)
     val citadels = CitadelFacade(manager)
     val service = HealthService(RemoveService(citadels), citadels, clock)
-    val actions = ActionManager(citadels)
+    val actions = ActionManager()
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)
     val citadel: CitadelHandle get() = reference()
 

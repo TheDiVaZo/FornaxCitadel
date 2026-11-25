@@ -145,7 +145,7 @@ class PaperActionValidationTest {
     }
 
     private class Probe(fixture: PaperTestFixture) {
-        val actions = ActionManager(fixture.module.citadels)
+        val actions = ActionManager()
         val validator = PaperActionStateValidator(fixture.server)
         val service = ValidatorRegistration(actions, validator)
         var processorCalls = 0

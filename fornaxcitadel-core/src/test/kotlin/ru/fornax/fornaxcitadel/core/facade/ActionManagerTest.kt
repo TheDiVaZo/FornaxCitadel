@@ -1,9 +1,5 @@
 package ru.fornax.fornaxcitadel.core.facade
 
-import ru.fornax.fornaxcitadel.core.component.TypeManager
-import ru.fornax.fornaxcitadel.core.storage.ChunkCord
-import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
-import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionData
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
@@ -25,13 +21,13 @@ class ActionManagerTest {
     @Test
     fun `public action API hides its collaborators and exposes no citadel operations`() {
         val type = ActionManager::class.java
-        assertEquals(listOf(CitadelFacade::class.java), type.constructors.single().parameterTypes.toList())
+        assertEquals(0, type.constructors.single().parameterCount)
         val fields = type.declaredFields.filterNot { Modifier.isStatic(it.modifiers) }
         assertTrue(fields.all { Modifier.isPrivate(it.modifiers) })
-        assertTrue(fields.none { it.type == ComponentManager::class.java })
+        val citadelTypes = setOf(CitadelFacade::class.java, ReadableCitadelFacade::class.java, ComponentManager::class.java)
+        assertTrue(fields.none { it.type in citadelTypes })
 
-        assertTrue(fields.any { it.type == CitadelFacade::class.java })
-        val collaborators = fields.map { it.type }.filterNot { it.isPrimitive }.toSet() + ComponentManager::class.java
+        val collaborators = fields.map { it.type }.filterNot { it.isPrimitive }.toSet() + citadelTypes
         val methods = type.methods.filter { it.declaringClass == type }
         assertTrue(methods.none { it.returnType in collaborators })
         assertTrue(methods.none { method -> method.parameterTypes.any { it in collaborators } })
@@ -510,7 +506,7 @@ class ActionManagerTest {
     }
 
     private class Fixture {
-        val actions = ActionManager(CitadelFacade(ComponentManager(UnusedStorage, TypeManager())))
+        val actions = ActionManager()
         val executed = mutableListOf<ActionData>()
         var process: (ActionData) -> ActionResult = { ActionResult.SUCCESS }
 
@@ -535,16 +531,6 @@ class ActionManagerTest {
                 override fun validate(action: ActionData) = validation()
             })
         }
-    }
-
-    private object UnusedStorage : CitadelStorage {
-        override fun getIfChunkLoaded(location: WXZCord): ChunkCord? = null
-        override fun loadChunk(location: WXZCord): Nothing = error("Unexpected chunk load")
-        override fun unloadChunk(location: WXZCord): Nothing = error("Unexpected chunk unload")
-        override fun updateOpaque(chunk: ChunkCord): Nothing = error("Unexpected opaque update")
-        override fun updateOpaque(key: Key): Nothing = error("Unexpected opaque update")
-        override fun saveAll(): Nothing = error("Unexpected save")
-        override fun closeAndSaveAll(): Nothing = error("Unexpected close")
     }
 
     private companion object {
