@@ -214,6 +214,7 @@ class PlacementMetadataTest {
 
         init {
             module.registerDefinition(CitadelDefinition(TYPE, initializers))
+            module.coreAddon.onEnable()
             module.enable()
             manager.loadChunk(WORLD, 0, 0).join()
         }
@@ -243,6 +244,7 @@ class PlacementMetadataTest {
 
         override fun close() {
             module.disable()
+            module.coreAddon.onDisable()
             manager.closeAndSaveAll().join()
         }
     }

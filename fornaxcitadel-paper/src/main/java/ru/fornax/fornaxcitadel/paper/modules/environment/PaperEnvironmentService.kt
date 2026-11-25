@@ -5,17 +5,16 @@ import org.bukkit.block.BlockFace
 import org.bukkit.block.data.Directional
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.paper.modules.isProtected
 import java.util.logging.Level
 
 /** Keeps environmental changes from moving or replacing reinforced blocks. */
 class PaperEnvironmentService(
     private val plugin: Plugin,
-    module: CitadelModule
+    private val citadels: ReadableCitadelFacade
 ) : LifecycleService {
-    private val citadels = module.citadels
     private val listener = PaperEnvironmentListener(this)
     private var enabled = false
 

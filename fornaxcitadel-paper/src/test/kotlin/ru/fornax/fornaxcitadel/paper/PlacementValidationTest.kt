@@ -112,7 +112,7 @@ class PlacementValidationTest {
 
             fixture.installer.permissions.add("fornaxcitadel.admin")
             fixture.installer.target = fixture.block()
-            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.materials, fixture.citadelTypes) {}
+            val commands = fixture.command()
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "reinforced"))
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
 

@@ -492,7 +492,8 @@ class ChunkBackendLifecycleCoordinatorTest {
     @Test
     fun `updateOpaque restores discards and retains components before unload`() {
         val types = TypeManager()
-        val mapper = ChunkCordSnapshotMapper(types)
+        val corruptKeys = mutableListOf<Key>()
+        val mapper = ChunkCordSnapshotMapper(types) { corruptKeys.add(it.key) }
         val location = location(23, -24)
         val unknownPayload = byteArrayOf(9, 7, 5)
         val backend = FakeDBStorage().apply {
@@ -517,6 +518,7 @@ class ChunkBackendLifecycleCoordinatorTest {
         val result = storage.updateOpaque(chunk).join()
 
         assertEquals(OpaqueUpdateResult(1, 1, 1, 0), result)
+        assertEquals(listOf(CORRUPT_KEY), corruptKeys)
         assertSame(entity, chunk.getCitadel(2, 40, 4))
         assertEquals(71, assertNotNull(chunk.getComponent(entity, intType)).value)
         assertEquals(listOf(UNKNOWN_KEY), chunk.captureOpaqueComponents().map { it.key })

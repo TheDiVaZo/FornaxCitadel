@@ -232,10 +232,11 @@ class PaperChunkServiceTest {
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
 
         init {
-            module.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
-            module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(module.health))))
+            module.coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
+            module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(module.coreAddon.health))))
             module.actions.registerValidator(
                 PaperDamageValidator(module.citadels, paper.citadelTypes, true))
+            module.coreAddon.onEnable()
             module.enable()
         }
 
@@ -262,6 +263,7 @@ class PaperChunkServiceTest {
             service.disable()
             manager.closeAndSaveAll().join()
             module.disable()
+            module.coreAddon.onDisable()
             paper.close()
         }
     }

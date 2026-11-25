@@ -2,9 +2,12 @@ package ru.fornax.fornaxcitadel.paper.modules.upgrade
 
 import org.bukkit.block.Block
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
@@ -12,8 +15,8 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
@@ -31,7 +34,10 @@ import kotlin.random.Random
 /** Upgrades a live entity in place; neither dismantles it nor emits a separate placement action. */
 class PaperUpgradeService @JvmOverloads constructor(
     private val plugin: Plugin,
-    private val module: CitadelModule,
+    actions: ActionManager,
+    private val citadels: CitadelFacade,
+    private val definitions: CitadelDefinitionRegistry,
+    private val health: HealthService,
     private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry,
     settings: DismantleSettings = DismantleSettings(),
@@ -40,10 +46,10 @@ class PaperUpgradeService @JvmOverloads constructor(
 ) : LifecycleService {
     private val refunds = ReinforcementRefunds(materials, settings, random)
     private val registration = ActionRegistration(
-        module.actions, UpgradeAction::class.java, UpgradeAction.KEY,
+        actions, UpgradeAction::class.java, UpgradeAction.KEY,
         listOf(
-            UpgradeActionValidator(module.citadels, module.definitions),
-            OwnerActionValidator(UpgradeAction::class.java, module.citadels, ActionValidator.Result.Rejected)
+            UpgradeActionValidator(citadels, definitions),
+            OwnerActionValidator(UpgradeAction::class.java, citadels, ActionValidator.Result.Rejected)
         ), ::upgrade
     )
 
@@ -52,23 +58,23 @@ class PaperUpgradeService @JvmOverloads constructor(
     }
     override fun disable() = registration.disable()
 
-    /** Executes a validated action; external requests must enter through module.actions. */
+    /** Executes a validated action. External requests use [ActionManager.execute]. */
     fun upgrade(action: UpgradeAction): ActionResult {
         if (!registration.isEnabled || !plugin.server.isPrimaryThread) return ActionResult.DENIED
         val player = (action.context.source as? PlayerSource)?.player ?: return ActionResult.DENIED
-        val citadel = module.citadels.findProtecting(action.position) ?: return ActionResult.DENIED
+        val citadel = citadels.findProtecting(action.position) ?: return ActionResult.DENIED
         if (citadel.getComponent(CitadelOwner::class.java) == null) return ActionResult.DENIED
         val oldKey = citadel.getComponent(CitadelKind::class.java)?.definitionKey
         if (!canUpgradeTo(citadel, action.definitionKey)) return ActionResult.DENIED
-        val newMaximum = module.health.findDefinition(action.definitionKey)?.maxHealth
+        val newMaximum = health.findDefinition(action.definitionKey)?.maxHealth
         val itemKey = citadelTypes.itemKey(action.definitionKey) ?: return ActionResult.DENIED
         val held = player.inventory.itemInMainHand
         if (!held.hasMaterial()) return ActionResult.DENIED
 
-        val oldMaximum = module.health.maxHealth(citadel)
+        val oldMaximum = health.maxHealth(citadel)
         val block = findLoadedBlock(citadel.position) ?: return ActionResult.DENIED
         if (materials.getTypeOrNull(held)?.getKey() != itemKey) return ActionResult.DENIED
-        val currentHealth = module.health.currentHealth(citadel)
+        val currentHealth = health.currentHealth(citadel)
         val refundChance = refunds.chance(
             currentHealth != null && currentHealth.isFinite() && oldMaximum != null && currentHealth >= oldMaximum)
         val refund = try {
@@ -104,7 +110,7 @@ class PaperUpgradeService @JvmOverloads constructor(
     }
 
     private fun canUpgradeTo(citadel: ReadableHandle, destination: Key): Boolean {
-        if (module.definitions.find(destination) == null) return false
+        if (definitions.find(destination) == null) return false
         val newLevel = citadelTypes.level(destination) ?: return false
         val oldLevel = citadelTypes.level(citadel)
         return oldLevel == null || newLevel > oldLevel

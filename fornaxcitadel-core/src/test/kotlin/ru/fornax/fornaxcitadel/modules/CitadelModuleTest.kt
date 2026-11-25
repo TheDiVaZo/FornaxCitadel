@@ -53,11 +53,11 @@ class CitadelModuleTest {
     @Test
     fun `registering another definition with the same key preserves the original`() {
         val fixture = Fixture()
-        val original = CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.health)))
+        val original = CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.coreAddon.health)))
         fixture.module.registerDefinition(original)
 
         assertFailsWith<IllegalArgumentException> {
-            fixture.module.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.health))))
+            fixture.module.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.coreAddon.health))))
         }
 
         assertSame(original, fixture.module.definitions.find(DEFAULT_KIND))
@@ -68,7 +68,7 @@ class CitadelModuleTest {
         val fixture = Fixture()
         val clock = Clock.fixed(Instant.ofEpochMilli(1_793_204_123_456L), ZoneOffset.UTC)
         fixture.register(initializers = listOf(MaturingInitializer(clock)))
-        fixture.module.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.module.coreAddon.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         var observedKind: Key? = null
         var observedHealth: Double? = null
@@ -255,7 +255,7 @@ class CitadelModuleTest {
             val fixture = Fixture(authorizeDestruction = { context, citadel ->
                 context.actorId == PLACER && citadel.position == POSITION
             })
-            fixture.module.health.registerModifier(DamageModifier { _, _, _ ->
+            fixture.module.coreAddon.health.registerModifier(DamageModifier { _, _, _ ->
                 modifierCalls++
                 error("Destruction must not calculate damage")
             })
@@ -468,8 +468,8 @@ class CitadelModuleTest {
     @Test
     fun `a type with health but no approving damage validator rejects damage`() {
         val fixture = Fixture()
-        fixture.module.health.registerDefinition(DEFAULT_KIND, HealthDefinition(100.0))
-        fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.health))))
+        fixture.module.coreAddon.health.registerDefinition(DEFAULT_KIND, HealthDefinition(100.0))
+        fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.coreAddon.health))))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
@@ -504,7 +504,7 @@ class CitadelModuleTest {
         val clock = Clock.fixed(Instant.ofEpochMilli(Long.MAX_VALUE), ZoneOffset.UTC)
         fixture.register(maxHealth = 25.0)
         fixture.register(MATURING_KIND, initializers = listOf(MaturingInitializer(clock)))
-        fixture.module.health.maturation.registerDefinition(MATURING_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.module.coreAddon.health.maturation.registerDefinition(MATURING_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.place(SECOND_POSITION, MATURING_KIND))
@@ -564,14 +564,14 @@ class CitadelModuleTest {
         fixture.register()
         fixture.load()
 
-        assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(PLACER_CONTEXT, POSITION, DEFAULT_KIND)))
-        assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(PLACER_CONTEXT, SECOND_POSITION, DEFAULT_KIND)))
+        assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.place.place(PlaceAction(PLACER_CONTEXT, POSITION, DEFAULT_KIND)))
+        assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.place.place(PlaceAction(PLACER_CONTEXT, SECOND_POSITION, DEFAULT_KIND)))
         val first = fixture.handle()
         val second = fixture.handle(SECOND_POSITION)
-        assertEquals(ActionResult.SUCCESS, fixture.module.health.damage(first, 25.0))
+        assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.health.damage(first, 25.0))
         assertEquals(75.0, fixture.health().health)
-        assertEquals(ActionResult.SUCCESS, fixture.module.remove.remove(first))
-        assertEquals(1, fixture.module.remove.removeAll(listOf(first, second)))
+        assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.remove.remove(first))
+        assertEquals(1, fixture.module.coreAddon.remove.removeAll(listOf(first, second)))
 
         assertFalse(first.isCurrent)
         assertFalse(second.isCurrent)
@@ -726,7 +726,7 @@ class CitadelModuleTest {
         val startedAt = Long.MAX_VALUE
         val clock = Clock.fixed(Instant.ofEpochMilli(startedAt), ZoneOffset.UTC)
         fixture.register(initializers = listOf(MaturingInitializer(clock)))
-        fixture.module.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.module.coreAddon.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 15.0))
@@ -771,7 +771,7 @@ class CitadelModuleTest {
         val replacement = fixture.handle()
         fixture.chunk().resetDirty()
 
-        assertEquals(ActionResult.DENIED, fixture.module.remove.remove(oldHandle))
+        assertEquals(ActionResult.DENIED, fixture.module.coreAddon.remove.remove(oldHandle))
 
         assertFalse(oldHandle.isCurrent)
         assertTrue(replacement.isCurrent)
@@ -794,6 +794,7 @@ class CitadelModuleTest {
         val module = CitadelModule(manager, scheduler).apply {
             authorizeRemoval?.let { actions.validateRemoval(citadels, it) }
             authorizeDestruction?.let { actions.validateDamage(citadels, mode = DamageAction.Mode.DESTROY, allowed = it) }
+            coreAddon.onEnable()
             enable()
         }
         val completed = mutableListOf<ActionData>()
@@ -822,8 +823,8 @@ class CitadelModuleTest {
             authorizeDamage: (ActionContext, ReadableHandle) -> Boolean = { _, _ -> true },
             initializers: List<CitadelInitializer> = emptyList()
         ) {
-            maxHealth?.let { module.health.registerDefinition(key, HealthDefinition(it)) }
-            val prepared = initializers + HealthInitializer(module.health)
+            maxHealth?.let { module.coreAddon.health.registerDefinition(key, HealthDefinition(it)) }
+            val prepared = initializers + HealthInitializer(module.coreAddon.health)
             module.registerDefinition(CitadelDefinition(key, prepared))
             module.actions.validateDamage(module.citadels, key, allowed = authorizeDamage)
         }

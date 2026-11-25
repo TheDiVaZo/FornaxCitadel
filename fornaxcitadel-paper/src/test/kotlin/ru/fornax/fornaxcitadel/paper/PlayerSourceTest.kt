@@ -15,6 +15,7 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
+import ru.fornax.fornaxcitadel.paper.command.CitadelCommand
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -82,7 +83,8 @@ class PlayerSourceTest {
             fixture.installer.target = fixture.block()
             val observed = fixture.captureActions()
             val commands = CitadelCommand(
-                fixture.plugin, fixture.manager, fixture.module, fixture.materials, fixture.citadelTypes
+                fixture.plugin, fixture.module.actions, fixture.module.citadels, fixture.module.coreAddon.health,
+                fixture.materials, fixture.citadelTypes
             ) {}
 
             assertTrue(commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "reinforced")))

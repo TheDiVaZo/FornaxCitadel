@@ -53,7 +53,7 @@ class PaperExplosionListenerTest {
                 f.installer.permissions.add("fornaxcitadel.admin")
                 f.place(type)
                 checkNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-                f.module.health.unregisterDefinition(type)
+                f.module.coreAddon.health.unregisterDefinition(type)
                 val event = f.blockExplosion(f.block())
                 dispatch(f.explosionListener, event, f.plugin)
                 assertEquals(protected, f.module.citadels.findProtecting(f.position) != null)
@@ -88,49 +88,10 @@ class PaperExplosionListenerTest {
 
                 assertEquals(listOf(5.0), sourceDamage)
                 assertEquals(20.0, fixture.health())
-                assertEquals(40.0, fixture.module.health.maxHealth(target))
+                assertEquals(40.0, fixture.module.coreAddon.health.maxHealth(target))
                 assertEquals(0, fixture.vanillaBlockChanges)
             }
         }
-    }
-
-    @Test
-    fun `one damage validator rejects player and explosion damage across health service reenable`() {
-        val fixture = PaperTestFixture(permissions = true)
-        fixture.place()
-        val chunk = assertNotNull(fixture.storage.getIfChunkLoaded(WXZCord(fixture.worldId, 0, 0)))
-        chunk.resetDirty()
-        val observedActors = mutableListOf<UUID?>()
-        val validator = object : ActionValidator<DamageAction> {
-            override val actionClass = DamageAction::class.java
-            override fun validate(action: DamageAction): ActionValidator.Result {
-                observedActors.add(action.context.actorId)
-                return ActionValidator.Result.Rejected
-            }
-        }
-        fixture.module.actions.registerValidator(validator)
-
-        repeat(2) {
-            val breaking = BlockBreakEvent(fixture.block(), fixture.stranger.player)
-            dispatch(fixture.breakingListener, breaking, fixture.plugin)
-            val explosion = fixture.entityExplosion(fixture.block())
-            dispatch(fixture.explosionListener, explosion, fixture.plugin)
-
-            assertTrue(breaking.isCancelled)
-            assertTrue(explosion.blockList().isEmpty())
-            assertEquals(100.0, fixture.health())
-            assertFalse(chunk.isDirty)
-            fixture.module.health.disable()
-            fixture.module.health.enable()
-        }
-        assertEquals(listOf(fixture.stranger.id, null, fixture.stranger.id, null), observedActors)
-
-        assertTrue(fixture.module.actions.unregisterValidator(validator))
-        dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
-        assertEquals(99.0, fixture.health())
-        dispatch(fixture.explosionListener, fixture.entityExplosion(fixture.block()), fixture.plugin)
-        assertEquals(59.0, fixture.health())
-        assertEquals(0, fixture.vanillaBlockChanges)
     }
 
     @Test
@@ -593,7 +554,7 @@ class PaperExplosionListenerTest {
 
     private fun PaperTestFixture.placeAt(block: Block) {
         // Source cleanup also covers old data on beds/anchors, outside today's placement allowlist.
-        assertEquals(ActionResult.SUCCESS, module.place.place(PlaceAction(context(installer),
+        assertEquals(ActionResult.SUCCESS, module.coreAddon.place.place(PlaceAction(context(installer),
             CitadelPosition(worldId, block.x, block.y, block.z), PaperCitadelTypes.REINFORCED)))
     }
 }

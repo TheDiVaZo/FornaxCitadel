@@ -1,4 +1,4 @@
-package ru.fornax.fornaxcitadel.paper
+package ru.fornax.fornaxcitadel.paper.config
 
 import org.bukkit.configuration.ConfigurationSection
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidSettings

@@ -5,18 +5,18 @@ import org.bukkit.Server
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.paper.modules.ChunkLoadCheck
 import ru.fornax.fornaxcitadel.paper.modules.LoadedBlocks
 import kotlin.math.floor
 
 /** Voxel traversal checks availability before Bukkit sees a position; it never requests a chunk. */
 internal object LoadedBlockTarget {
-    fun blockAt(server: Server, manager: ComponentManager, position: CitadelPosition): Block {
-        val world = LoadedBlocks.requireAvailable(server, manager, position)
+    fun blockAt(server: Server, isChunkLoaded: ChunkLoadCheck, position: CitadelPosition): Block {
+        val world = LoadedBlocks.requireAvailable(server, isChunkLoaded, position)
         return world.getBlockAt(position.x, position.y, position.z)
     }
 
-    fun find(player: Player, distance: Int, manager: ComponentManager): Block? {
+    fun find(player: Player, distance: Int, isChunkLoaded: ChunkLoadCheck): Block? {
         val eye = player.eyeLocation
         val world = player.world
         val direction = eye.direction.normalize()
@@ -33,7 +33,7 @@ internal object LoadedBlockTarget {
         while (travelled <= distance) {
             val (x, y, z) = coordinates
             if (y !in world.minHeight until world.maxHeight || !CitadelPosition.isSupported(x, y, z)) return null
-            LoadedBlocks.requireAvailable(world, manager, x, y, z)
+            LoadedBlocks.requireAvailable(world, isChunkLoaded, x, y, z)
             val block = world.getBlockAt(x, y, z)
             if (!block.isEmpty && block.rayTrace(eye, direction, distance.toDouble(), FluidCollisionMode.NEVER) != null) return block
             val axis = (0..2).minBy { next[it] }

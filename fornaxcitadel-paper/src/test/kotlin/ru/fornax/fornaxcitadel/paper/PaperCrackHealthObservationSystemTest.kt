@@ -46,11 +46,11 @@ class PaperCrackHealthObservationSystemTest {
             f.paper.advanceTicks(2)
             assertTrue(f.paper.installer.blockDamagePackets.isEmpty())
             assertNull(f.target.getComponent(Health::class.java))
-            assertEquals(100.0, f.paper.module.health.currentHealth(f.target))
+            assertEquals(100.0, f.paper.module.coreAddon.health.currentHealth(f.target))
             f.paper.manager.saveAll().join()
             assertEquals(saves, f.paper.backend.saves)
 
-            assertEquals(ActionResult.SUCCESS, f.paper.module.health.damage(f.target, 20.0))
+            assertEquals(ActionResult.SUCCESS, f.paper.module.coreAddon.health.damage(f.target, 20.0))
             f.paper.advanceTicks(1)
             assertEquals(80.0, f.target.getComponent(Health::class.java)?.health)
             assertEquals(0.2f, f.paper.installer.blockDamagePackets.single().progress)
@@ -66,13 +66,13 @@ class PaperCrackHealthObservationSystemTest {
             assertEquals(0.5f, packets.last().progress)
             f.paper.manager.saveAll().join()
             val saves = f.paper.backend.saves
-            f.paper.module.health.registerDefinition(TYPE, HealthDefinition(200.0))
+            f.paper.module.coreAddon.health.registerDefinition(TYPE, HealthDefinition(200.0))
             f.paper.advanceTicks(1)
             assertEquals(0.75f, packets.last().progress)
-            f.paper.module.health.unregisterDefinition(TYPE)
+            f.paper.module.coreAddon.health.unregisterDefinition(TYPE)
             f.paper.advanceTicks(1)
             assertEquals(0.0f, packets.last().progress)
-            f.paper.module.health.registerDefinition(TYPE, HealthDefinition(25.0))
+            f.paper.module.coreAddon.health.registerDefinition(TYPE, HealthDefinition(25.0))
             f.paper.advanceTicks(1)
             assertEquals(0.0f, packets.last().progress)
             assertEquals(50.0, f.target.getComponent(Health::class.java)?.health)
@@ -180,7 +180,7 @@ class PaperCrackHealthObservationSystemTest {
     fun `every health bearing type is displayed with an independent negative source id`() {
         Fixture().use { fixture ->
             val protectedType = Key("test", "protected_health")
-            fixture.paper.module.health.registerDefinition(protectedType, HealthDefinition(100.0))
+            fixture.paper.module.coreAddon.health.registerDefinition(protectedType, HealthDefinition(100.0))
             fixture.paper.module.registerDefinition(CitadelDefinition(protectedType, listOf(initialHealth(75.0))))
             val protected = fixture.create(2, type = protectedType)
             val emptyType = Key("test", "without_health")
@@ -280,7 +280,7 @@ class PaperCrackHealthObservationSystemTest {
     fun `destroyed target is cleared using retained identity after its handle expires`() {
         Fixture().use { fixture ->
             fixture.observe(fixture.paper.installer)
-            assertEquals(ActionResult.SUCCESS, fixture.paper.module.health.damage(fixture.target, 50.0))
+            assertEquals(ActionResult.SUCCESS, fixture.paper.module.coreAddon.health.damage(fixture.target, 50.0))
             assertFalse(fixture.target.isCurrent)
 
             fixture.paper.advanceTicks(1)
@@ -365,7 +365,7 @@ class PaperCrackHealthObservationSystemTest {
             assertEquals(saves, fixture.paper.backend.saves)
             val health = assertNotNull(fixture.target.getComponent(Health::class.java))
             assertEquals(50.0, health.health)
-            assertEquals(100.0, fixture.paper.module.health.maxHealth(fixture.target))
+            assertEquals(100.0, fixture.paper.module.coreAddon.health.maxHealth(fixture.target))
             assertTrue(fixture.paper.installer.blockDamagePackets.all { it.progress == 0.5f })
             assertTrue(fixture.paper.stranger.blockDamagePackets.all { it.progress == 0.5f })
             assertTrue(fixture.failures.isEmpty())
@@ -377,11 +377,11 @@ class PaperCrackHealthObservationSystemTest {
         private val scheduler = PaperScheduler(paper.plugin)
         val failures = mutableListOf<Exception>()
         val observations = ObservationService<Player>(paper.manager, scheduler, failureHandler = failures::add)
-        val system = CrackHealthObservationSystem(paper.plugin, paper.module.health)
+        val system = CrackHealthObservationSystem(paper.plugin, paper.module.coreAddon.health)
         val target: CitadelHandle
 
         init {
-            paper.module.health.registerDefinition(TYPE, HealthDefinition(100.0))
+            paper.module.coreAddon.health.registerDefinition(TYPE, HealthDefinition(100.0))
             paper.module.registerDefinition(CitadelDefinition(TYPE, listOf(initialHealth(50.0))))
             target = create(paper.position.x)
             observations.registerSystem(system)
@@ -392,7 +392,7 @@ class PaperCrackHealthObservationSystemTest {
             val position = CitadelPosition(paper.worldId, x, paper.position.y, z)
             paper.manager.loadChunk(position.world, x shr 4, z shr 4).join()
             // Observation fixtures seed core data independently of Bukkit chunk availability.
-            assertEquals(ActionResult.SUCCESS, paper.module.place.place(PlaceAction(ActionContext.SYSTEM, position, type)))
+            assertEquals(ActionResult.SUCCESS, paper.module.coreAddon.place.place(PlaceAction(ActionContext.SYSTEM, position, type)))
             return assertNotNull(paper.manager.findCitadel(position.world, x, position.y, z))
         }
 

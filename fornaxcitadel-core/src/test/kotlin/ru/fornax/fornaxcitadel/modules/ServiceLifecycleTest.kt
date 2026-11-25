@@ -1,7 +1,6 @@
 package ru.fornax.fornaxcitadel.modules
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
-import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
@@ -10,7 +9,6 @@ import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
-import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
@@ -23,17 +21,18 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.health.DamageModifier
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import ru.fornax.fornaxcitadel.modules.health.MaturationDefinition
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
-import ru.fornax.fornaxcitadel.modules.place.PlaceService
+import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
-import ru.fornax.fornaxcitadel.modules.remove.RemoveService
+import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -44,89 +43,51 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ServiceLifecycleTest {
     @Test
-    fun `standalone services attach and detach only their own prerequisite checks`() {
-        val fixture = Fixture()
-        fixture.prepare()
-        val approval = fixture.approveAll()
-        val requests = invalidRequests()
-        for ((service, request) in fixture.services.zip(requests)) {
-            assertTrue(fixture.actions.isAllowed(request))
-            repeat(2) { service.enable() }
-            assertFalse(fixture.actions.isAllowed(request))
-            assertEquals(ActionResult.DENIED, fixture.actions.execute(request))
-            for (other in requests.filter { it !== request }) {
-                assertTrue(fixture.actions.isAllowed(other))
-            }
-            repeat(2) { service.disable() }
-            assertTrue(fixture.actions.isAllowed(request))
-        }
-        assertTrue(fixture.actions.unregisterValidator(approval))
-        assertNull(fixture.find())
-    }
+    fun `module registers core types through the supplied component manager before enable`() {
+        val types = TypeManager()
+        val manager = ComponentManager(MemoryStorage(), types)
+        val module = CitadelModule(manager, ManualScheduler())
 
-    @Test
-    fun `standalone processor conflicts do not leak prerequisites or remove external registrations`() {
-        for (index in ACTION_KEYS.indices) {
-            val fixture = Fixture()
-            fixture.prepare()
-            val approval = fixture.approveAll()
-            val service = fixture.services[index]
-            val request = invalidRequests()[index]
-            val external = object : ActionProcessor<ActionData>() {
-                override val actionClass = ActionData::class.java
-                override val actionKey = request.type
-                override fun execute(action: ActionData) = ActionResult.SUCCESS
-            }
-            fixture.actions.registerProcessor(external)
-            assertFailsWith<IllegalArgumentException> { service.enable() }
-            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(request))
-            assertTrue(fixture.actions.isAllowed(request))
-            service.disable()
-            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(request))
-            assertTrue(fixture.actions.unregisterProcessor(external))
-            service.enable()
-            assertFalse(fixture.actions.isAllowed(request))
-            service.disable()
-            assertTrue(fixture.actions.isAllowed(request))
-            assertTrue(fixture.actions.unregisterValidator(approval))
-        }
+        assertSame(manager, module.componentManager)
+        assertNotNull(types.getType(CitadelKind::class.java))
+        assertNotNull(types.getType(CitadelOwner::class.java))
+        assertNotNull(types.getType(Health::class.java))
+        assertNotNull(types.getType(Maturing::class.java))
+        ACTION_KEYS.forEach { assertSlotAvailable(module.actions, it) }
     }
 
     @Test
     fun `repeated enable restores the owned processor and preserves the prerequisite`() {
-        val actions = Fixture().actions
+        val actions = newActionManager()
         val own = damageProcessor()
-        val service = ActionRegistration(actions, own, listOf(rejectDamage()))
+        val registration = ActionRegistration(actions, own, listOf(rejectDamage()))
         val request = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
-        actions.registerActionMeta(request.type, ActionMeta(true))
-        service.enable()
+        registration.enable()
 
         assertTrue(actions.unregisterProcessor(own))
         assertFalse(actions.isAllowed(request))
-        service.enable()
+        registration.enable()
         assertFalse(actions.isAllowed(request))
         assertEquals(ActionResult.DENIED, actions.execute(request))
         assertTrue(actions.unregisterProcessor(own))
 
-        service.disable()
+        registration.disable()
         assertTrue(actions.isAllowed(request))
         assertSlotAvailable(actions, request.type)
     }
 
     @Test
     fun `repeated enable rejects a replacement without losing prerequisites or removing it on disable`() {
-        val actions = Fixture().actions
+        val actions = newActionManager()
         val own = damageProcessor()
-        val service = ActionRegistration(actions, own, listOf(rejectDamage()))
+        val registration = ActionRegistration(actions, own, listOf(rejectDamage()))
         val request = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
-        actions.registerActionMeta(request.type, ActionMeta(true))
-        service.enable()
+        registration.enable()
         assertTrue(actions.unregisterProcessor(own))
         var externalExecutions = 0
         val replacement = object : ActionProcessor<DamageAction>() {
@@ -139,12 +100,12 @@ class ServiceLifecycleTest {
         }
         actions.registerProcessor(replacement)
 
-        assertFailsWith<IllegalArgumentException> { service.enable() }
+        assertFailsWith<IllegalArgumentException> { registration.enable() }
         assertFalse(actions.isAllowed(request))
         assertEquals(ActionResult.DENIED, actions.execute(request))
         assertEquals(0, externalExecutions)
 
-        service.disable()
+        registration.disable()
         assertTrue(actions.isAllowed(request))
         assertFalse(actions.unregisterProcessor(own))
         assertEquals(ActionResult.SUCCESS, actions.execute(request))
@@ -153,102 +114,25 @@ class ServiceLifecycleTest {
     }
 
     @Test
-    fun `constructors register component types before enabling any handlers`() {
-        val fixture = Fixture()
-        fixture.prepare()
+    fun `external damage validator still vetoes actions after restarting the core addon`() {
+        val fixture = RootFixture()
+        val module = fixture.module
+        module.registerDefinition(CitadelDefinition(TYPE, initializers()))
+        fixture.load()
+        module.coreAddon.onEnable()
+        assertEquals(ActionResult.SUCCESS, module.actions.execute(placeAction()))
+        val damage = DamageAction(ActionContext.SYSTEM, POSITION, 2.0)
+        val external = rejectDamage()
+        module.actions.registerValidator(external)
 
-        assertNotNull(fixture.types.getType(CitadelKind::class.java))
-        assertNotNull(fixture.types.getType(CitadelOwner::class.java))
-        assertNotNull(fixture.types.getType(Health::class.java))
-        assertNotNull(fixture.types.getType(Maturing::class.java))
-        assertEquals(ActionResult.DENIED, fixture.place())
-        ACTION_KEYS.forEach { assertSlotAvailable(fixture.actions, it) }
-
-        fixture.enable()
-        assertEquals(ActionResult.SUCCESS, fixture.place())
-        val citadel = assertNotNull(fixture.find())
-        assertEquals(TYPE, citadel.getComponent(CitadelKind::class.java)?.definitionKey)
-        assertEquals(1_000L, citadel.getComponent(Maturing::class.java)?.startedAtMillis)
-
-        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 2.0)))
-        assertEquals(8.0, fixture.currentHealth())
-        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 3.0)))
-        assertEquals(5.0, fixture.currentHealth())
-        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(RemoveAction(ActionContext.SYSTEM, POSITION)))
-        assertNull(fixture.find())
-    }
-
-    @Test
-    fun `repeated lifecycle calls preserve component types live data and rules`() {
-        val fixture = Fixture()
-        fixture.prepare()
-        val componentTypes = listOf(
-            fixture.types.getType(CitadelKind::class.java),
-            fixture.types.getType(CitadelOwner::class.java),
-            fixture.types.getType(Health::class.java),
-            fixture.types.getType(Maturing::class.java)
-        )
-        fixture.disable()
-        fixture.disable()
-        fixture.enable()
-        fixture.enable()
-        assertEquals(ActionResult.SUCCESS, fixture.place())
-        val original = assertNotNull(fixture.find())
-        val health = original.getComponent(Health::class.java)
-        val maturation = original.getComponent(Maturing::class.java)
-        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 2.0)))
-        fixture.storage.chunk!!.resetDirty()
-
-        repeat(2) {
-            fixture.disable()
-            fixture.disable()
-            ACTION_KEYS.forEach { assertSlotAvailable(fixture.actions, it) }
-            assertEquals(ActionResult.DENIED, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 50.0)))
-            assertSame(health, fixture.find()?.getComponent(Health::class.java))
-            assertSame(maturation, fixture.find()?.getComponent(Maturing::class.java))
-            assertEquals(8.0, fixture.currentHealth())
-            assertTrue(original.isCurrent)
-            assertFalse(fixture.storage.chunk!!.isDirty)
-            fixture.enable()
-            fixture.enable()
-        }
-
-        assertEquals(componentTypes, listOf(
-            fixture.types.getType(CitadelKind::class.java),
-            fixture.types.getType(CitadelOwner::class.java),
-            fixture.types.getType(Health::class.java),
-            fixture.types.getType(Maturing::class.java)
-        ))
-        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 8.0)))
-        assertNull(fixture.find())
-    }
-
-    @Test
-    fun `health lifecycle leaves external validators registered`() {
-        val fixture = Fixture()
-        fixture.prepare()
-        fixture.enable()
-        assertEquals(ActionResult.SUCCESS, fixture.place())
-        val damage = DamageAction(ActionContext.SYSTEM, POSITION, 20.0)
-        val external = object : ActionValidator<DamageAction> {
-            override val actionClass = DamageAction::class.java
-            override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
-        }
-        fixture.actions.registerValidator(external)
-        assertEquals(ActionResult.DENIED, fixture.actions.execute(damage))
-
-        fixture.health.disable()
-        fixture.health.disable()
-        assertSlotAvailable(fixture.actions, DamageAction.KEY)
-        assertFalse(fixture.actions.isAllowed(damage))
-        fixture.health.enable()
-        fixture.health.enable()
-        assertEquals(ActionResult.DENIED, fixture.actions.execute(damage))
-        assertEquals(10.0, fixture.currentHealth())
-        fixture.disable()
-        assertFalse(fixture.actions.isAllowed(damage))
-        assertTrue(fixture.actions.unregisterValidator(external))
-        assertTrue(fixture.actions.isAllowed(damage))
+        assertEquals(ActionResult.DENIED, module.actions.execute(damage))
+        module.coreAddon.onDisable()
+        assertFalse(module.actions.isAllowed(damage))
+        module.coreAddon.onEnable()
+        assertEquals(ActionResult.DENIED, module.actions.execute(damage))
+        assertTrue(module.actions.unregisterValidator(external))
+        assertEquals(ActionResult.SUCCESS, module.actions.execute(damage))
+        assertEquals(8.0, module.citadels.findProtecting(POSITION)?.getComponent(Health::class.java)?.health)
     }
 
     @Test
@@ -257,50 +141,165 @@ class ServiceLifecycleTest {
         val module = fixture.module
         val definition = CitadelDefinition(TYPE, initializers())
         module.registerDefinition(definition)
-        fixture.load()
+        val chunk = fixture.load()
+        val types = listOf(CitadelKind.KEY, CitadelOwner.KEY, Health.KEY, Maturing.KEY)
+            .map { assertNotNull(fixture.types.getType(it)) }
         assertEquals(ActionResult.DENIED, module.actions.execute(placeAction()))
         assertTrue(fixture.scheduler.tasks.isEmpty())
+        module.coreAddon.onEnable()
         module.enable()
         module.enable()
         val firstTimer = fixture.scheduler.tasks.single()
         assertEquals(ActionResult.SUCCESS, module.actions.execute(placeAction()))
         val original = assertNotNull(fixture.manager.findCitadel(POSITION.world, POSITION.x, POSITION.y, POSITION.z))
-        val health = original.getComponent(Health::class.java)
+        val health = assertNotNull(original.getComponent(Health::class.java))
+        val maturation = assertNotNull(original.getComponent(Maturing::class.java))
+        assertEquals(1_000L, maturation.startedAtMillis)
         module.actions.post(DamageAction(ActionContext.SYSTEM, POSITION, 100.0))
+        chunk.resetDirty()
 
         module.disable()
         module.disable()
+        module.coreAddon.onDisable()
+        module.coreAddon.onDisable()
         assertTrue(firstTimer.isCancelled)
         ACTION_KEYS.forEach { assertSlotAvailable(module.actions, it) }
         assertTrue(original.isCurrent)
         assertSame(health, original.getComponent(Health::class.java))
-        assertNotNull(module.definitions.find(TYPE))
+        assertSame(maturation, original.getComponent(Maturing::class.java))
+        assertSame(definition, module.definitions.find(TYPE))
+        module.coreAddon.onEnable()
         module.enable()
+        types.forEach { assertSame(it, fixture.types.getType(it.key)) }
+        assertFalse(chunk.isDirty)
         assertEquals(2, fixture.scheduler.tasks.size)
         fixture.scheduler.tick()
         assertEquals(0, module.actions.drainPosted())
         assertEquals(ActionResult.SUCCESS, module.actions.execute(DamageAction(ActionContext.SYSTEM, POSITION, 2.0)))
         assertEquals(8.0, original.getComponent(Health::class.java)?.health)
+        module.actions.validateRemoval(module.citadels)
+        assertEquals(ActionResult.SUCCESS, module.actions.execute(RemoveAction(ActionContext.SYSTEM, POSITION)))
+        assertFalse(original.isCurrent)
     }
 
     @Test
-    fun `failed root enable rolls back owned registrations and can be retried`() {
+    fun `a conflict on any core action rolls back the addon and preserves external registrations`() {
+        val requests = listOf(placeAction(), DamageAction(ActionContext.SYSTEM, POSITION, 1.0),
+            RemoveAction(ActionContext.SYSTEM, POSITION))
+        for (request in requests) {
+            val fixture = RootFixture()
+            fixture.load()
+            val module = fixture.module
+            val external = probeProcessor(request.type)
+            module.actions.registerProcessor(external)
+            module.actions.registerValidator(object : ActionValidator<ActionData> {
+                override val actionClass = ActionData::class.java
+                override fun validate(action: ActionData) = ActionValidator.Result.Success
+            })
+
+            assertFailsWith<IllegalArgumentException> { module.coreAddon.onEnable() }
+            assertTrue(fixture.scheduler.tasks.isEmpty())
+            for (key in ACTION_KEYS - request.type) assertSlotAvailable(module.actions, key)
+            requests.forEach { assertTrue(module.actions.isAllowed(it)) }
+            assertEquals(ActionResult.SUCCESS, module.actions.execute(request))
+            assertTrue(module.actions.unregisterProcessor(external))
+
+            module.coreAddon.onEnable()
+            assertTrue(fixture.scheduler.tasks.isEmpty())
+            ACTION_KEYS.forEach { assertSlotOccupied(module.actions, it) }
+            requests.forEach { assertFalse(module.actions.isAllowed(it)) }
+            module.coreAddon.onDisable()
+            ACTION_KEYS.forEach { assertSlotAvailable(module.actions, it) }
+        }
+    }
+
+    @Test
+    fun `core metadata fills free keys and preserves external policies through rollback and stop`() {
+        val module = RootFixture().module
+        val keys = listOf(RemoveAction.KEY, DamageAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY)
+        fun allowed(key: Key) = module.actions.isAllowed(ActionData(key, POSITION, ActionContext.SYSTEM))
+        keys.forEach { assertTrue(allowed(it), it.toString()) }
+        module.actions.registerActionMeta(RepairAction.KEY, ActionMeta(true))
+        module.actions.registerActionMeta(UpgradeAction.KEY, ActionMeta(false))
+
+        val conflict = probeProcessor(PlaceAction.KEY)
+        module.actions.registerProcessor(conflict)
+        assertFailsWith<IllegalArgumentException> { module.coreAddon.onEnable() }
+        keys.forEach { assertEquals(it != UpgradeAction.KEY, allowed(it), it.toString()) }
+        assertTrue(module.actions.unregisterProcessor(conflict))
+
+        repeat(2) { module.coreAddon.onEnable() }
+        keys.forEach { assertEquals(it == RepairAction.KEY, allowed(it), it.toString()) }
+        // This replacement compares equal to the addon's policy, but belongs to another caller.
+        module.actions.registerActionMeta(DamageAction.KEY, ActionMeta(false))
+        repeat(2) { module.coreAddon.onDisable() }
+        keys.forEach { assertEquals(it != DamageAction.KEY && it != UpgradeAction.KEY, allowed(it), it.toString()) }
+
+        module.coreAddon.onEnable()
+        assertTrue(allowed(RepairAction.KEY))
+        module.coreAddon.onDisable()
+        assertFalse(allowed(DamageAction.KEY))
+        assertFalse(allowed(UpgradeAction.KEY))
+    }
+
+    @Test
+    fun `maturation precedes external damage modifiers only while the core addon is enabled`() {
+        val fixture = RootFixture()
+        fixture.load()
+        val module = fixture.module
+        val health = module.coreAddon.health
+        val citadel = assertNotNull(module.citadels.createCitadel(POSITION) { draft ->
+            draft.addComponent(CitadelKind::class.java, CitadelKind(TYPE))
+            draft.addComponent(Health::class.java, Health(100.0))
+            draft.addComponent(Maturing::class.java, Maturing(Long.MAX_VALUE))
+        })
+        val seen = mutableListOf<Double>()
+        health.registerModifier(DamageModifier { _, _, damage ->
+            seen.add(damage)
+            damage
+        })
+        fun hit() = assertEquals(ActionResult.SUCCESS, health.damage(citadel, 2.0))
+
+        hit()
+        val conflict = probeProcessor(PlaceAction.KEY)
+        module.actions.registerProcessor(conflict)
+        assertFailsWith<IllegalArgumentException> { module.coreAddon.onEnable() }
+        hit()
+        assertTrue(module.actions.unregisterProcessor(conflict))
+        repeat(2) { module.coreAddon.onEnable() }
+        hit()
+        repeat(2) { module.coreAddon.onDisable() }
+        hit()
+        module.coreAddon.onEnable()
+        hit()
+        assertEquals(listOf(2.0, 2.0, 4.0, 2.0, 4.0), seen)
+    }
+
+    @Test
+    fun `stopping the core addon leaves queued third party work for the next tick`() {
         val fixture = RootFixture()
         val module = fixture.module
-        val external = damageProcessor()
-        module.actions.registerProcessor(external)
-
-        assertFailsWith<IllegalArgumentException> { module.enable() }
-        assertTrue(fixture.scheduler.tasks.isEmpty())
-        for (key in ACTION_KEYS - DamageAction.KEY) assertSlotAvailable(module.actions, key)
-        assertNotNull(fixture.types.getType(Health::class.java))
-        assertTrue(module.actions.unregisterProcessor(external))
-
+        val key = Key("external", "probe")
+        val intent = ActionData(key, POSITION, ActionContext.SYSTEM)
+        val executed = mutableListOf<ActionData>()
+        module.actions.registerProcessor(object : ActionProcessor<ActionData>() {
+            override val actionClass = ActionData::class.java
+            override val actionKey = key
+            override fun execute(action: ActionData): ActionResult {
+                executed.add(action)
+                return ActionResult.SUCCESS
+            }
+        })
+        module.coreAddon.onEnable()
         module.enable()
-        assertEquals(1, fixture.scheduler.tasks.size)
-        ACTION_KEYS.forEach { assertSlotOccupied(module.actions, it) }
-        module.disable()
-        ACTION_KEYS.forEach { assertSlotAvailable(module.actions, it) }
+        module.actions.post(intent)
+        module.coreAddon.onDisable()
+
+        assertFalse(fixture.scheduler.tasks.single().isCancelled)
+        assertTrue(executed.isEmpty())
+        fixture.scheduler.tick()
+        assertEquals(listOf(intent), executed)
+        assertEquals(0, module.actions.drainPosted())
     }
 
     @Test
@@ -309,6 +308,7 @@ class ServiceLifecycleTest {
         val module = fixture.module
         module.registerDefinition(CitadelDefinition(TYPE, initializers()))
         fixture.load()
+        module.coreAddon.onEnable()
         module.enable()
         assertEquals(ActionResult.SUCCESS, module.actions.execute(placeAction()))
         val citadel = assertNotNull(fixture.manager.findCitadel(POSITION.world, POSITION.x, POSITION.y, POSITION.z))
@@ -340,14 +340,15 @@ class ServiceLifecycleTest {
     }
 
     @Test
-    fun `timer scheduling failure rolls back root handlers and can be retried`() {
+    fun `timer scheduling failure clears the queue and preserves active addon registrations`() {
         val fixture = RootFixture()
+        fixture.module.coreAddon.onEnable()
         val failure = IllegalStateException("Scheduler unavailable")
         fixture.scheduler.timerFailure = failure
         fixture.module.actions.post(placeAction())
 
         assertSame(failure, assertFailsWith<IllegalStateException> { fixture.module.enable() })
-        ACTION_KEYS.forEach { assertSlotAvailable(fixture.module.actions, it) }
+        ACTION_KEYS.forEach { assertSlotOccupied(fixture.module.actions, it) }
         assertEquals(0, fixture.module.actions.drainPosted())
         assertNotNull(fixture.types.getType(Health::class.java))
 
@@ -358,55 +359,20 @@ class ServiceLifecycleTest {
     }
 
     @Test
-    fun `failed timer cancellation still detaches root handlers and clears pending actions`() {
+    fun `failed timer cancellation clears pending actions and leaves the addon active`() {
         val fixture = RootFixture()
+        fixture.module.coreAddon.onEnable()
         fixture.module.enable()
         val failure = IllegalStateException("Cancellation failed")
         fixture.scheduler.tasks.single().cancellationFailure = failure
         fixture.module.actions.post(placeAction())
 
         assertSame(failure, assertFailsWith<IllegalStateException> { fixture.module.disable() })
-        ACTION_KEYS.forEach { assertSlotAvailable(fixture.module.actions, it) }
+        ACTION_KEYS.forEach { assertSlotOccupied(fixture.module.actions, it) }
         assertEquals(0, fixture.module.actions.drainPosted())
         fixture.module.disable()
         fixture.module.enable()
         assertEquals(2, fixture.scheduler.tasks.size)
-    }
-
-    private class Fixture {
-        val types = TypeManager()
-        val storage = MemoryStorage()
-        private val manager = ComponentManager(storage, types)
-        val citadels = CitadelFacade(manager)
-        val actions = ActionManager(citadels).apply {
-            registerActionMeta(DamageAction.KEY, ActionMeta(false))
-            registerActionMeta(RemoveAction.KEY, ActionMeta(false))
-            validateRemoval(citadels)
-        }
-        private val definitions = CitadelDefinitionRegistry()
-        private val place = PlaceService(actions, definitions, citadels, manager)
-        private val remove = RemoveService(actions, citadels, manager)
-        val health = HealthService(actions, remove, citadels, manager)
-        val services: List<LifecycleService> = listOf(remove, health, place)
-
-        fun enable() = services.forEach { it.enable() }
-        fun disable() = services.asReversed().forEach { it.disable() }
-
-        fun approveAll(): ActionValidator<ActionData> = object : ActionValidator<ActionData> {
-            override val actionClass = ActionData::class.java
-            override fun validate(action: ActionData) = ActionValidator.Result.Success
-        }.also(actions::registerValidator)
-
-        fun prepare() {
-            definitions.register(CitadelDefinition(TYPE, initializers()))
-            health.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
-            actions.validateDamage(citadels, TYPE)
-            storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0))
-        }
-
-        fun place() = actions.execute(placeAction())
-        fun find() = manager.findCitadel(POSITION.world, POSITION.x, POSITION.y, POSITION.z)
-        fun currentHealth() = assertNotNull(find()).getComponent(Health::class.java)?.health
     }
 
     private class RootFixture(maxActionsPerTick: Int = 1024) {
@@ -415,13 +381,13 @@ class ServiceLifecycleTest {
         val manager = ComponentManager(storage, types)
         val scheduler = ManualScheduler()
         val failures = mutableListOf<Exception>()
-        val module = CitadelModule(manager, scheduler, maxActionsPerTick = maxActionsPerTick,
-            actionFailureHandler = failures::add).apply {
+        val module = CitadelModule(manager, scheduler,
+            actionSettings = ActionSettings(maxActionsPerTick, failures::add)).apply {
             actions.validateDamage(citadels, TYPE)
-            health.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
+            coreAddon.health.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
         }
 
-        fun load() { storage.chunk = ChunkCord(WXZCord(POSITION.world, 0, 0)) }
+        fun load() = ChunkCord(WXZCord(POSITION.world, 0, 0)).also { storage.chunk = it }
     }
 
     private class MemoryStorage : CitadelStorage {
@@ -440,12 +406,9 @@ class ServiceLifecycleTest {
         val TYPE = Key("test", "standalone")
         val ACTION_KEYS = listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY)
 
+        fun newActionManager() = ActionManager(CitadelFacade(ComponentManager(MemoryStorage(), TypeManager())))
+
         fun placeAction() = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
-        fun invalidRequests(): List<ActionData> = listOf(
-            RemoveAction(ActionContext.SYSTEM, POSITION),
-            DamageAction(ActionContext.SYSTEM, POSITION, 1.0),
-            PlaceAction(ActionContext.SYSTEM, POSITION, Key("test", "unknown"))
-        )
         fun initializers(): List<CitadelInitializer> = listOf(
             CitadelInitializer { _, draft -> draft.addComponent(Health::class.java, Health(10.0)) },
             MaturingInitializer(Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))

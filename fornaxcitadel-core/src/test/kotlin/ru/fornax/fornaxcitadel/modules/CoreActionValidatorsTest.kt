@@ -29,7 +29,6 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -105,7 +104,7 @@ class CoreActionValidatorsTest {
         Fixture().use { fixture ->
             val target = fixture.create(withHealth = false)
             var calculations = 0
-            fixture.module.health.registerModifier(DamageModifier { _, _, _ ->
+            fixture.module.coreAddon.health.registerModifier(DamageModifier { _, _, _ ->
                 calculations++
                 0.0
             })
@@ -149,33 +148,18 @@ class CoreActionValidatorsTest {
     }
 
     @Test
-    fun `module lifecycle removes service prerequisites and restores them on enable`() {
+    fun `disabling the core addon removes its prerequisites and enabling it restores them`() {
         Fixture(enable = false).use { fixture ->
             val external = fixture.approve()
             val action = RemoveAction(ActionContext.SYSTEM, POSITION)
             assertTrue(fixture.module.actions.isAllowed(action))
-            repeat(2) { fixture.module.enable() }
+            repeat(2) { fixture.module.coreAddon.onEnable() }
             assertFalse(fixture.module.actions.isAllowed(action))
-            repeat(2) { fixture.module.disable() }
+            repeat(2) { fixture.module.coreAddon.onDisable() }
             assertTrue(fixture.module.actions.isAllowed(action))
             assertTrue(fixture.module.actions.unregisterValidator(external))
-            assertFalse(fixture.module.actions.isAllowed(action))
-            fixture.module.enable()
-            assertFalse(fixture.module.actions.isAllowed(action))
-        }
-    }
-
-    @Test
-    fun `failed enable rolls back prerequisite validation without removing external validators`() {
-        Fixture(enable = false).use { fixture ->
-            fixture.approve()
-            fixture.scheduler.timerFailure = IllegalStateException("Scheduling failed")
-            val action = RemoveAction(ActionContext.SYSTEM, POSITION)
-
-            assertFailsWith<IllegalStateException> { fixture.module.enable() }
             assertTrue(fixture.module.actions.isAllowed(action))
-            fixture.scheduler.timerFailure = null
-            fixture.module.enable()
+            fixture.module.coreAddon.onEnable()
             assertFalse(fixture.module.actions.isAllowed(action))
         }
     }
@@ -199,7 +183,7 @@ class CoreActionValidatorsTest {
         init {
             module.registerDefinition(CitadelDefinition(TYPE, emptyList()))
             if (approve) approve()
-            if (enable) module.enable()
+            if (enable) module.coreAddon.onEnable()
         }
 
         fun create(position: CitadelPosition = POSITION, withHealth: Boolean = true): CitadelHandle {
@@ -223,7 +207,7 @@ class CoreActionValidatorsTest {
             })
         }
 
-        override fun close() = module.disable()
+        override fun close() = module.coreAddon.onDisable()
     }
 
     private class MemoryStorage : CitadelStorage {

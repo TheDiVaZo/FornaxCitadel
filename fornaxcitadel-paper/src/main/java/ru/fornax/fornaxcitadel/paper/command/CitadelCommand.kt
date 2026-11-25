@@ -1,4 +1,4 @@
-package ru.fornax.fornaxcitadel.paper
+package ru.fornax.fornaxcitadel.paper.command
 
 import org.bukkit.FluidCollisionMode
 import org.bukkit.command.Command
@@ -9,43 +9,46 @@ import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
+import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.Locale
 import java.util.logging.Level
-import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
-import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
 
 class CitadelCommand(
     private val plugin: Plugin,
-    private val manager: ComponentManager,
-    private val module: CitadelModule,
+    private val actions: ActionManager,
+    private val citadels: CitadelFacade,
+    private val health: HealthService,
     private val materials: MaterialRegistry,
     private val citadelTypes: PaperCitadelTypes,
     private val messages: PaperMessages,
+    private val acid: AcidService? = null,
     private val save: () -> Unit
 ) : CommandExecutor, TabCompleter {
-    var acid: AcidService? = null
-        internal set
     constructor(
         plugin: Plugin,
-        manager: ComponentManager,
-        module: CitadelModule,
+        actions: ActionManager,
+        citadels: CitadelFacade,
+        health: HealthService,
         materials: MaterialRegistry,
         citadelTypes: PaperCitadelTypes,
         save: () -> Unit
-    ) : this(plugin, manager, module, materials, citadelTypes, PaperMessages.defaults(), save)
+    ) : this(plugin, actions, citadels, health, materials, citadelTypes, PaperMessages.defaults(), save = save)
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         try {
@@ -169,7 +172,7 @@ class CitadelCommand(
             return
         }
         val position = CitadelPosition(block.world.uid, block.x, block.y, block.z)
-        if (!manager.isChunkLoaded(position.world, position.x shr 4, position.z shr 4)) {
+        if (!citadels.isChunkLoaded(position.world, position.x shr 4, position.z shr 4)) {
             sender.message("commands.chunk-unavailable")
             return
         }
@@ -181,19 +184,19 @@ class CitadelCommand(
                     sender.message("commands.unknown-type", "type" to args[1])
                     return
                 }
-                val result = module.actions.execute(PlaceAction(context, position, type))
+                val result = actions.execute(PlaceAction(context, position, type))
                 sender.message(if (result == ActionResult.SUCCESS) "commands.place.success" else "commands.place.denied")
             }
             "remove" -> {
-                val result = module.actions.execute(RemoveAction(context, position))
+                val result = actions.execute(RemoveAction(context, position))
                 sender.message(if (result == ActionResult.SUCCESS) "commands.remove.success" else "commands.remove.denied")
             }
             "dismantle" -> {
-                val result = module.actions.execute(DismantleAction(context, position))
+                val result = actions.execute(DismantleAction(context, position))
                 sender.message(if (result == ActionResult.SUCCESS) "commands.dismantle.success" else "commands.dismantle.denied")
             }
             "info" -> {
-                val citadel = module.citadels.findProtecting(position)
+                val citadel = citadels.findProtecting(position)
                 if (citadel == null) {
                     sender.message("commands.info.not-reinforced")
                     return
@@ -202,10 +205,10 @@ class CitadelCommand(
                 val type = kind?.let(citadelTypes::name) ?: kind?.asString()
                     ?: messages.plainText("commands.info.unknown-type")
                 sender.message("commands.info.type", "type" to type)
-                val health = module.health.currentHealth(citadel)
-                if (health != null) {
-                    val maximum = module.health.maxHealth(citadel)
-                    val displayedHealth = maximum?.let { health.coerceAtMost(it) } ?: health
+                val currentHealth = health.currentHealth(citadel)
+                if (currentHealth != null) {
+                    val maximum = health.maxHealth(citadel)
+                    val displayedHealth = maximum?.let { currentHealth.coerceAtMost(it) } ?: currentHealth
                     sender.message(if (maximum == null) "commands.info.health-without-maximum" else "commands.info.health",
                         "health" to String.format(Locale.ROOT, "%.1f", displayedHealth),
                         "maximum" to (maximum?.let { String.format(Locale.ROOT, "%.1f", it) } ?: ""))

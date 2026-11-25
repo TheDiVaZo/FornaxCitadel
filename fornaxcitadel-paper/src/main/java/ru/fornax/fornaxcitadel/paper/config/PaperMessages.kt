@@ -1,4 +1,4 @@
-package ru.fornax.fornaxcitadel.paper
+package ru.fornax.fornaxcitadel.paper.config
 
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.TextReplacementConfig

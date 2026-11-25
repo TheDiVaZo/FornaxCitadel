@@ -5,16 +5,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind;
 import ru.fornax.fornaxcitadel.core.citadel.ReadableCitadelKind;
-import ru.fornax.fornaxcitadel.core.facade.ActionManager;
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade;
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle;
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager;
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle;
-import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
-import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
-import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator;
 import ru.fornax.fornaxcitadel.core.util.Key;
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService;
 
@@ -27,35 +22,28 @@ import java.util.Objects;
 
 /**
  * Applies authorized, modified damage on the owning game thread. Use currentHealth for read-only HP queries.
- * Enabling registers damage prerequisites. Configure action metadata and authorization when assembled without CitadelModule.
  * Direct calls do not notify action handlers.
  */
-public final class HealthService implements LifecycleService {
+public final class HealthService {
     private final CitadelFacade citadels;
-    private final ComponentManager componentManager;
     private final RemoveService removeService;
     private final MaturationService maturation;
     private final Map<Key, HealthDefinition> definitions = new HashMap<>();
     private List<DamageModifier> modifiers = List.of();
-    private final ActionRegistration<DamageAction> registration;
 
-    public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
-                         @NotNull CitadelFacade citadels, @NotNull ComponentManager componentManager) {
-        this(actions, removeService, citadels, componentManager, Clock.systemUTC());
+    public HealthService(@NotNull RemoveService removeService, @NotNull CitadelFacade citadels) {
+        this(removeService, citadels, Clock.systemUTC());
     }
 
-    public HealthService(@NotNull ActionManager actions, @NotNull RemoveService removeService,
-                         @NotNull CitadelFacade citadels, @NotNull ComponentManager componentManager,
-                         @NotNull Clock clock) {
+    public HealthService(@NotNull RemoveService removeService, @NotNull CitadelFacade citadels, @NotNull Clock clock) {
+        this(removeService, citadels, new MaturationService(clock));
+    }
+
+    public HealthService(@NotNull RemoveService removeService, @NotNull CitadelFacade citadels,
+                         @NotNull MaturationService maturation) {
         this.citadels = Objects.requireNonNull(citadels, "citadels");
-        this.componentManager = Objects.requireNonNull(componentManager, "componentManager");
-        this.registration = new ActionRegistration<>(actions, new DamageProcessor(this),
-                List.of(new ExistingCitadelValidator<>(DamageAction.class, citadels)));
         this.removeService = Objects.requireNonNull(removeService, "removeService");
-        componentManager.registerComponent(Health.KEY, Health.class);
-        componentManager.registerComponent(Maturing.KEY, Maturing.class);
-        maturation = new MaturationService(Objects.requireNonNull(clock, "clock"));
-        registerModifier(new MaturingDamageModifier(maturation));
+        this.maturation = Objects.requireNonNull(maturation, "maturation");
     }
 
     @NotNull
@@ -84,33 +72,32 @@ public final class HealthService implements LifecycleService {
      */
     @Nullable
     public Double currentHealth(@NotNull ReadableHandle citadel) {
-        if (!componentManager.isCurrent(citadel)) return null;
+        if (!citadels.isCurrent(citadel)) return null;
         ReadableHealth component = citadel.getComponent(Health.class);
         if (component != null) return component.getHealth();
         return maxHealth(citadel);
     }
 
-    @Override
-    public void enable() {
-        registration.enable();
-    }
-
-    @Override
-    public void disable() {
-        registration.disable();
-    }
-
     /**
-     * Appends a read-only modifier after the built-in maturation modifier. Duplicate instances are ignored.
+     * Appends a read-only modifier. Duplicate instances are ignored.
      * A damage calculation uses the registration snapshot from its start.
      */
     public void registerModifier(@NotNull DamageModifier modifier) {
+        addModifier(modifier, modifiers.size());
+    }
+
+    /** Places the core maturation modifier ahead of previously registered damage rules. */
+    public void registerFirstModifier(@NotNull DamageModifier modifier) {
+        addModifier(modifier, 0);
+    }
+
+    private void addModifier(DamageModifier modifier, int index) {
         Objects.requireNonNull(modifier, "modifier");
         for (DamageModifier existing : modifiers) {
             if (existing == modifier) return;
         }
         List<DamageModifier> updated = new ArrayList<>(modifiers);
-        updated.add(modifier);
+        updated.add(index, modifier);
         modifiers = List.copyOf(updated);
     }
 
@@ -150,7 +137,7 @@ public final class HealthService implements LifecycleService {
         if (!Double.isFinite(damage) || damage < 0.0) {
             throw new IllegalArgumentException("Damage must be finite and non-negative: " + damage);
         }
-        if (!componentManager.isCurrent(citadel)) return ActionResult.DENIED;
+        if (!citadels.isCurrent(citadel)) return ActionResult.DENIED;
         ReadableHealth component = citadel.getComponent(Health.class);
         Double maximum = maxHealth(citadel);
         Double initialHealth = component == null ? maximum : Double.valueOf(component.getHealth());

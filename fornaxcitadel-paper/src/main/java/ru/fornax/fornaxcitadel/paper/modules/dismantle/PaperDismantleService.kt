@@ -2,13 +2,16 @@ package ru.fornax.fornaxcitadel.paper.modules.dismantle
 
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthService
+import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -18,7 +21,10 @@ import kotlin.random.Random
 /** Removes an authorized reinforcement and optionally refunds its material, preserving the block. */
 class PaperDismantleService @JvmOverloads constructor(
     private val plugin: Plugin,
-    private val module: CitadelModule,
+    actions: ActionManager,
+    private val citadels: CitadelFacade,
+    private val health: HealthService,
+    private val remove: RemoveService,
     private val citadelTypes: PaperCitadelTypes,
     materials: MaterialRegistry,
     settings: DismantleSettings = DismantleSettings(),
@@ -26,10 +32,10 @@ class PaperDismantleService @JvmOverloads constructor(
 ) : LifecycleService {
     private val refunds = ReinforcementRefunds(materials, settings, random)
     private val registration = ActionRegistration(
-        module.actions, DismantleAction::class.java, DismantleAction.KEY,
+        actions, DismantleAction::class.java, DismantleAction.KEY,
         listOf(
-            ExistingCitadelValidator(DismantleAction::class.java, module.citadels),
-            OwnerActionValidator(DismantleAction::class.java, module.citadels)
+            ExistingCitadelValidator(DismantleAction::class.java, citadels),
+            OwnerActionValidator(DismantleAction::class.java, citadels)
         ), ::dismantle
     )
 
@@ -40,11 +46,11 @@ class PaperDismantleService @JvmOverloads constructor(
 
     /**
      * Executes an action whose source and target have already passed core and platform validation.
-     * Direct callers must uphold those prerequisites; external requests must enter through module.actions.
+     * Direct callers must uphold those prerequisites. External requests use [ActionManager.execute].
      */
     fun dismantle(action: DismantleAction): ActionResult {
         if (!registration.isEnabled) return ActionResult.DENIED
-        val citadel = checkNotNull(module.citadels.findProtecting(action.position)) {
+        val citadel = checkNotNull(citadels.findProtecting(action.position)) {
             "Validated dismantle target is unavailable"
         }
         if (citadel.getComponent(CitadelOwner::class.java) == null) return ActionResult.DENIED
@@ -52,9 +58,9 @@ class PaperDismantleService @JvmOverloads constructor(
             "Validated dismantle world is unavailable"
         }
         val block = world.getBlockAt(action.citadelX, action.citadelY, action.citadelZ)
-        val health = citadel.getComponent(Health::class.java)
-        val maximum = module.health.maxHealth(citadel)
-        val refundChance = refunds.chance(health == null || maximum != null && health.health >= maximum)
+        val healthComponent = citadel.getComponent(Health::class.java)
+        val maximum = health.maxHealth(citadel)
+        val refundChance = refunds.chance(healthComponent == null || maximum != null && healthComponent.health >= maximum)
         val itemKey = citadelTypes.itemKey(citadel)
         val refund = try {
             refunds.create(itemKey, refundChance)
@@ -63,7 +69,7 @@ class PaperDismantleService @JvmOverloads constructor(
             return ActionResult.DENIED
         }
         val dropLocation = block.location.add(0.5, 0.5, 0.5)
-        val result = module.remove.remove(citadel)
+        val result = remove.remove(citadel)
         if (result == ActionResult.SUCCESS && refund != null &&
             refunds.shouldDrop(refundChance)) {
             world.dropItemNaturally(dropLocation, refund)

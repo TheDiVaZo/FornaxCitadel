@@ -15,7 +15,6 @@ import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
@@ -43,7 +42,6 @@ class Full3DObservation @JvmOverloads constructor(
     private val plugin: Plugin,
     private val actions: ActionManager,
     private val citadels: ReadableCitadelFacade,
-    private val manager: ComponentManager,
     private val chunks: PaperChunkService,
     private val settings: Full3DObservationSettings = Full3DObservationSettings()
 ) : Observation<Player>, Listener, AutoCloseable {
@@ -220,7 +218,7 @@ class Full3DObservation @JvmOverloads constructor(
         val result = ArrayList<ReadableHandle>()
         for (x in minX.toInt()..maxX.toInt()) {
             for (z in minZ.toInt()..maxZ.toInt()) {
-                manager.forEachCitadel(cell.world, x, z, minY.toInt(), maxY.toInt(), result::add)
+                citadels.forEachCitadel(cell.world, x, z, minY.toInt(), maxY.toInt(), result::add)
             }
         }
         return result

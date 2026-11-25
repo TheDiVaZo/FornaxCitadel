@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableExcepti
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import java.util.UUID
 
 /**
  * Resolves gameplay positions and accesses their reinforcement on the owning game thread.
@@ -27,9 +28,33 @@ class CitadelFacade @JvmOverloads constructor(
         requireAvailable(position)
         val handle = resolver.getReinforcementProtecting(position) ?: return null
         requireAvailable(handle.position)
-        check(componentManager.isCurrent(handle)) { "Resolver returned a stale or foreign citadel handle" }
+        check(isCurrent(handle)) { "Resolver returned a stale or foreign citadel handle" }
         return handle
     }
+
+    /** Looks up the stored reinforcement at these exact coordinates. Unavailable positions return null. */
+    fun findExact(position: CitadelPosition): CitadelHandle? {
+        if (!isSupported(position)) return null
+        return componentManager.findCitadel(position.world, position.x, position.y, position.z)
+    }
+
+    fun isChunkLoaded(world: UUID, chunkX: Int, chunkZ: Int): Boolean =
+        componentManager.isChunkLoaded(world, chunkX, chunkZ)
+
+    override fun forEachCitadel(
+        world: UUID,
+        chunkX: Int,
+        chunkZ: Int,
+        minY: Int,
+        maxY: Int,
+        visit: (ReadableHandle) -> Unit
+    ) = componentManager.forEachCitadel(world, chunkX, chunkZ, minY, maxY, visit)
+
+    /** Checks that the handle identifies a currently loaded entity owned by this facade's manager. */
+    fun isCurrent(handle: ReadableHandle): Boolean = componentManager.isCurrent(handle)
+
+    /** Removes the entity identified by this handle. Returns false for expired or foreign handles. */
+    fun removeCitadel(handle: CitadelHandle): Boolean = componentManager.removeCitadel(handle)
 
     /**
      * Rejects unavailable or protected positions before allocating a draft. The callback runs once
@@ -50,9 +75,7 @@ class CitadelFacade @JvmOverloads constructor(
         // A draft does not reserve storage. Keep the chosen position, but recheck before publishing.
         if (!canCreate(position, responsible)) return null
         if (componentManager.createCitadel(draft) != ActionResult.SUCCESS) return null
-        return checkNotNull(componentManager.findCitadel(
-            responsible.world, responsible.x, responsible.y, responsible.z
-        ))
+        return checkNotNull(findExact(responsible))
     }
 
     private fun canCreate(source: CitadelPosition, responsible: CitadelPosition): Boolean = try {
@@ -64,8 +87,7 @@ class CitadelFacade @JvmOverloads constructor(
     }
 
     private fun requireAvailable(position: CitadelPosition) {
-        if (!isSupported(position) ||
-            !componentManager.isChunkLoaded(position.world, position.x shr 4, position.z shr 4)) {
+        if (!isSupported(position) || !isChunkLoaded(position.world, position.x shr 4, position.z shr 4)) {
             throw CitadelResolutionUnavailableException(position)
         }
     }

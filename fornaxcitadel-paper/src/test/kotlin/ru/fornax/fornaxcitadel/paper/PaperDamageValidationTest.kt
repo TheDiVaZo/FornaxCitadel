@@ -36,7 +36,7 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-            f.module.health.unregisterDefinition(type)
+            f.module.coreAddon.health.unregisterDefinition(type)
             f.playerDamage.register { _, _, _ -> 0.0 }
             assertTrue(f.breakingService.breakBlock(f.stranger.player, f.block()))
             assertEquals(protected, f.module.citadels.findProtecting(f.position) != null)
@@ -55,7 +55,7 @@ class PaperDamageValidationTest {
                 when (kind) {
                     "missing" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
                     "unknown" -> target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("external", "unknown") }
-                    "allow" -> f.module.health.unregisterDefinition(ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes.REINFORCED)
+                    "allow" -> f.module.coreAddon.health.unregisterDefinition(ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes.REINFORCED)
                 }
                 val context = if (explosion) ActionContext(null, ExplosionSource.Block(
                     ExplosionPosition(f.worldId, 1.0, 64.0, 2.0), 0.0f, Material.TNT)) else f.context(f.stranger)
@@ -74,7 +74,7 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-            f.module.health.unregisterDefinition(type)
+            f.module.coreAddon.health.unregisterDefinition(type)
             if (reason == "permission") f.stranger.permissions.remove("fornaxcitadel.damage")
             f.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
@@ -101,7 +101,7 @@ class PaperDamageValidationTest {
                 ExplosionPosition(f.worldId, 1.0, 64.0, 2.0), 4.0f, Material.TNT)) else f.context(f.stranger)
             val action = DamageAction(context, f.position, 10.0)
             assertNull(target.getComponent(Health::class.java))
-            f.module.health.registerDefinition(type, HealthDefinition(100.0))
+            f.module.coreAddon.health.registerDefinition(type, HealthDefinition(100.0))
             assertTrue(f.module.actions.isAllowed(action))
             assertNull(target.getComponent(Health::class.java))
             assertEquals(ActionResult.SUCCESS, f.module.actions.execute(action))
@@ -116,14 +116,14 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             val target = assertNotNull(f.module.citadels.findProtecting(f.position))
-            f.module.health.registerDefinition(type, HealthDefinition(100.0))
+            f.module.coreAddon.health.registerDefinition(type, HealthDefinition(100.0))
             f.module.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Success
             })
             f.manager.saveAll().join()
             val saves = f.backend.saves
-            assertEquals(100.0, f.module.health.currentHealth(target))
+            assertEquals(100.0, f.module.coreAddon.health.currentHealth(target))
             assertEquals(ActionResult.DENIED, f.module.actions.execute(DamageAction(f.context(f.stranger), f.position, 10.0)))
             assertNull(target.getComponent(Health::class.java))
             f.manager.saveAll().join()
@@ -179,7 +179,7 @@ class PaperDamageValidationTest {
             assertEquals(100.0, fixture.health())
 
             val target = checkNotNull(fixture.module.citadels.findProtecting(fixture.position))
-            fixture.module.health.registerModifier(DamageModifier { _, _, _ ->
+            fixture.module.coreAddon.health.registerModifier(DamageModifier { _, _, _ ->
                 error("Creative destruction must not calculate damage")
             })
             fixture.stranger.gameMode = GameMode.CREATIVE

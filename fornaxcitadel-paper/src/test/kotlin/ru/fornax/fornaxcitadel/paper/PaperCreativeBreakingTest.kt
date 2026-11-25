@@ -33,8 +33,8 @@ class PaperCreativeBreakingTest {
         for (type in listOf(PaperCitadelTypes.REINFORCED, PaperCitadelTypes.MATURING,
             PaperCitadelTypes.INVULNERABLE, protectedHealth)) {
             PaperTestFixture(permissions = true).use { fixture ->
-                fixture.module.health.registerDefinition(protectedHealth, HealthDefinition(100.0))
-                fixture.module.registerDefinition(CitadelDefinition(protectedHealth, listOf(HealthInitializer(fixture.module.health))))
+                fixture.module.coreAddon.health.registerDefinition(protectedHealth, HealthDefinition(100.0))
+                fixture.module.registerDefinition(CitadelDefinition(protectedHealth, listOf(HealthInitializer(fixture.module.coreAddon.health))))
                 fixture.installer.permissions.add("fornaxcitadel.admin")
                 fixture.place(type)
                 val target = assertNotNull(fixture.target())

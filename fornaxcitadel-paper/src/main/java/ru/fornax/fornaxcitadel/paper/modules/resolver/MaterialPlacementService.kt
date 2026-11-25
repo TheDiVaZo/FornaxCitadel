@@ -11,6 +11,7 @@ import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.ChunkLoadCheck
 import ru.fornax.fornaxcitadel.paper.modules.LoadedBlocks
 import java.util.Locale
 
@@ -24,6 +25,7 @@ class MaterialPlacementService(
     private val materials: MaterialRegistry,
     private val manager: ComponentManager
 ) : CitadelResolver {
+    private val isChunkLoaded: ChunkLoadCheck = manager::isChunkLoaded
     private val rules = mutableMapOf<Key, MaterialPlacementRule>()
     private val defaultRule = DefaultMaterialPlacementRule(::findExact)
 
@@ -95,7 +97,7 @@ class MaterialPlacementService(
         requireAvailable(position).getBlockAt(position.x, position.y, position.z)
 
     private fun requireAvailable(position: CitadelPosition): World =
-        LoadedBlocks.requireAvailable(server, manager, position)
+        LoadedBlocks.requireAvailable(server, isChunkLoaded, position)
 
     private fun positionOf(block: Block): CitadelPosition =
         CitadelPosition(block.world.uid, block.x, block.y, block.z)

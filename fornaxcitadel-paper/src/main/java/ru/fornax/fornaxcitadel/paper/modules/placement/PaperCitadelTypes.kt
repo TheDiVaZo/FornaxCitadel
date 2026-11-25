@@ -1,13 +1,14 @@
 package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
+import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.health.MaturationDefinition
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import java.time.Duration
@@ -38,16 +39,16 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
     fun isInvulnerable(key: Key): Boolean = damagePolicy(key) == CitadelDamagePolicy.DENY
     fun requiresAdmin(key: Key): Boolean = isInvulnerable(key)
 
-    fun register(module: CitadelModule) {
+    fun register(definitions: CitadelDefinitionRegistry, health: HealthService) {
         for ((name, settings) in configured) {
             val key = byName.getValue(name)
             val initializers = buildList<CitadelInitializer> {
-                add(HealthInitializer(module.health))
+                add(HealthInitializer(health))
                 add(MaturingInitializer())
             }
-            module.registerDefinition(CitadelDefinition(key, initializers))
-            settings.health?.let { module.health.registerDefinition(key, HealthDefinition(it.max)) }
-            module.health.maturation.registerDefinition(key, MaturationDefinition(
+            definitions.register(CitadelDefinition(key, initializers))
+            settings.health?.let { health.registerDefinition(key, HealthDefinition(it.max)) }
+            health.maturation.registerDefinition(key, MaturationDefinition(
                 Duration.ofSeconds(settings.maturing?.durationSeconds ?: 0),
                 settings.maturing?.initialDamageMultiplier ?: 1.0
             ))

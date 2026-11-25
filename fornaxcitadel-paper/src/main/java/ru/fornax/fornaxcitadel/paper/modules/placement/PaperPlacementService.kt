@@ -8,16 +8,18 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
-import ru.fornax.fornaxcitadel.paper.PaperMessages
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.consumeOneFromMainHand
@@ -27,16 +29,18 @@ import java.util.logging.Level
 /** Resolves reinforcement item use into placement, repair or upgrade through core actions. */
 class PaperPlacementService @JvmOverloads constructor(
     private val plugin: Plugin,
-    private val module: CitadelModule,
+    private val actions: ActionManager,
+    private val citadels: ReadableCitadelFacade,
+    private val health: HealthService,
     private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry,
     settings: PlacementSettings = PlacementSettings(),
     private val messages: PaperMessages = PaperMessages.defaults()
 ) : LifecycleService {
     private val definitionsByMaterial = mutableMapOf<Key, Key>()
-    private val blockValidator = ReinforceableBlockValidator(plugin.server, module.citadels)
+    private val blockValidator = ReinforceableBlockValidator(plugin.server, citadels)
     private val blockListValidator = PlacementBlockListValidator(
-        plugin.server, materials, settings.listType, settings.blocks, module.citadels
+        plugin.server, materials, settings.listType, settings.blocks, citadels
     )
     private val listener = PaperPlacementListener(this)
     private var enabled = false
@@ -44,8 +48,8 @@ class PaperPlacementService @JvmOverloads constructor(
     override fun enable() {
         if (enabled) return
         try {
-            module.actions.registerValidator(blockValidator)
-            module.actions.registerValidator(blockListValidator)
+            actions.registerValidator(blockValidator)
+            actions.registerValidator(blockListValidator)
             plugin.server.pluginManager.registerEvents(listener, plugin)
             enabled = true
         } catch (failure: Throwable) {
@@ -62,8 +66,8 @@ class PaperPlacementService @JvmOverloads constructor(
 
     private fun unregister() {
         HandlerList.unregisterAll(listener)
-        module.actions.unregisterValidator(blockListValidator)
-        module.actions.unregisterValidator(blockValidator)
+        actions.unregisterValidator(blockListValidator)
+        actions.unregisterValidator(blockValidator)
     }
 
     /**
@@ -94,14 +98,14 @@ class PaperPlacementService @JvmOverloads constructor(
         var messageGroup = "placement"
         try {
             val position = CitadelPosition(block.world.uid, block.x, block.y, block.z)
-            val citadel = if (block.supportsCitadelData()) module.citadels.findProtecting(position) else null
+            val citadel = if (block.supportsCitadelData()) citadels.findProtecting(position) else null
             if (citadel != null) {
                 val context = ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY))
                 val action = if (citadelTypes.itemKey(citadel) == materialKey) {
                     messageGroup = "repair"
-                    val health = module.health.currentHealth(citadel)
-                    val maximum = module.health.maxHealth(citadel)
-                    if (health == null || maximum == null || health >= maximum) return
+                    val currentHealth = health.currentHealth(citadel)
+                    val maximum = health.maxHealth(citadel)
+                    if (currentHealth == null || maximum == null || currentHealth >= maximum) return
                     RepairAction(context, position)
                 } else {
                     val destination = definitionsByMaterial[materialKey] ?: return
@@ -109,7 +113,7 @@ class PaperPlacementService @JvmOverloads constructor(
                     UpgradeAction(context, position, destination)
                 }
                 denyUse(event)
-                val result = module.actions.execute(action)
+                val result = actions.execute(action)
                 messages.sendGameplay(player, if (result == ActionResult.SUCCESS) "$messageGroup.success" else "$messageGroup.denied")
                 return
             }
@@ -143,7 +147,7 @@ class PaperPlacementService @JvmOverloads constructor(
         }
 
         try {
-            val result = module.actions.execute(PlaceAction(
+            val result = actions.execute(PlaceAction(
                 ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY)),
                 CitadelPosition(block.world.uid, block.x, block.y, block.z),
                 definitionKey

@@ -110,13 +110,16 @@ class AcidServiceTest {
             val source = assertNotNull(f.module.citadels.findProtecting(f.position))
             val startedAt = System.currentTimeMillis() - 900_000
             source.editComponent(Maturing::class.java) { it.startedAtMillis = startedAt }
-            assertFalse(f.module.health.maturation.isMature(source))
+            assertFalse(f.module.coreAddon.health.maturation.isMature(source))
             f.acidService!!.disable()
-            val disabled = AcidService(f.plugin, f.module, f.manager, f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService,
-                AcidRegistry(AcidSettings(enabled = false)))
+            val disabled = AcidService(
+                f.plugin, f.module.actions, f.module.citadels, f.module.coreAddon.health.maturation,
+                f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService,
+                AcidRegistry(AcidSettings(enabled = false))
+            )
             disabled.enable()
             try {
-                assertTrue(f.module.health.maturation.isMature(source))
+                assertTrue(f.module.coreAddon.health.maturation.isMature(source))
                 assertFailure(AcidFailure.DISABLED, disabled.activate(f.installer.player, f.block()))
                 f.manager.unloadChunk(f.worldId, 0, 0).join()
                 f.manager.loadChunk(f.worldId, 0, 0).join()
@@ -333,7 +336,7 @@ class AcidServiceTest {
             assertFailure(AcidFailure.NOT_FOUND, activate(f))
             f.material(Material.GOLD_BLOCK)
             val own = assertNotNull(f.module.citadels.findProtecting(f.position))
-            f.module.remove.remove(own)
+            f.module.coreAddon.remove.remove(own)
             assertFailure(AcidFailure.NOT_REINFORCED, activate(f))
             assertEquals(Material.GOLD_BLOCK, f.block().type)
         }
@@ -370,11 +373,11 @@ class AcidServiceTest {
             val maturity = assertNotNull(acid.getComponent(Maturing::class.java))
             reinforce(f, f.block().getRelative(BlockFace.UP))
             acid.editComponent(Maturing::class.java) { it.startedAtMillis = System.currentTimeMillis() - 900_000 }
-            assertEquals(Duration.ofMinutes(10), f.module.health.maturation.findDefinition(PaperCitadelTypes.MATURING)?.duration)
-            assertFalse(f.module.health.maturation.isMature(acid))
+            assertEquals(Duration.ofMinutes(10), f.module.coreAddon.health.maturation.findDefinition(PaperCitadelTypes.MATURING)?.duration)
+            assertFalse(f.module.coreAddon.health.maturation.isMature(acid))
             assertFailure(AcidFailure.IMMATURE, activate(f))
             unchanged(f)
-            val incoming = f.module.health.maturation.progress(acid)
+            val incoming = f.module.coreAddon.health.maturation.progress(acid)
             assertTrue(incoming in 0.74..0.76)
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.manager.loadChunk(f.worldId, 0, 0).join()
@@ -447,7 +450,7 @@ class AcidServiceTest {
         val second = reinforce(f, f.block().getRelative(BlockFace.DOWN))
         var replacement: CitadelHandle? = null
         f.afterNaturalBreak = { if (it === f.block()) {
-            assertEquals(ActionResult.SUCCESS, f.module.remove.remove(first))
+            assertEquals(ActionResult.SUCCESS, f.module.coreAddon.remove.remove(first))
             replacement = f.placeExact(firstBlock)
         } }
 
@@ -616,7 +619,10 @@ class AcidServiceTest {
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.manager.loadChunk(f.worldId, 0, 0).join()
             val settings = AcidSettings(types = listOf(AcidType("changed", Material.GOLD_BLOCK, 2, 1.0)))
-            val service = AcidService(f.plugin, f.module, f.manager, f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService, AcidRegistry(settings))
+            val service = AcidService(
+                f.plugin, f.module.actions, f.module.citadels, f.module.coreAddon.health.maturation,
+                f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService, AcidRegistry(settings)
+            )
             service.enable()
             try {
                 val info = assertIs<AcidResult.Information>(service.inspect(f.installer.player, f.block()))
@@ -634,7 +640,7 @@ class AcidServiceTest {
             val source = assertNotNull(f.module.citadels.findProtecting(f.position))
             val startedAt = System.currentTimeMillis() - 900_000
             source.editComponent(Maturing::class.java) { it.startedAtMillis = startedAt }
-            val maturation = f.module.health.maturation
+            val maturation = f.module.coreAddon.health.maturation
             assertEquals(0.75, maturation.progress(source), 0.01)
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             maturation.registerDefinition(PaperCitadelTypes.MATURING,
@@ -656,14 +662,14 @@ class AcidServiceTest {
         val source = assertNotNull(f.module.citadels.findProtecting(f.position))
         val startedAt = assertNotNull(source.getComponent(Maturing::class.java)).startedAtMillis
         assertTrue(startedAt > 0)
-        assertTrue(f.module.health.maturation.isMature(source))
+        assertTrue(f.module.coreAddon.health.maturation.isMature(source))
         f.manager.unloadChunk(f.worldId, 0, 0).join()
-        f.module.health.maturation.registerDefinition(PaperCitadelTypes.REINFORCED,
+        f.module.coreAddon.health.maturation.registerDefinition(PaperCitadelTypes.REINFORCED,
             MaturationDefinition(Duration.ofDays(1), 4.0))
         f.manager.loadChunk(f.worldId, 0, 0).join()
         val restored = assertNotNull(f.module.citadels.findProtecting(f.position))
         assertEquals(startedAt, restored.getComponent(Maturing::class.java)?.startedAtMillis)
-        assertFalse(f.module.health.maturation.isMature(restored))
+        assertFalse(f.module.coreAddon.health.maturation.isMature(restored))
         assertFailure(AcidFailure.IMMATURE, activate(f))
         unchanged(f)
     }
@@ -673,7 +679,7 @@ class AcidServiceTest {
         fixture(sourceType = PaperCitadelTypes.MATURING).use { f ->
             val source = assertNotNull(f.module.citadels.findProtecting(f.position))
             source.editComponent(Maturing::class.java) { it.startedAtMillis = System.currentTimeMillis() - 900_000 }
-            val maturation = f.module.health.maturation
+            val maturation = f.module.coreAddon.health.maturation
             val acid = f.acidService!!
             val otherRule = MaturationMultiplier { 2.0 }
             maturation.registerMultiplier(otherRule)
@@ -714,8 +720,10 @@ class AcidServiceTest {
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
         val original = assertNotNull(f.acidService)
         original.disable()
-        val service = AcidService(f.plugin, f.module, f.manager, f.citadelTypes, materials, f.materialPlacement,
-            f.breakingService, original.registry)
+        val service = AcidService(
+            f.plugin, f.module.actions, f.module.citadels, f.module.coreAddon.health.maturation,
+            f.citadelTypes, materials, f.materialPlacement, f.breakingService, original.registry
+        )
         service.enable()
         try { body(service) } finally { service.disable() }
     }

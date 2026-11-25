@@ -2,6 +2,7 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.Material
 import org.bukkit.configuration.file.YamlConfiguration
+import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.modules.acid.*
 import kotlin.test.*
 

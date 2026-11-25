@@ -335,8 +335,7 @@ class AcidIntegrationTest {
             reinforce(f, f.block(2, 64, 2))
             f.installer.target = f.block()
             f.installer.permissions.add("fornaxcitadel.info")
-            val command = CitadelCommand(f.plugin, f.manager, f.module, f.materials, f.citadelTypes) {}
-            command.acid = f.acidService
+            val command = f.command(acid = f.acidService)
             assertEquals(listOf("acid"), command.onTabComplete(f.installer.player, TestCommand, "citadel", arrayOf("ac")))
             assertEquals(listOf("info"), command.onTabComplete(f.installer.player, TestCommand, "citadel", arrayOf("acid", "")))
             command.onCommand(f.installer.player, TestCommand, "citadel", arrayOf("acid", "info"))
@@ -417,8 +416,10 @@ class AcidIntegrationTest {
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
         val original = assertNotNull(f.acidService)
         original.disable()
-        val service = AcidService(f.plugin, f.module, f.manager, f.citadelTypes, materials, f.materialPlacement,
-            f.breakingService, original.registry)
+        val service = AcidService(
+            f.plugin, f.module.actions, f.module.citadels, f.module.coreAddon.health.maturation,
+            f.citadelTypes, materials, f.materialPlacement, f.breakingService, original.registry
+        )
         service.enable()
         try { body(service) } finally { service.disable() }
     }

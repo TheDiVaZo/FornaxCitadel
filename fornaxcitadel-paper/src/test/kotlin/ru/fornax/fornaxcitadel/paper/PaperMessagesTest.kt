@@ -6,6 +6,7 @@ import org.bukkit.configuration.InvalidConfigurationException
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -8,6 +8,7 @@ import org.bukkit.command.CommandSender
 import org.bukkit.configuration.file.YamlConfiguration
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
@@ -23,7 +24,7 @@ class CitadelCommandTest {
         val fixture = PaperTestFixture(permissions = true)
         fixture.installer.target = fixture.block()
         var saves = 0
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.materials, fixture.citadelTypes) { saves++ }
+        val commands = fixture.command { saves++ }
 
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "invulnerable"))
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("save"))
@@ -38,7 +39,7 @@ class CitadelCommandTest {
         val fixture = PaperTestFixture(permissions = true)
         fixture.installer.permissions.add("fornaxcitadel.admin")
         fixture.installer.target = fixture.block()
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.materials, fixture.citadelTypes) {}
+        val commands = fixture.command()
 
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "invulnerable"))
 
@@ -60,8 +61,7 @@ class CitadelCommandTest {
             val messages = PaperMessages.read(YamlConfiguration().apply {
                 set("commands.dismantle.success", "Dismantled")
             })
-            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                fixture.materials, fixture.citadelTypes, messages) {}
+            val commands = fixture.command(messages = messages)
             assertFalse("fornaxcitadel.admin" in fixture.installer.permissions)
             assertEquals(listOf("dismantle"), commands.onTabComplete(
                 fixture.installer.player, TestCommand, "citadel", arrayOf("dis")))
@@ -87,8 +87,7 @@ class CitadelCommandTest {
                 set("commands.dismantle.denied", "Dismantle denied")
                 set("commands.no-permission", "No permission")
             })
-            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                fixture.materials, fixture.citadelTypes, messages) {}
+            val commands = fixture.command(messages = messages)
 
             commands.onCommand(fixture.stranger.player, TestCommand, "citadel", arrayOf("dismantle"))
 
@@ -111,7 +110,7 @@ class CitadelCommandTest {
     fun `missing target and invalid give quantity do not mutate state`() {
         val fixture = PaperTestFixture(permissions = true)
         fixture.installer.permissions.add("fornaxcitadel.admin")
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, fixture.materials, fixture.citadelTypes) {}
+        val commands = fixture.command()
 
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "invulnerable"))
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("give", "invulnerable", "installer", "0"))
@@ -136,8 +135,7 @@ class CitadelCommandTest {
                 }
                 set("commands.usage.give", "Usage give {types}")
             })
-            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                fixture.materials, fixture.citadelTypes, messages) {}
+            val commands = fixture.command(messages = messages)
 
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("help"))
             assertEquals(listOf("Inspect help", "Acid help", "Dismantle help"), fixture.installer.chatMessages.plainText())
@@ -172,8 +170,7 @@ class CitadelCommandTest {
             })
             val itemKey = assertNotNull(fixture.citadelTypes.itemKey(PaperCitadelTypes.REINFORCED))
             val materials = TestMaterialRegistry(TestMaterialAdapter(itemKey))
-            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                materials, fixture.citadelTypes, messages) {}
+            val commands = fixture.command(materials = materials, messages = messages)
 
             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("info"))
             commands.onCommand(fixture.installer.player, TestCommand, "citadel",
@@ -200,8 +197,7 @@ class CitadelCommandTest {
                     set("format", format)
                     set("commands.unknown-type", template)
                 })
-                val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                    fixture.materials, fixture.citadelTypes, messages) {}
+                val commands = fixture.command(messages = messages)
                 val argument = "<red>unregistered</red>&a"
 
                 commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", argument))
@@ -229,8 +225,7 @@ class CitadelCommandTest {
                 set("commands.player-only", "Player required")
             })
             var saves = 0
-            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                fixture.materials, fixture.citadelTypes, messages) { saves++ }
+            val commands = fixture.command(messages = messages) { saves++ }
 
             commands.onCommand(console, TestCommand, "citadel", arrayOf("save"))
             commands.onCommand(console, TestCommand, "citadel", arrayOf("info"))

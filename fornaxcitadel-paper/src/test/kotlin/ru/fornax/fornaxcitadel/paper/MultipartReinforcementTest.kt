@@ -29,6 +29,7 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.modules.placement.BlockListType
 import ru.fornax.fornaxcitadel.paper.modules.resolver.DefaultMaterialPlacementRule
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -155,8 +156,7 @@ class MultipartReinforcementTest {
             val messages = PaperMessages.read(YamlConfiguration().apply {
                 set("commands.info.health", "HP={health}")
             })
-            val command = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                fixture.materials, fixture.citadelTypes, messages) {}
+            val command = fixture.command(messages = messages)
             command.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "reinforced"))
             val handle = assertNotNull(fixture.module.citadels.findProtecting(foot.testPosition()))
             assertEquals(head.testPosition(), handle.position)

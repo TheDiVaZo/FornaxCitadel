@@ -17,6 +17,15 @@ class ActionMetaRegistry(
         actionsMeta[type] = actionMeta
     }
 
+    internal fun registerIfAbsent(type: Key, actionMeta: ActionMeta): Boolean =
+        actionsMeta.putIfAbsent(type, actionMeta) == null
+
+    internal fun unregister(type: Key, actionMeta: ActionMeta): Boolean {
+        if (actionsMeta[type] !== actionMeta) return false
+        actionsMeta.remove(type)
+        return true
+    }
+
     fun getMeta(type: Key): ActionMeta? = actionsMeta[type]
 
     fun getMetaOrDefault(type: Key): ActionMeta {

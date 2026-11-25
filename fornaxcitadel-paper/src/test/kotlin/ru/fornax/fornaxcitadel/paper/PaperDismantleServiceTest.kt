@@ -225,7 +225,7 @@ class PaperDismantleServiceTest {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             val (lower, upper) = fixture.door()
             // Existing linked protection is independent of the current solid-block placement filter.
-            assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.place.place(PlaceAction(
                 fixture.context(fixture.installer), upper.testPosition(), PaperCitadelTypes.REINFORCED)))
             val original = assertNotNull(fixture.module.citadels.findProtecting(upper.testPosition()))
             assertEquals(lower.testPosition(), original.position)

@@ -24,6 +24,7 @@ import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
@@ -53,7 +54,10 @@ class PaperUpgradeServiceTest {
                 }
             }
             f.upgradeService.disable()
-            val service = PaperUpgradeService(f.plugin, f.module, f.citadelTypes, materials).also { it.enable() }
+            val service = PaperUpgradeService(
+                f.plugin, f.module.actions, f.module.citadels, f.module.definitions, f.module.coreAddon.health,
+                f.citadelTypes, materials
+            ).also { it.enable() }
             try {
                 val action = f.action()
                 assertTrue(f.module.actions.isAllowed(action))
@@ -186,7 +190,7 @@ class PaperUpgradeServiceTest {
         fixture(DismantleSettings(0.0)).use { f ->
             f.place()
             val original = f.citadel()
-            f.module.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
+            f.module.coreAddon.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
             original.editComponent(Health::class.java) { it.health = 80.0 }
             f.installer.held = f.reinforcementStack(HEAVY)
 
@@ -209,7 +213,7 @@ class PaperUpgradeServiceTest {
             val owner = original.getComponent(CitadelOwner::class.java)
             val externalKey = Key("external", "without_level")
             original.editComponent(CitadelKind::class.java) { it.definitionKey = externalKey }
-            f.module.health.registerDefinition(externalKey, HealthDefinition(maximum))
+            f.module.coreAddon.health.registerDefinition(externalKey, HealthDefinition(maximum))
             original.editComponent(Health::class.java) { it.health = 1.0 }
             assertNull(f.citadelTypes.level(original))
             f.installer.held = f.reinforcementStack(HEAVY)
@@ -234,7 +238,7 @@ class PaperUpgradeServiceTest {
             val original = f.citadel()
             val owner = original.getComponent(CitadelOwner::class.java)
             if (!knownLevel) assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
-            f.module.health.unregisterDefinition(HEAVY)
+            f.module.coreAddon.health.unregisterDefinition(HEAVY)
             assertFalse(f.citadelTypes.isInvulnerable(HEAVY))
             f.installer.held = f.reinforcementStack(HEAVY)
 
@@ -247,7 +251,7 @@ class PaperUpgradeServiceTest {
             assertEquals(HEAVY, original.getComponent(CitadelKind::class.java)?.definitionKey)
             assertEquals(3, f.citadelTypes.level(original))
             assertNull(original.getComponent(Health::class.java))
-            assertNull(f.module.health.currentHealth(original))
+            assertNull(f.module.coreAddon.health.currentHealth(original))
             assertEquals(if (knownLevel) 1 else 0, f.droppedItems.size)
         }
     }
@@ -283,7 +287,7 @@ class PaperUpgradeServiceTest {
                     val original = f.citadel()
                     val owner = original.getComponent(CitadelOwner::class.java)
                     original.editComponent(Health::class.java) { it.health = savedHealth }
-                    if (!hasMaximum) f.module.health.unregisterDefinition(HEAVY)
+                    if (!hasMaximum) f.module.coreAddon.health.unregisterDefinition(HEAVY)
                     f.installer.held = f.reinforcementStack(HEAVY)
 
                     assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action()),
@@ -353,7 +357,7 @@ class PaperUpgradeServiceTest {
             fixture(DismantleSettings(0.0)) { error("Absent or guaranteed refund must not roll") }.use { f ->
                 f.place()
                 when (missing) {
-                    "maximum" -> f.module.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
+                    "maximum" -> f.module.coreAddon.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
                     "health" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
                     "item" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
                 }
@@ -495,7 +499,7 @@ class PaperUpgradeServiceTest {
             assertEquals(ActionResult.SUCCESS, f.module.actions.execute(f.action(PaperCitadelTypes.MATURING)))
             val started = original.getComponent(Maturing::class.java)!!.startedAtMillis
             assertTrue(started > 1L)
-            assertFalse(f.module.health.maturation.isMature(original))
+            assertFalse(f.module.coreAddon.health.maturation.isMature(original))
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.loadChunk(0, 0)
             val restored = f.citadel()
@@ -503,7 +507,7 @@ class PaperUpgradeServiceTest {
             assertEquals(40.0, f.health())
             assertEquals(started, restored.getComponent(Maturing::class.java)?.startedAtMillis)
             assertEquals(f.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
-            assertFalse(f.module.health.maturation.isMature(restored))
+            assertFalse(f.module.coreAddon.health.maturation.isMature(restored))
         }
     }
 
@@ -522,7 +526,7 @@ class PaperUpgradeServiceTest {
             val info = assertIs<AcidResult.Information>(acid.inspect(f.installer.player, f.block()))
             assertEquals(4, info.tier)
             assertFalse(info.mature)
-            assertTrue(f.module.health.maturation.progress(target) in 0.58..0.60)
+            assertTrue(f.module.coreAddon.health.maturation.progress(target) in 0.58..0.60)
             target.editComponent(Maturing::class.java) { it.startedAtMillis = System.currentTimeMillis() - 1_300_000L }
             assertTrue(assertIs<AcidResult.Information>(acid.inspect(f.installer.player, f.block())).mature)
             assertEquals(Material.GOLD_BLOCK, f.block().type)

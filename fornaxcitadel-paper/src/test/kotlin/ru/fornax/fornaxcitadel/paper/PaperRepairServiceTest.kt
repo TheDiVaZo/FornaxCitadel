@@ -24,6 +24,7 @@ import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
@@ -49,7 +50,10 @@ class PaperRepairServiceTest {
                 }
             }
             fixture.repairService.disable()
-            val service = PaperRepairService(fixture.module, fixture.citadelTypes, materials).also { it.enable() }
+            val service = PaperRepairService(
+                fixture.module.actions, fixture.module.citadels, fixture.module.coreAddon.health,
+                fixture.citadelTypes, materials
+            ).also { it.enable() }
             try {
                 val action = fixture.action()
                 assertTrue(fixture.module.actions.isAllowed(action))
@@ -260,7 +264,7 @@ class PaperRepairServiceTest {
             fixture.loadChunk(0, 0)
             val restored = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
             assertEquals(40.0, restored.getComponent(Health::class.java)?.health)
-            assertEquals(40.0, fixture.module.health.maxHealth(restored))
+            assertEquals(40.0, fixture.module.coreAddon.health.maxHealth(restored))
             assertEquals(1L, restored.getComponent(Maturing::class.java)?.startedAtMillis)
             assertEquals(fixture.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
             assertEquals(original.getKey(), fixture.citadelTypes.itemKey(restored))
@@ -278,7 +282,7 @@ class PaperRepairServiceTest {
                 }
                 val clicked = if (kind == "bed") first else second
                 val other = if (kind == "bed") second else first
-                assertEquals(ActionResult.SUCCESS, fixture.module.place.place(PlaceAction(
+                assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.place.place(PlaceAction(
                     fixture.context(fixture.installer), clicked.testPosition(), PaperCitadelTypes.REINFORCED)))
                 val target = assertNotNull(fixture.module.citadels.findProtecting(clicked.testPosition()))
                 assertTrue(target.editComponent(Health::class.java) { it.health = 10.0 })

@@ -8,9 +8,11 @@ import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.isOwnerOrUnowned
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.modules.health.MaturationService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
@@ -18,10 +20,10 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.ChunkLoadCheck
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import java.util.Collections
@@ -32,8 +34,9 @@ import java.util.logging.Level
 /** No acid entities or timers: every operation resolves current material and existing components. */
 class AcidService(
     private val plugin: Plugin,
-    private val module: CitadelModule,
-    private val manager: ComponentManager,
+    private val actions: ActionManager,
+    private val citadels: CitadelFacade,
+    private val maturation: MaturationService,
     private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry,
     private val placement: MaterialPlacementService,
@@ -43,10 +46,11 @@ class AcidService(
     private var enabled = false
     private var busy = false
     private val scopedActions = Collections.newSetFromMap(IdentityHashMap<AcidDestroyAction, Boolean>())
-    private val multiplier = AcidMaturationMultiplier(registry, plugin.server, manager)
+    private val isChunkLoaded: ChunkLoadCheck = citadels::isChunkLoaded
+    private val multiplier = AcidMaturationMultiplier(registry, plugin.server, isChunkLoaded)
     fun findTarget(player: Player): Block? {
         check(plugin.server.isPrimaryThread) { "Acid lookup requires the main server thread" }
-        return LoadedBlockTarget.find(player, registry.settings.maxDistance, manager)
+        return LoadedBlockTarget.find(player, registry.settings.maxDistance, isChunkLoaded)
     }
     private val validator = object : ActionValidator<AcidDestroyAction> {
         override val actionClass = AcidDestroyAction::class.java
@@ -56,14 +60,14 @@ class AcidService(
 
     override fun enable() {
         if (enabled) return
-        module.health.maturation.registerMultiplier(multiplier)
-        module.actions.registerValidator(validator)
+        maturation.registerMultiplier(multiplier)
+        actions.registerValidator(validator)
         enabled = true
     }
 
     override fun disable() {
-        module.actions.unregisterValidator(validator)
-        module.health.maturation.unregisterMultiplier(multiplier)
+        actions.unregisterValidator(validator)
+        maturation.unregisterMultiplier(multiplier)
         scopedActions.clear()
         enabled = false
     }
@@ -72,17 +76,17 @@ class AcidService(
         val acid = resolve(block)
         val candidates = candidates(player, acid)
         AcidResult.Information(acid.type, acid.citadel, acid.owner, acid.tier,
-            module.health.maturation.isMature(acid.citadel), candidates.size,
+            maturation.isMature(acid.citadel), candidates.size,
             minOf(candidates.size, acid.type.maxTargets))
     }
 
     fun activate(player: Player, block: Block?): AcidResult = operation {
         val acid = resolve(block)
         checkActor(player, acid)
-        if (!module.health.maturation.isMature(acid.citadel)) fail(AcidFailure.IMMATURE)
+        if (!maturation.isMature(acid.citadel)) fail(AcidFailure.IMMATURE)
         val selected = candidates(player, acid).take(acid.type.maxTargets)
         if (breaking.destructionParts(acid.block, placement).mapNotNull {
-            module.citadels.findProtecting(position(it))
+            citadels.findProtecting(position(it))
         }.any { !same(it, acid.citadel) }) fail(AcidFailure.DENIED)
         val sourceAction = action(player, acid, acid.block, consuming = true)
         scopedActions.add(sourceAction)
@@ -107,7 +111,7 @@ class AcidService(
         checkActor(player, acid)
         return enabled && registry.find(acid.block.type) == acid.type && acid.citadel.isCurrent &&
             citadelTypes.level(acid.citadel) == acid.tier &&
-            module.health.maturation.isMature(acid.citadel)
+            maturation.isMature(acid.citadel)
     }
 
     private fun checkActor(player: Player, acid: AcidBlock) {
@@ -120,7 +124,7 @@ class AcidService(
         if (!enabled || !registry.settings.enabled) fail(AcidFailure.DISABLED)
         if (block == null) fail(AcidFailure.NOT_FOUND)
         loadedBlock(position(block))
-        val citadel = module.citadels.findProtecting(position(block)) ?: run {
+        val citadel = citadels.findProtecting(position(block)) ?: run {
             if (registry.isDisabled(block.type)) fail(AcidFailure.DISABLED)
             fail(if (registry.find(block.type) != null) AcidFailure.NOT_REINFORCED else AcidFailure.NOT_FOUND)
         }
@@ -136,18 +140,18 @@ class AcidService(
         for (face in FACES) {
             val block = placement.findLoadedRelative(acid.block, face) ?: continue
             if (block.isEmpty) continue
-            val citadel = module.citadels.findProtecting(position(block)) ?: continue
+            val citadel = citadels.findProtecting(position(block)) ?: continue
             if (same(citadel, acid.citadel) || citadel.position to citadel.runtimeId in seen) continue
             val parts = breaking.destructionParts(block, placement)
-            val protected = parts.mapNotNull { part -> module.citadels.findProtecting(position(part))?.let { part to it } }
+            val protected = parts.mapNotNull { part -> citadels.findProtecting(position(part))?.let { part to it } }
                 .distinctBy { it.second.position to it.second.runtimeId }
             if (protected.any { same(it.second, acid.citadel) }) continue
             if (protected.any { !canDissolve(acid.tier, citadelTypes.level(it.second)) }) continue
-            val actions = protected.map { action(player, acid, it.first) }
-            scopedActions.addAll(actions)
-            if (!actions.all(module.actions::isAllowed)) continue
+            val destructionActions = protected.map { action(player, acid, it.first) }
+            scopedActions.addAll(destructionActions)
+            if (!destructionActions.all(actions::isAllowed)) continue
             seen.addAll(protected.map { it.second.position to it.second.runtimeId })
-            targets.add(Target(block, protected.map { it.second }, actions))
+            targets.add(Target(block, protected.map { it.second }, destructionActions))
         }
         return targets
     }
@@ -156,7 +160,7 @@ class AcidService(
         ActionContext(player.uniqueId, PlayerSource(player, SOURCE)), position(block), acid.citadel.position,
         acid.citadel.runtimeId, consuming)
 
-    private fun loadedBlock(position: CitadelPosition): Block = LoadedBlockTarget.blockAt(plugin.server, manager, position)
+    private fun loadedBlock(position: CitadelPosition): Block = LoadedBlockTarget.blockAt(plugin.server, isChunkLoaded, position)
 
     private inline fun operation(body: () -> AcidResult): AcidResult {
         if (!plugin.server.isPrimaryThread) return AcidResult.Failed(AcidFailure.WRONG_THREAD)

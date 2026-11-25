@@ -7,6 +7,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import java.time.Duration
@@ -23,7 +24,7 @@ class PaperConfigurationTest {
     fun `shipped config registers fixed health and independent maturation settings`() {
         val settings = shippedSettings()
         val fixture = PaperTestFixture(load = false, registerTypes = false, citadelSettings = settings.citadelTypes)
-        fixture.citadelTypes.register(fixture.module)
+        fixture.citadelTypes.register(fixture.module.definitions, fixture.module.coreAddon.health)
         fixture.manager.loadChunk(fixture.worldId, 0, 0).join()
 
         val handles = fixture.citadelTypes.names.mapIndexed { index, name ->
@@ -36,13 +37,13 @@ class PaperConfigurationTest {
         for ((name, type) in settings.citadelTypes.types) {
             val handle = handles.getValue(name)
             assertEquals(type.health?.max, handle.getComponent(Health::class.java)?.health)
-            assertEquals(type.health?.max, fixture.module.health.maxHealth(handle))
+            assertEquals(type.health?.max, fixture.module.coreAddon.health.maxHealth(handle))
             assertTrue(assertNotNull(handle.getComponent(Maturing::class.java)).startedAtMillis > 0)
             val key = assertNotNull(handle.getComponent(CitadelKind::class.java)).definitionKey
-            val profile = assertNotNull(fixture.module.health.maturation.findDefinition(key))
+            val profile = assertNotNull(fixture.module.coreAddon.health.maturation.findDefinition(key))
             assertEquals(Duration.ofSeconds(type.maturing?.durationSeconds ?: 0), profile.duration)
             assertEquals(type.maturing?.initialDamageMultiplier ?: 1.0, profile.initialDamageMultiplier)
-            assertEquals(profile.duration.isZero, fixture.module.health.maturation.isMature(handle))
+            assertEquals(profile.duration.isZero, fixture.module.coreAddon.health.maturation.isMature(handle))
         }
     }
 

@@ -245,6 +245,8 @@ class PaperChunkPersistenceTest {
         val listener = PaperChunkListener(service)
 
         fun closeStorage() {
+            module.disable()
+            module.coreAddon.onDisable()
             service.disable()
             manager.closeAndSaveAll().join()
             backend.flushPendingWorldSaves()
@@ -252,12 +254,13 @@ class PaperChunkPersistenceTest {
         }
 
         init {
-            module.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
+            module.coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
             module.registerDefinition(
-                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(module.health)))
+                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(module.coreAddon.health)))
             )
             module.actions.registerValidator(
                 PaperDamageValidator(module.citadels, paper.citadelTypes, true))
+            module.coreAddon.onEnable()
             module.enable()
         }
     }

@@ -64,6 +64,21 @@ class CitadelFacadeTest {
     }
 
     @Test
+    fun `exact lookup finds only the stored half of a linked block`() {
+        Fixture().use { fixture ->
+            val facade = fixture.module.citadels
+            val bottom = fixture.createExact(BOTTOM)
+
+            assertEquals(bottom.runtimeId, facade.findProtecting(TOP)?.runtimeId)
+            assertNull(facade.findExact(TOP))
+            assertEquals(bottom.runtimeId, facade.findExact(BOTTOM)?.runtimeId)
+            assertNull(facade.findExact(TOP.copy(y = -65)))
+            assertNull(facade.findExact(OTHER_CHUNK))
+            assertFalse(facade.isChunkLoaded(WORLD, 1, 0))
+        }
+    }
+
+    @Test
     fun `creation fills one unpublished draft at the resolved position and consumes it`() {
         Fixture().use { fixture ->
             var fills = 0
@@ -142,9 +157,9 @@ class CitadelFacadeTest {
         Fixture().use { fixture ->
             val initialized = mutableListOf<CitadelPosition>()
             val placed = mutableListOf<PlaceAction>()
-            fixture.module.health.registerDefinition(CUSTOM_TYPE, HealthDefinition(100.0))
+            fixture.module.coreAddon.health.registerDefinition(CUSTOM_TYPE, HealthDefinition(100.0))
             fixture.module.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
-                CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(fixture.module.health)
+                CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(fixture.module.coreAddon.health)
             )))
             fixture.module.actions.validateDamage(fixture.module.citadels, CUSTOM_TYPE)
             fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
@@ -233,9 +248,9 @@ class CitadelFacadeTest {
             assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(DamageAction(CONTEXT, TOP, 5.0)))
             assertEquals(95.0, fixture.health(TOP))
             assertEquals(100.0, fixture.health(BOTTOM))
-            assertEquals(ActionResult.SUCCESS, fixture.module.remove.remove(top))
+            assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.remove.remove(top))
             assertEquals(bottom.runtimeId, fixture.module.citadels.findProtecting(TOP)?.runtimeId)
-            assertEquals(ActionResult.DENIED, fixture.module.remove.remove(top))
+            assertEquals(ActionResult.DENIED, fixture.module.coreAddon.remove.remove(top))
             assertTrue(bottom.isCurrent)
         }
     }
@@ -268,27 +283,28 @@ class CitadelFacadeTest {
         val module = CitadelModule(manager, scheduler, resolver = if (useRules) resolver else direct)
 
         init {
-            module.health.registerDefinition(TYPE, HealthDefinition(100.0))
-            module.health.registerDefinition(BLOCKED_TYPE, HealthDefinition(100.0))
-            module.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(module.health))))
+            module.coreAddon.health.registerDefinition(TYPE, HealthDefinition(100.0))
+            module.coreAddon.health.registerDefinition(BLOCKED_TYPE, HealthDefinition(100.0))
+            module.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(module.coreAddon.health))))
             module.actions.validateDamage(module.citadels, TYPE)
-            module.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(module.health))))
+            module.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(module.coreAddon.health))))
             module.actions.validateDamage(module.citadels, BLOCKED_TYPE) { _, _ -> false }
             module.actions.validateDamage(module.citadels, mode = DamageAction.Mode.DESTROY)
             module.actions.validateRemoval(module.citadels)
+            module.coreAddon.onEnable()
             module.enable()
             manager.loadChunk(WORLD, 0, 0).join()
         }
 
         fun fill(draft: CitadelDraft) {
             draft.addComponent(CitadelKind::class.java, CitadelKind(TYPE))
-            HealthInitializer(module.health).initialize(CONTEXT, draft)
+            HealthInitializer(module.coreAddon.health).initialize(CONTEXT, draft)
         }
 
         fun createExact(position: CitadelPosition, type: Key = TYPE): CitadelHandle {
             val draft = MutableCitadelDraft(position)
             draft.addComponent(CitadelKind::class.java, CitadelKind(type))
-            HealthInitializer(module.health).initialize(CONTEXT, draft)
+            HealthInitializer(module.coreAddon.health).initialize(CONTEXT, draft)
             assertEquals(ActionResult.SUCCESS, manager.createCitadel(draft))
             return assertNotNull(exact(position))
         }
@@ -303,6 +319,7 @@ class CitadelFacadeTest {
 
         override fun close() {
             module.disable()
+            module.coreAddon.onDisable()
             manager.closeAndSaveAll().join()
         }
     }

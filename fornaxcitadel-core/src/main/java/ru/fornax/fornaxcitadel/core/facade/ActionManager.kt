@@ -40,6 +40,14 @@ class ActionManager(private val citadels: CitadelFacade) {
     /** Sets the execution policy for [key] when all applicable validators are neutral. */
     fun registerActionMeta(key: Key, meta: ActionMeta) = actionMetaRegistry.register(key, meta)
 
+    @JvmSynthetic
+    internal fun registerActionMetaIfAbsent(key: Key, meta: ActionMeta): Boolean =
+        actionMetaRegistry.registerIfAbsent(key, meta)
+
+    @JvmSynthetic
+    internal fun unregisterActionMeta(key: Key, meta: ActionMeta): Boolean =
+        actionMetaRegistry.unregister(key, meta)
+
     /** Read-only authorization using the same metadata as execute. Does not notify handlers. */
     fun isAllowed(action: ActionData): Boolean = runRoot { validate(action) }
 

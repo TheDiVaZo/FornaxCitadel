@@ -1,31 +1,14 @@
 package ru.fornax.fornaxcitadel.modules.remove
 
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
-import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
-import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 
 /**
  * Removes core data after authorization. Minecraft block changes belong to a platform integration.
- * Enabling registers removal prerequisites. Configure action metadata and authorization when assembled without CitadelModule.
  * Direct calls do not notify action handlers.
  */
-class RemoveService(
-    actions: ActionManager,
-    private val citadels: CitadelFacade,
-    private val manager: ComponentManager
-) : LifecycleService {
-    private val registration = ActionRegistration(
-        actions, RemoveProcessor(this), listOf(ExistingCitadelValidator(RemoveAction::class.java, citadels))
-    )
-
-    override fun enable() = registration.enable()
-    override fun disable() = registration.disable()
-
+class RemoveService(private val citadels: CitadelFacade) {
     /** Executes a validated request with an available target. External requests must enter through actions. */
     fun request(action: RemoveAction): ActionResult {
         val citadel = checkNotNull(citadels.findProtecting(action.position)) {
@@ -36,7 +19,7 @@ class RemoveService(
 
     /** Trusted completion after checks; does not re-run cancelable action validation. */
     fun remove(citadel: CitadelHandle): ActionResult {
-        if (!manager.removeCitadel(citadel)) return ActionResult.DENIED
+        if (!citadels.removeCitadel(citadel)) return ActionResult.DENIED
         return ActionResult.SUCCESS
     }
 

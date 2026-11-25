@@ -20,6 +20,7 @@ import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
@@ -100,7 +101,7 @@ class OwnerlessCitadelTest {
                 val original = f.citadel()
                 f.unown()
                 if (state in listOf("implicit", "no health")) f.removeHealth()
-                if (state in listOf("no maximum", "no health")) f.module.health.unregisterDefinition(type)
+                if (state in listOf("no maximum", "no health")) f.module.coreAddon.health.unregisterDefinition(type)
                 if (state == "damaged") original.editComponent(Health::class.java) { it.health = 5.0 }
                 val component = original.getComponent(Health::class.java)
                 val health = component?.health
@@ -175,17 +176,25 @@ class OwnerlessCitadelTest {
         Pair<LifecycleService, () -> ActionResult> = when (kind) {
         "repair" -> {
             repairService.disable()
-            val replacement = PaperRepairService(module, citadelTypes, materials).also { it.enable() }
+            val replacement = PaperRepairService(
+                module.actions, module.citadels, module.coreAddon.health, citadelTypes, materials
+            ).also { it.enable() }
             replacement to { replacement.repair(action as RepairAction) }
         }
         "upgrade" -> {
             upgradeService.disable()
-            val replacement = PaperUpgradeService(plugin, module, citadelTypes, materials, DismantleSettings(1.0)).also { it.enable() }
+            val replacement = PaperUpgradeService(
+                plugin, module.actions, module.citadels, module.definitions, module.coreAddon.health,
+                citadelTypes, materials, DismantleSettings(1.0)
+            ).also { it.enable() }
             replacement to { replacement.upgrade(action as UpgradeAction) }
         }
         else -> {
             dismantleService.disable()
-            val replacement = PaperDismantleService(plugin, module, citadelTypes, materials, DismantleSettings(1.0)).also { it.enable() }
+            val replacement = PaperDismantleService(
+                plugin, module.actions, module.citadels, module.coreAddon.health, module.coreAddon.remove,
+                citadelTypes, materials, DismantleSettings(1.0)
+            ).also { it.enable() }
             replacement to { replacement.dismantle(action as DismantleAction) }
         }
     }

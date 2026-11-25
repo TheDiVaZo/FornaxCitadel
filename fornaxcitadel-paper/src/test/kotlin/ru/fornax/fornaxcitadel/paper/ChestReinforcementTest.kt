@@ -27,6 +27,7 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.modules.placement.BlockListType
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
@@ -228,8 +229,7 @@ class ChestReinforcementTest {
                 val messages = PaperMessages.read(YamlConfiguration().apply {
                     set("commands.info.health", "HP={health}")
                 })
-                val command = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                    fixture.materials, fixture.citadelTypes, messages) {}
+                val command = fixture.command(messages = messages)
                 command.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "reinforced"))
                 val handle = assertNotNull(fixture.module.citadels.findProtecting(other.testPosition()))
                 assertEquals(selected.testPosition(), handle.position)

@@ -13,6 +13,8 @@ import org.bukkit.block.BlockFace
 import org.bukkit.block.BlockState
 import org.bukkit.block.Container
 import org.bukkit.inventory.Inventory
+import ru.fornax.fornaxcitadel.paper.command.CitadelCommand
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidSettings
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidRegistry
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
@@ -52,6 +54,7 @@ import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
@@ -270,13 +273,17 @@ internal class PaperTestFixture(
     private val permissionValidator = PaperPermissionValidator(citadelTypes)
     val materials = CombineMaterialRegistry()
     val materialPlacement = MaterialPlacementService(server, materials, manager)
-    val module = CitadelModule(manager, moduleScheduler, maxActionsPerTick,
-        resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager))
+    val module = CitadelModule(manager, moduleScheduler,
+        resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager),
+        actionSettings = ActionSettings(maxActionsPerTick))
     val actionValidationService = ValidatorRegistration(module.actions, PaperActionStateValidator(server))
     val permissionService = ValidatorRegistration(module.actions, permissionValidator)
     val damageValidationService = ValidatorRegistration(module.actions,
         PaperDamageValidator(module.citadels, citadelTypes, creativeModeEnabled))
-    val placementService = PaperPlacementService(plugin, module, citadelTypes, materials, placementSettings, messages).also { service ->
+    val placementService = PaperPlacementService(
+        plugin, module.actions, module.citadels, module.coreAddon.health,
+        citadelTypes, materials, placementSettings, messages
+    ).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
         }
@@ -299,15 +306,30 @@ internal class PaperTestFixture(
             }
         }
     }
-    val dismantleService = PaperDismantleService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
-    val repairService = PaperRepairService(module, citadelTypes, materials)
-    val upgradeService = PaperUpgradeService(plugin, module, citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom)
-    val breakingService = PaperBreakingService(plugin, module, manager, playerDamage, messages, creativeModeEnabled)
+    val dismantleService = PaperDismantleService(
+        plugin, module.actions, module.citadels, module.coreAddon.health, module.coreAddon.remove,
+        citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom
+    )
+    val repairService = PaperRepairService(
+        module.actions, module.citadels, module.coreAddon.health, citadelTypes, materials
+    )
+    val upgradeService = PaperUpgradeService(
+        plugin, module.actions, module.citadels, module.definitions, module.coreAddon.health,
+        citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom
+    )
+    val breakingService = PaperBreakingService(
+        plugin, module.actions, module.citadels, module.coreAddon.remove, playerDamage, messages, creativeModeEnabled
+    )
     val acidService = acidSettings?.let {
-        AcidService(plugin, module, manager, citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it))
+        AcidService(
+            plugin, module.actions, module.citadels, module.coreAddon.health.maturation,
+            citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it)
+        )
     }
-    val explosionService = PaperExplosionService(plugin, module, manager, explosionPowers)
-    val environmentService = PaperEnvironmentService(plugin, module)
+    val explosionService = PaperExplosionService(
+        plugin, module.actions, module.citadels, module.coreAddon.remove, explosionPowers
+    )
+    val environmentService = PaperEnvironmentService(plugin, module.citadels)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
     val breakingListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperBreakingListener>().single()
     val explosionListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperExplosionListener>().single()
@@ -316,11 +338,14 @@ internal class PaperTestFixture(
     val stranger = player(UUID(5L, 6L), "stranger")
 
     init {
-        if (registerTypes) citadelTypes.register(module)
+        if (registerTypes) citadelTypes.register(module.definitions, module.coreAddon.health)
         actionValidationService.enable()
         if (permissions) permissionService.enable()
         damageValidationService.enable()
-        if (initializeModule) module.enable()
+        if (initializeModule) {
+            module.coreAddon.onEnable()
+            module.enable()
+        }
         if (initializeSystems) {
             dismantleService.enable()
             repairService.enable()
@@ -333,6 +358,14 @@ internal class PaperTestFixture(
         }
         if (load) manager.loadChunk(worldId, 0, 0).join()
     }
+
+    fun command(
+        materials: MaterialRegistry = this.materials,
+        messages: PaperMessages = PaperMessages.defaults(),
+        acid: AcidService? = null,
+        save: () -> Unit = {}
+    ) = CitadelCommand(plugin, module.actions, module.citadels, module.coreAddon.health,
+        materials, citadelTypes, messages, acid, save)
 
     fun player(id: UUID, name: String): TestPlayer = TestPlayer(id, name, world).also { player ->
         player.breakBlockHandler = { block -> breakBlock(player.player, block) }
@@ -520,6 +553,7 @@ internal class PaperTestFixture(
         dismantleService.disable()
         placementService.disable()
         module.disable()
+        module.coreAddon.onDisable()
         damageValidationService.disable()
         permissionService.disable()
         actionValidationService.disable()

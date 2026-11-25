@@ -8,17 +8,20 @@ import java.util.logging.Level
 import java.util.logging.Logger
 
 /** Drains posted actions each tick. Disabling the service preserves pending actions. */
-class ActionQueueService @JvmOverloads constructor(
+class ActionQueueService(
     private val actions: ActionManager,
     private val scheduler: Scheduler,
-    private val maxPerTick: Int,
-    private val failureHandler: (Exception) -> Unit = DEFAULT_FAILURE_HANDLER
+    private val settings: ActionSettings
 ) : LifecycleService {
     private var activeRun: QueueRun? = null
 
-    init {
-        require(maxPerTick > 0) { "Action limit per tick must be positive" }
-    }
+    @JvmOverloads
+    constructor(
+        actions: ActionManager,
+        scheduler: Scheduler,
+        maxPerTick: Int,
+        failureHandler: (Exception) -> Unit = DEFAULT_FAILURE_HANDLER
+    ) : this(actions, scheduler, ActionSettings(maxPerTick, failureHandler))
 
     override fun enable() {
         if (activeRun != null) return
@@ -28,9 +31,9 @@ class ActionQueueService @JvmOverloads constructor(
             run.task = scheduler.runTaskTimer(Runnable {
                 if (activeRun !== run) return@Runnable
                 try {
-                    actions.drainPosted(maxPerTick)
+                    actions.drainPosted(settings.maxActionsPerTick)
                 } catch (failure: Exception) {
-                    failureHandler(failure)
+                    settings.actionFailureHandler(failure)
                 }
             }, 1L, 1L)
         } catch (failure: Throwable) {

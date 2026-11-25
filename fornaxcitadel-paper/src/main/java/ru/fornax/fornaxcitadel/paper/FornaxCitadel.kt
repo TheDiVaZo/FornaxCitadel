@@ -1,46 +1,32 @@
 package ru.fornax.fornaxcitadel.paper
 
-import org.bukkit.command.PluginCommand
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
-import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
-import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
+import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
+import ru.fornax.fornaxcitadel.paper.command.CitadelCommandRegistration
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
+import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
-import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
-import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
-import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.modifiers.NerfingNewcomersModifier
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
-import ru.fornax.fornaxcitadel.paper.modules.dismantle.PaperDismantleService
-import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
-import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
-import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
-import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.observation.Full3DObservation
 import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationService
-import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
-import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
-import ru.fornax.fornaxcitadel.paper.modules.upgrade.PaperUpgradeService
-import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
 import java.util.concurrent.CompletionException
 import java.util.concurrent.Executor
 import java.util.logging.Level
-import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
-import ru.fornax.fornaxcitadel.paper.modules.acid.AcidRegistry
 
 class FornaxCitadel : JavaPlugin() {
-    lateinit var acid: AcidService
+    lateinit var paperAddon: PaperAddon
         private set
     /**
      * Register external material providers on the server's main thread after enable.
@@ -51,107 +37,59 @@ class FornaxCitadel : JavaPlugin() {
     /** Register block placement/protection rules on the main thread after enable. */
     lateinit var materialPlacement: MaterialPlacementService
         private set
-    lateinit var placement: PaperPlacementService
-        private set
-    lateinit var dismantle: PaperDismantleService
-        private set
-    lateinit var repair: PaperRepairService
-        private set
-    lateinit var upgrade: PaperUpgradeService
-        private set
-    lateinit var citadelTypes: PaperCitadelTypes
-        private set
-    /** Modifiers for ordinary player damage can be registered on the main thread after enable. */
-    lateinit var playerDamage: PlayerDamageModifierService
-        private set
     /** Register presentation systems on the main thread after enable. Players are observed automatically. */
     lateinit var observation: ObservationService<Player>
         private set
     private var schedulerAdapter: PaperScheduler? = null
-    private var componentManager: ComponentManager? = null
+    private var citadelStorage: CitadelStorage? = null
     private var chunkBackend: PersistContainerChunkStorage? = null
-    private var commandBinding: Pair<PluginCommand, CitadelCommand>? = null
-    private val services = mutableListOf<LifecycleService>()
+    private val shutdownSteps = ArrayDeque<() -> Unit>()
 
     override fun onEnable() {
         try {
-            check(componentManager == null && chunkBackend == null && schedulerAdapter == null) {
+            check(citadelStorage == null && chunkBackend == null && schedulerAdapter == null) {
                 "Previous citadel storage shutdown has not completed"
             }
             saveDefaultConfig()
             val settings = PaperSettings.read(config)
             settings.acidConfigurationError?.let { logger.severe("Acid is disabled because its configuration is invalid: $it") }
             val messages = PaperMessages.load(this)
-            val types = TypeManager()
             val scheduler = PaperScheduler(this).also { schedulerAdapter = it }
             val backend = PersistContainerChunkStorage(this, scheduler).also { chunkBackend = it }
+            val types = TypeManager()
             val mapper = ChunkCordSnapshotMapper(types) { corrupted ->
                 logger.log(Level.SEVERE, "Corrupt citadel component ${corrupted.key} in ${corrupted.location}", corrupted.cause)
             }
             // All PDC reads/writes and codec work finish on the main thread in this prototype.
             // Do not replace this executor with a worker pool without redesigning chunk unload.
             val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor { it.run() })
-            val manager = ComponentManager(storage, types).also { componentManager = it }
+                .also { citadelStorage = it }
+            val manager = ComponentManager(storage, types)
             materials = CombineMaterialRegistry()
             materialPlacement = MaterialPlacementService(server, materials, manager)
-            citadelTypes = PaperCitadelTypes(settings.citadelTypes)
-            val permissions = PaperPermissionValidator(citadelTypes)
-            val module = CitadelModule(
-                manager, scheduler,
-                maxActionsPerTick = settings.postedActionLimit,
-                actionFailureHandler = { failure ->
-                    logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
-                },
-                resolver = materialPlacement
-            )
-            citadelTypes.register(module)
-            services.add(ValidatorRegistration(module.actions, PaperActionStateValidator(server)))
-            services.add(ValidatorRegistration(module.actions, permissions))
-            services.add(ValidatorRegistration(module.actions,
-                PaperDamageValidator(module.citadels, citadelTypes, settings.playerDamage.creativeModeEnabled)))
-
-            val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also(services::add)
-            placement = PaperPlacementService(this, module, citadelTypes, materials, settings.placement, messages).also(services::add)
-            citadelTypes.keys.forEach { type ->
-                placement.registerMaterial(requireNotNull(citadelTypes.itemKey(type)), type)
+            val actionSettings = ActionSettings(maxActionsPerTick = settings.postedActionLimit) { failure ->
+                logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
             }
-            playerDamage = PlayerDamageModifierService().apply {
-                if (settings.playerDamage.newcomersEnabled) {
-                    register(NerfingNewcomersModifier(
-                        settings.playerDamage.newcomerFirstJoin,
-                        settings.playerDamage.newcomerPlayTimeTicks
-                    ))
-                }
-            }
-            dismantle = PaperDismantleService(this, module, citadelTypes, materials, settings.dismantle).also(services::add)
-            repair = PaperRepairService(module, citadelTypes, materials).also(services::add)
-            upgrade = PaperUpgradeService(this, module, citadelTypes, materials, settings.dismantle).also(services::add)
-            val breaking = PaperBreakingService(this, module, manager, playerDamage, messages,
-                settings.playerDamage.creativeModeEnabled).also(services::add)
-            acid = AcidService(this, module, manager, citadelTypes, materials, materialPlacement, breaking,
-                AcidRegistry(settings.acid)).also(services::add)
-            services.add(PaperExplosionService(this, module, manager, settings.explosionPowers))
-            services.add(PaperEnvironmentService(this, module))
-
-            val commands = CitadelCommand(this, manager, module, materials, citadelTypes, messages, chunks::saveAll)
-            commands.acid = acid
-            val command = requireNotNull(getCommand("citadel")) { "The citadel command is missing from plugin.yml" }
-            command.description = messages.plainText("commands.description")
-            command.usage = messages.plainText("commands.usage.help")
-            // Components and definitions already exist; start actions and their queue after Paper services.
-            // Observation stops before core actions; the queue stops before gameplay listeners and storage.
-            services.add(module)
+            val module = CitadelModule(manager, scheduler, materialPlacement, actionSettings)
+            val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks)
             observation = ObservationService(manager, scheduler, settings.observation.intervalTicks) { failure ->
                 logger.log(Level.SEVERE, "Citadel observation failed", failure)
             }
-            observation.registerSystem(CrackHealthObservationSystem(this, module.health))
-            val observationSource = Full3DObservation(this, module.actions, module.citadels, manager, chunks,
+            paperAddon = PaperAddon(
+                this, settings, messages, module.actions, module.citadels, module.definitions,
+                module.coreAddon.health, module.coreAddon.remove, materials, materialPlacement, observation, chunks::saveAll
+            )
+            val observationSource = Full3DObservation(this, module.actions, module.citadels, chunks,
                 settings.observation.full3D)
-            services.add(PaperObservationService(this, observation, observationSource))
-            services.forEach { it.enable() }
-            commandBinding = command to commands
-            command.setExecutor(commands)
-            command.tabCompleter = commands
+            val observers = PaperObservationService(this, observation, observationSource)
+            val commands = CitadelCommandRegistration(::getCommand, paperAddon.commands, messages)
+
+            start(chunks::enable, chunks::disable)
+            start(paperAddon::onEnable, paperAddon::onDisable)
+            start(module.coreAddon::onEnable, module.coreAddon::onDisable)
+            start(module::enable, module::disable)
+            start(observers::enable, observers::disable)
+            start(commands::enable, commands::disable)
         } catch (exception: Exception) {
             logger.log(Level.SEVERE, "Could not enable FornaxCitadel", exception)
             shutdown()
@@ -161,16 +99,19 @@ class FornaxCitadel : JavaPlugin() {
 
     override fun onDisable() = shutdown()
 
+    private fun start(enable: () -> Unit, disable: () -> Unit) {
+        shutdownSteps.addFirst(disable)
+        enable()
+    }
+
     private fun shutdown() {
-        commandBinding?.let { (command, executor) ->
-            if (command.executor === executor) command.setExecutor(null)
-            if (command.tabCompleter === executor) command.tabCompleter = null
+        while (shutdownSteps.isNotEmpty()) {
+            try {
+                shutdownSteps.removeFirst().invoke()
+            } catch (exception: Exception) {
+                logger.log(Level.SEVERE, "Could not stop a citadel service", exception)
+            }
         }
-        commandBinding = null
-        for (service in services.asReversed()) {
-            disableService(service)
-        }
-        services.clear()
         HandlerList.unregisterAll(this)
         server.scheduler.cancelTasks(this)
         try {
@@ -182,21 +123,13 @@ class FornaxCitadel : JavaPlugin() {
         try {
             closeStorage()
         } catch (exception: Exception) {
-            // Keep manager/backend references so a later shutdown attempt can retry pending saves.
+            // Keep storage/backend references so a later shutdown attempt can retry pending saves.
             logger.log(Level.SEVERE, "Could not save all citadel data during shutdown", exception)
         }
     }
 
-    private fun disableService(service: LifecycleService) {
-        try {
-            service.disable()
-        } catch (exception: Exception) {
-            logger.log(Level.SEVERE, "Could not disable ${service.javaClass.simpleName}", exception)
-        }
-    }
-
     private fun closeStorage() {
-        componentManager?.closeAndSaveAll()?.let { completion ->
+        citadelStorage?.closeAndSaveAll()?.let { completion ->
             check(completion.isDone) { "Paper storage shutdown must complete on the main thread" }
             try {
                 completion.join()
@@ -206,7 +139,7 @@ class FornaxCitadel : JavaPlugin() {
         }
         chunkBackend?.flushPendingWorldSaves()
         chunkBackend?.clearRegisteredChunks()
-        componentManager = null
+        citadelStorage = null
         chunkBackend = null
     }
 }

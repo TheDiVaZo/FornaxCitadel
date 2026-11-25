@@ -241,7 +241,7 @@ class PaperFull3DObservationTest {
             val scheduler = PaperScheduler(paper.plugin)
             val backend = PersistContainerChunkStorage(paper.plugin, scheduler)
             val chunks = PaperChunkService(paper.plugin, paper.manager, backend, 100)
-            val provider = Full3DObservation(paper.plugin, paper.module.actions, paper.module.citadels, paper.manager, chunks,
+            val provider = Full3DObservation(paper.plugin, paper.module.actions, paper.module.citadels, chunks,
                 Full3DObservationSettings(0, 0))
             try {
                 val (lower, upper) = paper.door(y = 79)
@@ -425,12 +425,13 @@ class PaperFull3DObservationTest {
         private val manager = ComponentManager(storage, types)
         private val module = CitadelModule(manager, ManualScheduler())
         val chunks = PaperChunkService(paper.plugin, manager, backend, 100)
-        private val provider = Full3DObservation(paper.plugin, module.actions, module.citadels, manager, chunks,
+        private val provider = Full3DObservation(paper.plugin, module.actions, module.citadels, chunks,
             Full3DObservationSettings(0, 0))
 
         init {
             val type = Key("test", "observed")
             module.registerDefinition(CitadelDefinition(type, emptyList()))
+            module.coreAddon.onEnable()
             module.enable()
             chunks.enable()
             assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(
@@ -446,6 +447,7 @@ class PaperFull3DObservationTest {
             paper.chunkData.writeFailure = null
             chunks.disable()
             module.disable()
+            module.coreAddon.onDisable()
             manager.closeAndSaveAll().join()
             scheduler.close()
             paper.close()
@@ -453,26 +455,32 @@ class PaperFull3DObservationTest {
     }
 
     private class Fixture(settings: Full3DObservationSettings = Full3DObservationSettings()) : AutoCloseable {
-        val paper = PaperTestFixture(initializeSystems = false, trackListenerLifecycle = true, resolveMaterials = false)
+        val paper = PaperTestFixture(load = false, registerTypes = false, initializeSystems = false,
+            initializeModule = false, trackListenerLifecycle = true)
         val queries = mutableListOf<WXZCord>()
         private var recordQueries = true
-        private val observedStorage = object : CitadelStorage by paper.storage {
+        private val types = TypeManager()
+        private val storage = ChunkBackendLifecycleCoordinator(MemoryBackend(), DirectScheduler,
+            ChunkCordSnapshotMapper(types), Executor(Runnable::run))
+        private val observedStorage = object : CitadelStorage by storage {
             override fun getIfChunkLoaded(location: WXZCord): ChunkCord? {
                 if (recordQueries) queries.add(location)
-                return paper.storage.getIfChunkLoaded(location)
+                return storage.getIfChunkLoaded(location)
             }
         }
-        private val manager = ComponentManager(observedStorage, paper.types)
+        private val manager = ComponentManager(observedStorage, types)
         private val module = CitadelModule(manager, ManualScheduler())
         private val scheduler = PaperScheduler(paper.plugin)
         private val backend = PersistContainerChunkStorage(paper.plugin, scheduler)
-        val chunks = PaperChunkService(paper.plugin, paper.manager, backend, 100)
-        val provider = Full3DObservation(paper.plugin, module.actions, module.citadels, manager, chunks, settings)
+        val chunks = PaperChunkService(paper.plugin, manager, backend, 100)
+        val provider = Full3DObservation(paper.plugin, module.actions, module.citadels, chunks, settings)
         private val subscriptions = mutableListOf<ObservationSubscription>()
 
         init {
-            paper.citadelTypes.register(module)
+            paper.citadelTypes.register(module.definitions, module.coreAddon.health)
+            module.coreAddon.onEnable()
             module.enable()
+            manager.loadChunk(paper.worldId, 0, 0).join()
             module.actions.registerValidator(object : ActionValidator<RemoveAction> {
                 override val actionClass = RemoveAction::class.java
                 override fun validate(action: RemoveAction) = ActionValidator.Result.Success
@@ -480,7 +488,7 @@ class PaperFull3DObservationTest {
         }
 
         fun place(x: Int, y: Int, z: Int, world: UUID = paper.worldId): CitadelPosition {
-            paper.manager.loadChunk(world, x shr 4, z shr 4).join()
+            manager.loadChunk(world, x shr 4, z shr 4).join()
             val position = CitadelPosition(world, x, y, z)
             // Use the core action pipeline without requiring Bukkit chunks for observation fixtures.
             withoutRecordingQueries {
@@ -495,7 +503,7 @@ class PaperFull3DObservationTest {
         }
 
         fun placeDirect(position: CitadelPosition) = withoutRecordingQueries {
-            assertEquals(ActionResult.SUCCESS, module.place.place(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, module.coreAddon.place.place(PlaceAction(
                 ActionContext.SYSTEM, position, PaperCitadelTypes.REINFORCED)))
         }
 
@@ -537,7 +545,9 @@ class PaperFull3DObservationTest {
             subscriptions.forEach(ObservationSubscription::close)
             provider.close()
             module.disable()
+            module.coreAddon.onDisable()
             chunks.disable()
+            manager.closeAndSaveAll().join()
             scheduler.close()
             paper.close()
         }

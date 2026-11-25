@@ -26,7 +26,6 @@ class HealthServiceTest {
         val health = Health(10.0)
         val citadel = fixture.create(health = health)
         fixture.actions.validateDamage(fixture.citadels, HealthFixture.TYPE)
-        fixture.service.enable()
         fixture.chunk.resetDirty()
 
         assertEquals(ActionResult.DENIED, fixture.actions.execute(
@@ -45,7 +44,6 @@ class HealthServiceTest {
         val citadel = fixture.create(health = health, startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
         fixture.actions.validateDamage(fixture.citadels, HealthFixture.TYPE) { _, _ -> false }
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("DESTROY must bypass modifiers") })
-        fixture.service.enable()
 
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(
             DamageAction(ActionContext.SYSTEM, citadel.position, 0.0, DamageAction.Mode.DESTROY)
@@ -68,7 +66,6 @@ class HealthServiceTest {
             amount
         })
         fixture.actions.validateDamage(fixture.citadels, HealthFixture.TYPE)
-        fixture.service.enable()
 
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(context, external.position, 5.0)))
         assertEquals(ActionResult.SUCCESS, fixture.service.damage(direct, 5.0))
@@ -221,7 +218,6 @@ class HealthServiceTest {
         val citadel = fixture.create(health = health)
         fixture.actions.validateDamage(fixture.citadels, HealthFixture.TYPE) { _, _ -> false }
         fixture.service.registerModifier(DamageModifier { _, _, _ -> error("Denied actions must not calculate damage") })
-        fixture.service.enable()
         fixture.chunk.resetDirty()
 
         assertEquals(ActionResult.DENIED, fixture.actions.execute(DamageAction(ActionContext.SYSTEM, citadel.position, 5.0)))

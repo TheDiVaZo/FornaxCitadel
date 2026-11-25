@@ -20,6 +20,7 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
@@ -49,8 +50,7 @@ class ConfiguredCitadelTypesTest {
                         }
                         "command" -> {
                             fixture.installer.target = fixture.block()
-                            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                                fixture.materials, fixture.citadelTypes) {}
+                            val commands = fixture.command()
                             commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", name))
                         }
                         else -> fixture.place(type)
@@ -107,15 +107,14 @@ class ConfiguredCitadelTypesTest {
             assertTrue(target.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
             fixture.manager.saveAll().join()
             val saves = fixture.backend.saves
-            val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-                fixture.materials, fixture.citadelTypes) {}
+            val commands = fixture.command()
 
             repeat(3) { commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("info")) }
             fixture.manager.saveAll().join()
 
             assertEquals(saves, fixture.backend.saves)
             assertEquals(24.0, target.getComponent(Health::class.java)?.health)
-            assertEquals(48.0, fixture.module.health.maxHealth(target))
+            assertEquals(48.0, fixture.module.coreAddon.health.maxHealth(target))
             val messages = fixture.installer.messages.filterIsInstance<Component>()
                 .map(PlainTextComponentSerializer.plainText()::serialize)
             assertEquals(3, messages.count { it.contains("24.0 / 48.0") })
@@ -140,17 +139,17 @@ class ConfiguredCitadelTypesTest {
         assertEquals(73.0, handles[1].getComponent(Health::class.java)?.health)
         assertNotNull(handles[0].getComponent(Maturing::class.java))
         assertNotNull(handles[1].getComponent(Maturing::class.java))
-        assertTrue(fixture.module.health.maturation.isMature(handles[0]))
-        assertTrue(fixture.module.health.maturation.isMature(handles[1]))
+        assertTrue(fixture.module.coreAddon.health.maturation.isMature(handles[0]))
+        assertTrue(fixture.module.coreAddon.health.maturation.isMature(handles[1]))
         val growing = handles[2]
         assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
         assertNotNull(growing.getComponent(Maturing::class.java))
         val key = assertNotNull(growing.getComponent(CitadelKind::class.java)).definitionKey
-        val profile = assertNotNull(fixture.module.health.maturation.findDefinition(key))
+        val profile = assertNotNull(fixture.module.coreAddon.health.maturation.findDefinition(key))
         assertEquals(30L, profile.duration.seconds)
         assertEquals(8.0, profile.initialDamageMultiplier)
         assertTrue(growing.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
-        assertEquals(48.0, fixture.module.health.maxHealth(growing))
+        assertEquals(48.0, fixture.module.coreAddon.health.maxHealth(growing))
         assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
     }
 
@@ -179,8 +178,7 @@ class ConfiguredCitadelTypesTest {
         val fixture = PaperTestFixture(permissions = true, citadelSettings = CUSTOM_TYPES)
         fixture.installer.permissions.addAll(listOf("fornaxcitadel.admin", "fornaxcitadel.info"))
         fixture.installer.target = fixture.block()
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-            fixture.materials, fixture.citadelTypes) {}
+        val commands = fixture.command()
         assertEquals(CUSTOM_TYPES.types.keys.toList(),
             commands.onTabComplete(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "")))
         assertEquals(listOf("growing_wall"),
@@ -318,7 +316,7 @@ class ConfiguredCitadelTypesTest {
                 return provider.getType(key)
             }
         }
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module, registry, fixture.citadelTypes) {}
+        val commands = fixture.command(materials = registry)
         assertEquals(listOf("steel_guard"),
             commands.onTabComplete(fixture.installer.player, TestCommand, "citadel", arrayOf("give", "steel")))
 
@@ -345,8 +343,7 @@ class ConfiguredCitadelTypesTest {
         }
         val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
         fixture.installer.permissions.add("fornaxcitadel.admin")
-        val commands = CitadelCommand(fixture.plugin, fixture.manager, fixture.module,
-            fixture.materials, fixture.citadelTypes) {}
+        val commands = fixture.command()
         val args = arrayOf("give", "steel_guard", "stranger", "3")
 
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", args)

@@ -10,14 +10,15 @@ import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.UUID
 import java.util.logging.Level
@@ -26,8 +27,9 @@ import kotlin.math.sqrt
 /** Applies validated damage and lets the explosion destroy blocks whose reinforcement was removed. */
 class PaperExplosionService @JvmOverloads constructor(
     private val plugin: Plugin,
-    private val module: CitadelModule,
-    private val manager: ComponentManager,
+    private val actions: ActionManager,
+    private val citadels: CitadelFacade,
+    private val remove: RemoveService,
     powers: ExplosionPowerSettings = ExplosionPowerSettings()
 ) : LifecycleService {
     private val powers = powers.copy(blockPowers = powers.blockPowers.toMap())
@@ -39,12 +41,12 @@ class PaperExplosionService @JvmOverloads constructor(
     override fun enable() {
         if (enabled) return
         try {
-            module.actions.registerValidator(sourceValidator)
+            actions.registerValidator(sourceValidator)
             plugin.server.pluginManager.registerEvents(listener, plugin)
             enabled = true
         } catch (failure: Throwable) {
             HandlerList.unregisterAll(listener)
-            module.actions.unregisterValidator(sourceValidator)
+            actions.unregisterValidator(sourceValidator)
             throw failure
         }
     }
@@ -52,7 +54,7 @@ class PaperExplosionService @JvmOverloads constructor(
     override fun disable() {
         if (!enabled) return
         HandlerList.unregisterAll(listener)
-        module.actions.unregisterValidator(sourceValidator)
+        actions.unregisterValidator(sourceValidator)
         enabled = false
         val primed = entityPowers.values.toList()
         entityPowers.clear()
@@ -104,13 +106,13 @@ class PaperExplosionService @JvmOverloads constructor(
             val block = iterator.next()
             if (!block.supportsCitadelData()) continue
             val world = block.world.uid
-            if (!manager.isChunkLoaded(world, block.x shr 4, block.z shr 4)) {
+            if (!citadels.isChunkLoaded(world, block.x shr 4, block.z shr 4)) {
                 iterator.remove()
                 continue
             }
             val originalPosition = CitadelPosition(world, block.x, block.y, block.z)
             try {
-                val citadel = module.citadels.findProtecting(originalPosition) ?: continue
+                val citadel = citadels.findProtecting(originalPosition) ?: continue
                 iterator.remove()
                 targets.getOrPut(citadel.position) { ExplosionTarget(citadel, originalPosition) }.blocks.add(block)
             } catch (_: CitadelResolutionUnavailableException) {
@@ -139,7 +141,7 @@ class PaperExplosionService @JvmOverloads constructor(
                 val targetPosition = ExplosionPosition(position.world,
                     position.x.toDouble(), position.y.toDouble(), position.z.toDouble())
                 val damage = calculateDamage(source.power, source.position, targetPosition)
-                val result = module.actions.execute(DamageAction(context, target.originalPosition, damage))
+                val result = actions.execute(DamageAction(context, target.originalPosition, damage))
                 if (result == ActionResult.SUCCESS && !citadel.isCurrent) destroyedBlocks.addAll(target.blocks)
             } catch (exception: Exception) {
                 plugin.logger.log(Level.SEVERE, "Could not apply explosion damage at ${citadel.position}", exception)
@@ -169,12 +171,9 @@ class PaperExplosionService @JvmOverloads constructor(
 
     private fun removeAt(location: Location) {
         val world = location.world?.uid ?: return
-        val x = location.blockX
-        val y = location.blockY
-        val z = location.blockZ
-        if (!CitadelPosition.isSupported(x, y, z) || !manager.isChunkLoaded(world, x shr 4, z shr 4)) return
-        val citadel = manager.findCitadel(world, x, y, z) ?: return
-        module.remove.remove(citadel)
+        val position = CitadelPosition(world, location.blockX, location.blockY, location.blockZ)
+        val citadel = citadels.findExact(position) ?: return
+        remove.remove(citadel)
     }
 
     private class ExplosionTarget(val citadel: ReadableHandle, val originalPosition: CitadelPosition) {

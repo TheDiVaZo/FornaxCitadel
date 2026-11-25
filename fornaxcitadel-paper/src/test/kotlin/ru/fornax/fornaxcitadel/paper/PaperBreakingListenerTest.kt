@@ -43,7 +43,7 @@ class PaperBreakingListenerTest {
             dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
 
             assertEquals(32.0, fixture.health())
-            assertEquals(40.0, fixture.module.health.maxHealth(target))
+            assertEquals(40.0, fixture.module.coreAddon.health.maxHealth(target))
             assertEquals(listOf(2.0), sourceDamage)
             assertEquals(1, modifierCalls)
             fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
