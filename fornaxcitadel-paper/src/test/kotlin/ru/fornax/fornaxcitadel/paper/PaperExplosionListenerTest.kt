@@ -17,7 +17,7 @@ import org.bukkit.event.entity.ExplosionPrimeEvent
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -53,10 +53,10 @@ class PaperExplosionListenerTest {
                 f.installer.permissions.add("fornaxcitadel.admin")
                 f.place(type)
                 checkNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-                f.module.coreAddon.health.unregisterDefinition(type)
+                f.coreAddon.health.unregisterDefinition(type)
                 val event = f.blockExplosion(f.block())
                 dispatch(f.explosionListener, event, f.plugin)
-                assertEquals(protected, f.module.citadels.findProtecting(f.position) != null)
+                assertEquals(protected, f.citadels.findProtecting(f.position) != null)
                 assertEquals(if (protected) emptyList() else listOf(f.block()), event.blockList())
                 assertEquals(0, f.vanillaBlockChanges)
             }
@@ -73,7 +73,7 @@ class PaperExplosionListenerTest {
                 val target = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
                 assertTrue(target.editComponent(Maturing::class.java) { it.startedAtMillis = Long.MAX_VALUE })
                 val sourceDamage = mutableListOf<Double>()
-                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         sourceDamage.add(action.damage)
@@ -88,7 +88,7 @@ class PaperExplosionListenerTest {
 
                 assertEquals(listOf(5.0), sourceDamage)
                 assertEquals(20.0, fixture.health())
-                assertEquals(40.0, fixture.module.coreAddon.health.maxHealth(target))
+                assertEquals(40.0, fixture.coreAddon.health.maxHealth(target))
                 assertEquals(0, fixture.vanillaBlockChanges)
             }
         }
@@ -115,7 +115,7 @@ class PaperExplosionListenerTest {
         val entityEvent = fixture.entityExplosion(fixture.block(), ordinary, sourceEntity = entity, center = center)
         val blockEvent = fixture.blockExplosion(fixture.block(), ordinary, source = source)
         val actions = mutableListOf<DamageAction>()
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 assertEquals(DamageAction::class.java, action.javaClass)
@@ -148,13 +148,13 @@ class PaperExplosionListenerTest {
         for (entityExplosion in listOf(true, false)) {
             PaperTestFixture(permissions = true).use { fixture ->
                 fixture.place()
-                val first = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+                val first = assertNotNull(fixture.citadels.findProtecting(fixture.position))
                 assertTrue(first.editComponent(Health::class.java) { it.health = 10.0 })
                 val second = fixture.block(3, 64, 2)
                 fixture.placeAt(second)
                 val third = fixture.block(5, 64, 2)
                 fixture.placeAt(third)
-                val thirdHandle = assertNotNull(fixture.module.citadels.findProtecting(third.testPosition()))
+                val thirdHandle = assertNotNull(fixture.citadels.findProtecting(third.testPosition()))
                 assertTrue(thirdHandle.editComponent(Health::class.java) { it.health = 10.0 })
                 val ordinary = fixture.block(7, 64, 2)
                 val (event, affectedBlocks) = if (entityExplosion) {
@@ -165,17 +165,17 @@ class PaperExplosionListenerTest {
                     event to event.blockList()
                 }
                 val visited = mutableListOf<Int>()
-                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         assertEquals(listOf(ordinary), affectedBlocks)
-                        if (action.citadelX != 1) assertFalse(first.isCurrent)
-                        visited.add(action.citadelX)
+                        if (action.position.x != 1) assertFalse(first.isCurrent)
+                        visited.add(action.position.x)
                         return ActionValidator.Result.Neutral
                     }
                 })
                 var completed = 0
-                fixture.module.actions.registerHandler(object : ActionHandler<DamageAction> {
+                fixture.actions.registerHandler(object : ActionHandler<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun handle(action: DamageAction) {
                         assertEquals(listOf(ordinary), affectedBlocks)
@@ -189,7 +189,7 @@ class PaperExplosionListenerTest {
                 assertEquals(3, completed)
                 assertFalse(first.isCurrent)
                 assertFalse(thirdHandle.isCurrent)
-                assertEquals(77.5, assertNotNull(fixture.module.citadels.findProtecting(second.testPosition()))
+                assertEquals(77.5, assertNotNull(fixture.citadels.findProtecting(second.testPosition()))
                     .getComponent(Health::class.java)?.health)
                 assertEquals(listOf(ordinary, fixture.block(), third), affectedBlocks)
                 assertEquals(0, fixture.vanillaBlockChanges)
@@ -300,18 +300,18 @@ class PaperExplosionListenerTest {
         val typed = DamageAction(ActionContext(null, source), fixture.position, 10.0)
         val named = DamageAction(ActionContext(null, NamedActionSource(Key("paper", "explosion"))), fixture.position, 10.0)
 
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(named))
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(typed))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(named))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(typed))
         assertEquals(80.0, fixture.health())
         fixture.worldChunkLoaded = false
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(typed))
         fixture.worldChunkLoaded = true
         fixture.worldAvailable = false
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(typed))
         assertEquals(80.0, fixture.health())
         fixture.worldAvailable = true
         fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(typed))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(typed))
     }
 
     @Test
@@ -328,8 +328,8 @@ class PaperExplosionListenerTest {
 
         assertEquals(ActionValidator.Result.Neutral, validator.validate(removal))
         assertEquals(ActionValidator.Result.Neutral, validator.validate(placement))
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(removal))
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(placement))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(removal))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(placement))
         assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertNotNull(fixture.manager.findCitadel(fixture.worldId, 3, 64, 2))
     }
@@ -347,7 +347,7 @@ class PaperExplosionListenerTest {
                 ExplosionSource.Block(wrongWorld, 5.0f, Material.TNT)
             )) {
                 val action = DamageAction(ActionContext(null, source), fixture.position, 20.0)
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
             }
             assertEquals(100.0, fixture.health())
             assertFalse(chunk.isDirty)
@@ -358,7 +358,7 @@ class PaperExplosionListenerTest {
     fun `damage validator can select explosion origins directly from the context`() {
         val observed = mutableListOf<ExplosionSource.Entity>()
         val fixture = PaperTestFixture(permissions = true)
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 val source = action.context.source as? ExplosionSource.Entity
@@ -389,7 +389,7 @@ class PaperExplosionListenerTest {
         val ordinary = fixture.block(3, 64, 2)
         val event = fixture.entityExplosion(fixture.block(), ordinary)
         var validated = false
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 validated = true
@@ -425,12 +425,12 @@ class PaperExplosionListenerTest {
         val event = fixture.entityExplosion(fixture.block(), second, ordinary,
             sourceEntity = entity, center = Location(fixture.world, 2.0, 64.0, 2.0))
         val visited = mutableListOf<Int>()
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 assertEquals(listOf(ordinary), event.blockList())
-                visited.add(action.citadelX)
-                if (action.citadelX == 1) error("Protection lookup failed for the first target")
+                visited.add(action.position.x)
+                if (action.position.x == 1) error("Protection lookup failed for the first target")
                 return ActionValidator.Result.Neutral
             }
         })
@@ -453,11 +453,11 @@ class PaperExplosionListenerTest {
         fixture.placeAt(second)
         val center = Location(fixture.world, 2.0, 64.0, 2.0)
         val expectedCenter = ExplosionPosition(fixture.worldId, 2.0, 64.0, 2.0)
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 assertEquals(expectedCenter, assertIs<ExplosionSource>(action.context.source).position)
-                if (action.citadelX == 1) center.x = 1000.0
+                if (action.position.x == 1) center.x = 1000.0
                 return ActionValidator.Result.Neutral
             }
         })
@@ -483,10 +483,10 @@ class PaperExplosionListenerTest {
             if (partner != null) fixture.placeAt(partner)
             val ordinaryTarget = fixture.block(3, 64, 2)
             fixture.placeAt(ordinaryTarget)
-            val completed = mutableListOf<ActionData>()
-            fixture.module.actions.registerHandler(object : ActionHandler<ActionData> {
-                override val actionClass = ActionData::class.java
-                override fun handle(action: ActionData) {
+            val completed = mutableListOf<Action>()
+            fixture.actions.registerHandler(object : ActionHandler<Action> {
+                override val actionClass = Action::class.java
+                override fun handle(action: Action) {
                     completed.add(action)
                 }
             })
@@ -554,7 +554,7 @@ class PaperExplosionListenerTest {
 
     private fun PaperTestFixture.placeAt(block: Block) {
         // Source cleanup also covers old data on beds/anchors, outside today's placement allowlist.
-        assertEquals(ActionResult.SUCCESS, module.coreAddon.place.place(PlaceAction(context(installer),
+        assertEquals(ActionResult.SUCCESS, coreAddon.place.place(PlaceAction(context(installer),
             CitadelPosition(worldId, block.x, block.y, block.z), PaperCitadelTypes.REINFORCED)))
     }
 }

@@ -27,7 +27,6 @@ import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
-import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import java.util.UUID
 import kotlin.test.Test
@@ -38,35 +37,27 @@ import kotlin.test.assertTrue
 class PaperRepairServiceTest {
     @Test
     fun `direct repair recognizes the held material once`() {
-        PaperTestFixture(permissions = true).use { fixture ->
+        var heldLookups = 0
+        PaperTestFixture(permissions = true, serviceMaterials = { materials ->
+            object : MaterialRegistry by materials {
+                override fun getTypeOrNull(stack: ItemStack): MaterialAdapter? {
+                    heldLookups++
+                    return materials.getTypeOrNull(stack)
+                }
+            }
+        }).use { fixture ->
             fixture.place()
             fixture.damage()
             fixture.installer.held = fixture.reinforcementStack()
-            var heldLookups = 0
-            val materials = object : MaterialRegistry by fixture.materials {
-                override fun getTypeOrNull(stack: ItemStack): MaterialAdapter? {
-                    heldLookups++
-                    return fixture.materials.getTypeOrNull(stack)
-                }
-            }
-            fixture.repairService.disable()
-            val service = PaperRepairService(
-                fixture.module.actions, fixture.module.citadels, fixture.module.coreAddon.health,
-                fixture.citadelTypes, materials
-            ).also { it.enable() }
-            try {
-                val action = fixture.action()
-                assertTrue(fixture.module.actions.isAllowed(action))
-                assertEquals(0, heldLookups)
+            val action = fixture.action()
+            assertTrue(fixture.actions.isAllowed(action))
+            assertEquals(0, heldLookups)
 
-                assertEquals(ActionResult.SUCCESS, service.repair(action))
+            assertEquals(ActionResult.SUCCESS, fixture.repairService.repair(action))
 
-                assertEquals(1, heldLookups)
-                assertEquals(100.0, fixture.health())
-                assertEquals(1, fixture.installer.held.amount)
-            } finally {
-                service.disable()
-            }
+            assertEquals(1, heldLookups)
+            assertEquals(100.0, fixture.health())
+            assertEquals(1, fixture.installer.held.amount)
         }
     }
 
@@ -81,7 +72,7 @@ class PaperRepairServiceTest {
                 fixture.installer.permissions.remove("fornaxcitadel.place")
                 val remaining = amount - if (mode == GameMode.CREATIVE) 0 else 1
                 var completed = 0
-                fixture.module.actions.registerHandler(object : ActionHandler<RepairAction> {
+                fixture.actions.registerHandler(object : ActionHandler<RepairAction> {
                     override val actionClass = RepairAction::class.java
                     override fun handle(action: RepairAction) {
                         assertEquals(100.0, fixture.health())
@@ -151,24 +142,24 @@ class PaperRepairServiceTest {
             fixture.stranger.held = fixture.reinforcementStack()
             fixture.stranger.permissions.add("fornaxcitadel.admin")
             val stranger = fixture.action(fixture.stranger)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(stranger))
             val grant = fixture.validate { ActionValidator.Result.Success }
             val veto = fixture.validate { ActionValidator.Result.Rejected }
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(stranger))
             assertEquals(10.0, fixture.health())
             assertEquals(2, fixture.stranger.held.amount)
-            fixture.module.actions.unregisterValidator(veto)
+            fixture.actions.unregisterValidator(veto)
             fixture.stranger.permissions.remove("fornaxcitadel.repair")
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(stranger))
             fixture.stranger.permissions.add("fornaxcitadel.repair")
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(stranger))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(stranger))
             assertEquals(100.0, fixture.health())
             assertEquals(1, fixture.stranger.held.amount)
-            fixture.module.actions.unregisterValidator(grant)
+            fixture.actions.unregisterValidator(grant)
 
             fixture.damage()
             val owner = RepairAction(ActionContext(fixture.stranger.id, PlayerSource(fixture.installer.player)), fixture.position)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(owner))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(owner))
             assertEquals(1, fixture.installer.held.amount)
         }
     }
@@ -207,8 +198,8 @@ class PaperRepairServiceTest {
                 fixture.damage()
                 fixture.installer.held = fixture.reinforcementStack()
                 fixture.validate { ActionValidator.Result.Success }
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RepairAction(ActionContext.SYSTEM, fixture.position)))
-                fixture.module.actions.post(fixture.action())
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(RepairAction(ActionContext.SYSTEM, fixture.position)))
+                fixture.actions.post(fixture.action())
                 when (reason) {
                     "offline" -> fixture.installer.online = false
                     "spectator" -> fixture.installer.gameMode = GameMode.SPECTATOR
@@ -222,12 +213,12 @@ class PaperRepairServiceTest {
                     "chunk" -> fixture.worldChunkLoaded = false
                 }
                 var completed = 0
-                fixture.module.actions.registerHandler(object : ActionHandler<RepairAction> {
+                fixture.actions.registerHandler(object : ActionHandler<RepairAction> {
                     override val actionClass = RepairAction::class.java
                     override fun handle(action: RepairAction) { completed++ }
                 })
 
-                assertEquals(1, fixture.module.actions.drainPosted())
+                assertEquals(1, fixture.actions.drainPosted())
 
                 assertEquals(0, completed, reason)
                 assertEquals(if (reason == "full") 100.0 else 10.0, fixture.health(), reason)
@@ -242,9 +233,9 @@ class PaperRepairServiceTest {
             val original = TestMaterialAdapter(Key("custom", "original"))
             val different = TestMaterialAdapter(Key("custom", "different"))
             fixture.materials.register("custom", TestMaterialRegistry(original, different))
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
                 fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.MATURING)))
-            val placed = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            val placed = assertNotNull(fixture.citadels.findProtecting(fixture.position))
             assertTrue(placed.editComponent(Maturing::class.java) { it.startedAtMillis = 1L })
             fixture.damage()
             fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
@@ -262,9 +253,9 @@ class PaperRepairServiceTest {
             assertTrue(original.isConsists(fixture.installer.held))
             fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
             fixture.loadChunk(0, 0)
-            val restored = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            val restored = assertNotNull(fixture.citadels.findProtecting(fixture.position))
             assertEquals(40.0, restored.getComponent(Health::class.java)?.health)
-            assertEquals(40.0, fixture.module.coreAddon.health.maxHealth(restored))
+            assertEquals(40.0, fixture.coreAddon.health.maxHealth(restored))
             assertEquals(1L, restored.getComponent(Maturing::class.java)?.startedAtMillis)
             assertEquals(fixture.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
             assertEquals(original.getKey(), fixture.citadelTypes.itemKey(restored))
@@ -282,9 +273,9 @@ class PaperRepairServiceTest {
                 }
                 val clicked = if (kind == "bed") first else second
                 val other = if (kind == "bed") second else first
-                assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.place.place(PlaceAction(
+                assertEquals(ActionResult.SUCCESS, fixture.coreAddon.place.place(PlaceAction(
                     fixture.context(fixture.installer), clicked.testPosition(), PaperCitadelTypes.REINFORCED)))
-                val target = assertNotNull(fixture.module.citadels.findProtecting(clicked.testPosition()))
+                val target = assertNotNull(fixture.citadels.findProtecting(clicked.testPosition()))
                 assertTrue(target.editComponent(Health::class.java) { it.health = 10.0 })
                 fixture.installer.held = fixture.reinforcementStack()
                 val ordinary = fixture.interact(block = clicked)
@@ -326,21 +317,21 @@ class PaperRepairServiceTest {
     }
 
     @Test
-    fun `repair lifecycle preserves external validators and restores owner approval`() {
+    fun `disabled repair denies execution and preserves owner approval`() {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.place()
             fixture.damage()
             fixture.installer.held = fixture.reinforcementStack()
             val action = fixture.action()
-            assertTrue(fixture.module.actions.isAllowed(action))
+            assertTrue(fixture.actions.isAllowed(action))
             val grant = fixture.validate { ActionValidator.Result.Success }
             repeat(2) { fixture.repairService.disable() }
-            assertTrue(fixture.module.actions.isAllowed(action))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            assertTrue(fixture.actions.unregisterValidator(grant))
+            assertTrue(fixture.actions.isAllowed(action))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
             repeat(2) { fixture.repairService.enable() }
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(action))
             assertEquals(1, fixture.installer.held.amount)
-            assertTrue(fixture.module.actions.unregisterValidator(grant))
         }
     }
 
@@ -364,7 +355,7 @@ class PaperRepairServiceTest {
     }
 
     private fun PaperTestFixture.damage(health: Double = 10.0) {
-        assertTrue(assertNotNull(module.citadels.findProtecting(position))
+        assertTrue(assertNotNull(citadels.findProtecting(position))
             .editComponent(Health::class.java) { it.health = health })
     }
 
@@ -379,5 +370,5 @@ class PaperRepairServiceTest {
         object : ActionValidator<RepairAction> {
             override val actionClass = RepairAction::class.java
             override fun validate(action: RepairAction) = check(action)
-        }.also(module.actions::registerValidator)
+        }.also(actions::registerValidator)
 }

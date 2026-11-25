@@ -2,10 +2,10 @@ package ru.fornax.fornaxcitadel.paper.modules.dismantle
 
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
+import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
@@ -21,7 +21,7 @@ import kotlin.random.Random
 /** Removes an authorized reinforcement and optionally refunds its material, preserving the block. */
 class PaperDismantleService @JvmOverloads constructor(
     private val plugin: Plugin,
-    actions: ActionManager,
+    actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val health: HealthService,
     private val remove: RemoveService,
@@ -29,35 +29,43 @@ class PaperDismantleService @JvmOverloads constructor(
     materials: MaterialRegistry,
     settings: DismantleSettings = DismantleSettings(),
     random: () -> Double = { Random.nextDouble() }
-) : LifecycleService {
+) : ActionProcessor<DismantleAction>(), LifecycleService {
     private val refunds = ReinforcementRefunds(materials, settings, random)
-    private val registration = ActionRegistration(
-        actions, DismantleAction::class.java, DismantleAction.KEY,
-        listOf(
-            ExistingCitadelValidator(DismantleAction::class.java, citadels),
-            OwnerActionValidator(DismantleAction::class.java, citadels)
-        ), ::dismantle
-    )
+    private var enabled = false
+    override val actionClass = DismantleAction::class.java
+    override val actionKey = DismantleAction.KEY
+
+    init {
+        actions.registerAction(this)
+        actions.registerValidator(ExistingCitadelValidator(DismantleAction::class.java, citadels))
+        actions.registerValidator(OwnerActionValidator(DismantleAction::class.java, citadels))
+    }
 
     override fun enable() {
-        if (!registration.isEnabled) registration.enable()
+        enabled = true
     }
-    override fun disable() = registration.disable()
+
+    override fun disable() {
+        enabled = false
+    }
+
+    override fun execute(action: DismantleAction) = dismantle(action)
 
     /**
      * Executes an action whose source and target have already passed core and platform validation.
-     * Direct callers must uphold those prerequisites. External requests use [ActionManager.execute].
+     * Direct callers must uphold those prerequisites. External requests use [ActionFacade.execute].
      */
     fun dismantle(action: DismantleAction): ActionResult {
-        if (!registration.isEnabled) return ActionResult.DENIED
-        val citadel = checkNotNull(citadels.findProtecting(action.position)) {
+        if (!enabled) return ActionResult.DENIED
+        val position = action.position
+        val citadel = checkNotNull(citadels.findProtecting(position)) {
             "Validated dismantle target is unavailable"
         }
         if (citadel.getComponent(CitadelOwner::class.java) == null) return ActionResult.DENIED
-        val world = checkNotNull(plugin.server.getWorld(action.citadelW)) {
+        val world = checkNotNull(plugin.server.getWorld(position.world)) {
             "Validated dismantle world is unavailable"
         }
-        val block = world.getBlockAt(action.citadelX, action.citadelY, action.citadelZ)
+        val block = world.getBlockAt(position.x, position.y, position.z)
         val healthComponent = citadel.getComponent(Health::class.java)
         val maximum = health.maxHealth(citadel)
         val refundChance = refunds.chance(healthComponent == null || maximum != null && healthComponent.health >= maximum)

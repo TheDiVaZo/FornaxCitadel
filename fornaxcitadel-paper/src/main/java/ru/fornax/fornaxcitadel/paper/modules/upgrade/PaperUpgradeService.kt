@@ -6,12 +6,12 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
+import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -34,7 +34,7 @@ import kotlin.random.Random
 /** Upgrades a live entity in place; neither dismantles it nor emits a separate placement action. */
 class PaperUpgradeService @JvmOverloads constructor(
     private val plugin: Plugin,
-    actions: ActionManager,
+    actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val definitions: CitadelDefinitionRegistry,
     private val health: HealthService,
@@ -43,24 +43,31 @@ class PaperUpgradeService @JvmOverloads constructor(
     settings: DismantleSettings = DismantleSettings(),
     random: () -> Double = { Random.nextDouble() },
     private val clock: Clock = Clock.systemUTC()
-) : LifecycleService {
+) : ActionProcessor<UpgradeAction>(), LifecycleService {
     private val refunds = ReinforcementRefunds(materials, settings, random)
-    private val registration = ActionRegistration(
-        actions, UpgradeAction::class.java, UpgradeAction.KEY,
-        listOf(
-            UpgradeActionValidator(citadels, definitions),
-            OwnerActionValidator(UpgradeAction::class.java, citadels, ActionValidator.Result.Rejected)
-        ), ::upgrade
-    )
+    private var enabled = false
+    override val actionClass = UpgradeAction::class.java
+    override val actionKey = UpgradeAction.KEY
+
+    init {
+        actions.registerAction(this)
+        actions.registerValidator(UpgradeActionValidator(citadels, definitions))
+        actions.registerValidator(OwnerActionValidator(UpgradeAction::class.java, citadels, ActionValidator.Result.Rejected))
+    }
 
     override fun enable() {
-        if (!registration.isEnabled) registration.enable()
+        enabled = true
     }
-    override fun disable() = registration.disable()
 
-    /** Executes a validated action. External requests use [ActionManager.execute]. */
+    override fun disable() {
+        enabled = false
+    }
+
+    override fun execute(action: UpgradeAction) = upgrade(action)
+
+    /** Executes a validated action. External requests use [ActionFacade.execute]. */
     fun upgrade(action: UpgradeAction): ActionResult {
-        if (!registration.isEnabled || !plugin.server.isPrimaryThread) return ActionResult.DENIED
+        if (!enabled || !plugin.server.isPrimaryThread) return ActionResult.DENIED
         val player = (action.context.source as? PlayerSource)?.player ?: return ActionResult.DENIED
         val citadel = citadels.findProtecting(action.position) ?: return ActionResult.DENIED
         if (citadel.getComponent(CitadelOwner::class.java) == null) return ActionResult.DENIED

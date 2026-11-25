@@ -1,10 +1,10 @@
 package ru.fornax.fornaxcitadel.paper.modules.repair
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.core.systems.action.ActionRegistration
+import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.modules.health.Health
@@ -19,28 +19,35 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 
 /** Restores an authorized, owned reinforcement to its current maximum health. */
 class PaperRepairService(
-    actions: ActionManager,
+    actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val health: HealthService,
     private val citadelTypes: PaperCitadelTypes,
     private val materials: MaterialRegistry
-) : LifecycleService {
-    private val registration = ActionRegistration(
-        actions, RepairAction::class.java, RepairAction.KEY,
-        listOf(
-            ExistingCitadelValidator(RepairAction::class.java, citadels),
-            OwnerActionValidator(RepairAction::class.java, citadels)
-        ), ::repair
-    )
+) : ActionProcessor<RepairAction>(), LifecycleService {
+    private var enabled = false
+    override val actionClass = RepairAction::class.java
+    override val actionKey = RepairAction.KEY
+
+    init {
+        actions.registerAction(this)
+        actions.registerValidator(ExistingCitadelValidator(RepairAction::class.java, citadels))
+        actions.registerValidator(OwnerActionValidator(RepairAction::class.java, citadels))
+    }
 
     override fun enable() {
-        if (!registration.isEnabled) registration.enable()
+        enabled = true
     }
-    override fun disable() = registration.disable()
 
-    /** Executes a validated action. External requests use [ActionManager.execute]. */
+    override fun disable() {
+        enabled = false
+    }
+
+    override fun execute(action: RepairAction) = repair(action)
+
+    /** Executes a validated action. External requests use [ActionFacade.execute]. */
     fun repair(action: RepairAction): ActionResult {
-        if (!registration.isEnabled) return ActionResult.DENIED
+        if (!enabled) return ActionResult.DENIED
         val player = (action.context.source as? PlayerSource)?.player ?: return ActionResult.DENIED
         val citadel = checkNotNull(citadels.findProtecting(action.position)) {
             "Validated repair target is unavailable"

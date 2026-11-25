@@ -72,7 +72,7 @@ class PlacementValidationTest {
         val customKey = Key("thirdparty", "reinforceable_stone")
         val fixture = PaperTestFixture(placementSettings = PlacementSettings(blocks = setOf(customKey)))
         val action = fixture.placeAction()
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         val custom = TestMaterialAdapter(customKey, taggedBlock = fixture.block())
 
@@ -86,7 +86,7 @@ class PlacementValidationTest {
             BlockListType.BLACKLIST, setOf(STONE)).isAllowed(fixture.block()))
         assertFalse(PlacementBlockListValidator(fixture.server, fixture.materials,
             BlockListType.BLACKLIST, setOf(customKey)).isAllowed(fixture.block()))
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(action))
         assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
     }
 
@@ -102,12 +102,12 @@ class PlacementValidationTest {
             val action = fixture.placeAction()
             // Permissions and physical placement rules are independent validators.
             assertEquals(ActionValidator.Result.Success, PaperPermissionValidator(fixture.citadelTypes).validate(action))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
 
             fixture.material(Material.STONE)
-            fixture.module.actions.post(action)
+            fixture.actions.post(action)
             fixture.material(rejectedMaterial)
-            assertEquals(1, fixture.module.actions.drainPosted(1))
+            assertEquals(1, fixture.actions.drainPosted(1))
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
 
             fixture.installer.permissions.add("fornaxcitadel.admin")
@@ -125,7 +125,7 @@ class PlacementValidationTest {
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
 
             fixture.material(Material.STONE)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(action))
             assertEquals(0, fixture.vanillaBlockChanges)
         }
     }
@@ -165,7 +165,7 @@ class PlacementValidationTest {
                 placementSettings = PlacementSettings(blocks = setOf(Key("minecraft", material.name.lowercase()))))
             fixture.material(material)
 
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.placeAction()))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.placeAction()))
 
             assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
             assertEquals(0, fixture.vanillaBlockChanges)

@@ -74,28 +74,28 @@ class MultipartReinforcementTest {
             val (lower, upper) = fixture.door()
             val source = upper.testPosition()
             val observed = mutableListOf<CitadelPosition>()
-            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result {
                     observed.add(action.position)
                     return ActionValidator.Result.Neutral
                 }
             })
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
                 fixture.context(fixture.installer), source, PaperCitadelTypes.REINFORCED)))
-            val handle = assertNotNull(fixture.module.citadels.findProtecting(source))
+            val handle = assertNotNull(fixture.citadels.findProtecting(source))
             assertEquals(lower.testPosition(), handle.position)
 
             val direct = DamageAction(fixture.context(fixture.stranger), source, 8.0)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(direct))
-            fixture.module.actions.post(DamageAction(fixture.context(fixture.stranger), source, 7.0))
-            assertEquals(1, fixture.module.actions.drainPosted())
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(direct))
+            fixture.actions.post(DamageAction(fixture.context(fixture.stranger), source, 7.0))
+            assertEquals(1, fixture.actions.drainPosted())
             assertEquals(listOf(source, source), observed)
             assertEquals(source, direct.position)
             assertEquals(85.0, handle.getComponent(Health::class.java)?.health)
 
             fixture.installer.permissions.add("fornaxcitadel.admin")
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(RemoveAction(
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(RemoveAction(
                 fixture.context(fixture.installer), source)))
             assertFalse(handle.isCurrent)
         }
@@ -106,7 +106,7 @@ class MultipartReinforcementTest {
         fixture().use { fixture ->
             val (lower, upper) = fixture.door()
             val handle = fixture.placeExact(lower, PaperCitadelTypes.INVULNERABLE)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(DamageAction(
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(DamageAction(
                 fixture.context(fixture.stranger), upper.testPosition(), 100.0)))
             assertEquals(100.0, handle.getComponent(Health::class.java)?.health)
 
@@ -129,21 +129,21 @@ class MultipartReinforcementTest {
             val (lower, upper) = fixture.door()
             val legacyUpper = fixture.placeExact(upper)
             assertEquals(legacyUpper.runtimeId,
-                assertNotNull(fixture.module.citadels.findProtecting(lower.testPosition())).runtimeId)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(PlaceAction(
+                assertNotNull(fixture.citadels.findProtecting(lower.testPosition())).runtimeId)
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(PlaceAction(
                 fixture.context(fixture.installer), lower.testPosition(), PaperCitadelTypes.REINFORCED)))
             val legacyLower = fixture.placeExact(lower)
             assertEquals(legacyLower.runtimeId,
-                assertNotNull(fixture.module.citadels.findProtecting(lower.testPosition())).runtimeId)
+                assertNotNull(fixture.citadels.findProtecting(lower.testPosition())).runtimeId)
             assertEquals(legacyUpper.runtimeId,
-                assertNotNull(fixture.module.citadels.findProtecting(upper.testPosition())).runtimeId)
+                assertNotNull(fixture.citadels.findProtecting(upper.testPosition())).runtimeId)
 
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(DamageAction(
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(
                 fixture.context(fixture.stranger), upper.testPosition(), 100.0)))
             assertFalse(legacyUpper.isCurrent)
             assertEquals(100.0, legacyLower.getComponent(Health::class.java)?.health)
             assertEquals(legacyLower.runtimeId,
-                assertNotNull(fixture.module.citadels.findProtecting(upper.testPosition())).runtimeId)
+                assertNotNull(fixture.citadels.findProtecting(upper.testPosition())).runtimeId)
         }
     }
 
@@ -158,7 +158,7 @@ class MultipartReinforcementTest {
             })
             val command = fixture.command(messages = messages)
             command.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "reinforced"))
-            val handle = assertNotNull(fixture.module.citadels.findProtecting(foot.testPosition()))
+            val handle = assertNotNull(fixture.citadels.findProtecting(foot.testPosition()))
             assertEquals(head.testPosition(), handle.position)
             command.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("info"))
             val text = fixture.installer.chatMessages.filterIsInstance<Component>()
@@ -176,11 +176,11 @@ class MultipartReinforcementTest {
             val target = fixture.block(3, 64, 2)
             fixture.material(Material.SAND, target.testPosition())
             fixture.materialPlacement.register(Key("minecraft", "stone"),
-                object : DefaultMaterialPlacementRule(fixture.materialPlacement::findExact) {
+                object : DefaultMaterialPlacementRule() {
                     override fun getResponsibleBlock(block: Block): Block = target
                     override fun getRelatedBlock(block: Block): Block = target
                 })
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(PlaceAction(
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(PlaceAction(
                 fixture.context(fixture.installer), source.testPosition(), PaperCitadelTypes.REINFORCED)))
             assertNull(fixture.manager.findCitadel(fixture.worldId, target.x, target.y, target.z))
         }
@@ -194,7 +194,7 @@ class MultipartReinforcementTest {
             dispatch(fixture.breakingListener, breaking, fixture.plugin)
             assertTrue(breaking.isCancelled)
             assertFalse(fixture.breakingService.canStartBreaking(fixture.stranger.player, foot))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(PlaceAction(
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(PlaceAction(
                 fixture.context(fixture.installer), foot.testPosition(), PaperCitadelTypes.REINFORCED)))
             val burn = BlockBurnEvent(foot, null)
             dispatch(fixture.environmentListener, burn, fixture.plugin)
@@ -210,7 +210,7 @@ class MultipartReinforcementTest {
                 val (lower, upper) = fixture.door()
                 val handle = fixture.placeExact(lower)
                 var hits = 0
-                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         hits++
@@ -274,8 +274,8 @@ class MultipartReinforcementTest {
         fixture().use { fixture ->
             fixture.place()
             fixture.materialPlacement.register(Key("minecraft", "stone"),
-                object : DefaultMaterialPlacementRule(fixture.materialPlacement::findExact) {
-                    override fun getReinforcementProtecting(block: Block) = error("Rule lookup failed")
+                object : DefaultMaterialPlacementRule() {
+                    override fun getProtectionCandidates(block: Block): Sequence<Block> = error("Rule lookup failed")
                 })
             val event = BlockBreakEvent(fixture.block(), fixture.stranger.player)
             dispatch(fixture.breakingListener, event, fixture.plugin)

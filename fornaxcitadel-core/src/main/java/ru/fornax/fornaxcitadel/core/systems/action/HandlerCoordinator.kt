@@ -32,7 +32,7 @@ class HandlerCoordinator {
      * applied in order when dispatch finishes, including after a failure. The active list remains
      * unchanged during traversal. Nested handling on this coordinator is rejected.
      */
-    fun handle(action: ActionData) {
+    fun handle(action: Action) {
         val current = handlers.beginIteration()
         try {
             var index = 0
@@ -48,12 +48,12 @@ class HandlerCoordinator {
         }
     }
 
-    private fun <T : ActionData> handleAction(handler: ActionHandler<T>, action: ActionData) {
+    private fun <T : Action> handleAction(handler: ActionHandler<T>, action: Action) {
         val actionClass = handler.actionClass
         if (actionClass.isInstance(action)) handler.handle(actionClass.cast(action))
     }
 
-    private fun reportHandlerFailure(action: ActionData, failure: Exception) {
+    private fun reportHandlerFailure(action: Action, failure: Exception) {
         try {
             LOG.log(Level.WARNING, "Action handler failed for ${action.type}", failure)
         } catch (_: Exception) {

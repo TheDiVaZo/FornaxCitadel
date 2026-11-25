@@ -55,7 +55,7 @@ class ConfiguredCitadelTypesTest {
                         }
                         else -> fixture.place(type)
                     }
-                    val placed = assertNotNull(fixture.module.citadels.findProtecting(fixture.position), "$name: $source")
+                    val placed = assertNotNull(fixture.citadels.findProtecting(fixture.position), "$name: $source")
                     assertEquals(settings.lvl, fixture.citadelTypes.level(placed), "$name: $source")
                 }
             }
@@ -75,14 +75,14 @@ class ConfiguredCitadelTypesTest {
         PaperTestFixture(load = false, permissions = true, citadelSettings = changed).use { fixture ->
             fixture.backend.saveChunk(snapshot).join()
             fixture.loadChunk(0, 0)
-            val restored = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            val restored = assertNotNull(fixture.citadels.findProtecting(fixture.position))
             assertEquals(7, fixture.citadelTypes.level(restored))
             val type = assertNotNull(fixture.citadelTypes.find("reinforced"))
             val positions = listOf(fixture.position.copy(x = 3), fixture.position.copy(x = 4))
             val placed = positions.map { position ->
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+                assertEquals(ActionResult.SUCCESS, fixture.actions.execute(
                     PlaceAction(fixture.context(fixture.installer), position, type)))
-                assertNotNull(fixture.module.citadels.findProtecting(position))
+                assertNotNull(fixture.citadels.findProtecting(position))
             }
             placed.forEach { assertEquals(7, fixture.citadelTypes.level(it)) }
             assertEquals(7, fixture.citadelTypes.level(placed.first()))
@@ -91,7 +91,7 @@ class ConfiguredCitadelTypesTest {
             fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
             fixture.loadChunk(0, 0)
             for ((position, lvl) in listOf(fixture.position to 7, positions[0] to 7, positions[1] to 7)) {
-                assertEquals(lvl, fixture.citadelTypes.level(assertNotNull(fixture.module.citadels.findProtecting(position))))
+                assertEquals(lvl, fixture.citadelTypes.level(assertNotNull(fixture.citadels.findProtecting(position))))
             }
         }
     }
@@ -114,7 +114,7 @@ class ConfiguredCitadelTypesTest {
 
             assertEquals(saves, fixture.backend.saves)
             assertEquals(24.0, target.getComponent(Health::class.java)?.health)
-            assertEquals(48.0, fixture.module.coreAddon.health.maxHealth(target))
+            assertEquals(48.0, fixture.coreAddon.health.maxHealth(target))
             val messages = fixture.installer.messages.filterIsInstance<Component>()
                 .map(PlainTextComponentSerializer.plainText()::serialize)
             assertEquals(3, messages.count { it.contains("24.0 / 48.0") })
@@ -129,7 +129,7 @@ class ConfiguredCitadelTypesTest {
         val handles = listOf("clay_guard", "titanium", "growing_wall").mapIndexed { index, name ->
             val key = assertNotNull(fixture.citadelTypes.find(name))
             val position = fixture.position.copy(x = index)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(
                 PlaceAction(fixture.context(fixture.installer), position, key)
             ))
             assertNotNull(fixture.manager.findCitadel(position.world, position.x, position.y, position.z))
@@ -139,17 +139,17 @@ class ConfiguredCitadelTypesTest {
         assertEquals(73.0, handles[1].getComponent(Health::class.java)?.health)
         assertNotNull(handles[0].getComponent(Maturing::class.java))
         assertNotNull(handles[1].getComponent(Maturing::class.java))
-        assertTrue(fixture.module.coreAddon.health.maturation.isMature(handles[0]))
-        assertTrue(fixture.module.coreAddon.health.maturation.isMature(handles[1]))
+        assertTrue(fixture.coreAddon.health.maturation.isMature(handles[0]))
+        assertTrue(fixture.coreAddon.health.maturation.isMature(handles[1]))
         val growing = handles[2]
         assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
         assertNotNull(growing.getComponent(Maturing::class.java))
         val key = assertNotNull(growing.getComponent(CitadelKind::class.java)).definitionKey
-        val profile = assertNotNull(fixture.module.coreAddon.health.maturation.findDefinition(key))
+        val profile = assertNotNull(fixture.coreAddon.health.maturation.findDefinition(key))
         assertEquals(30L, profile.duration.seconds)
         assertEquals(8.0, profile.initialDamageMultiplier)
         assertTrue(growing.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
-        assertEquals(48.0, fixture.module.coreAddon.health.maxHealth(growing))
+        assertEquals(48.0, fixture.coreAddon.health.maxHealth(growing))
         assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
     }
 
@@ -205,7 +205,7 @@ class ConfiguredCitadelTypesTest {
         val sanctuary = assertNotNull(fixture.citadelTypes.find("sanctuary"))
         assertTrue(fixture.citadelTypes.requiresAdmin(sanctuary))
         assertFalse(fixture.citadelTypes.requiresAdmin(assertNotNull(fixture.citadelTypes.find("clay_guard"))))
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
             PlaceAction(fixture.context(fixture.installer), fixture.position, sanctuary)
         ))
         fixture.installer.held = fixture.reinforcementStack(sanctuary)
@@ -222,7 +222,7 @@ class ConfiguredCitadelTypesTest {
         val breaking = BlockBreakEvent(fixture.block(), fixture.stranger.player)
         dispatch(fixture.breakingListener, breaking, fixture.plugin)
         assertTrue(breaking.isCancelled)
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
             DamageAction(fixture.context(fixture.stranger), fixture.position, Double.MAX_VALUE)
         ))
         assertTrue(placed.isCurrent)

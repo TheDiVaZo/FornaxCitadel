@@ -4,7 +4,7 @@ import org.bukkit.Material
 import org.bukkit.Server
 import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 
@@ -12,10 +12,10 @@ import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 class ReinforceableBlockValidator @JvmOverloads constructor(
     private val server: Server,
     private val citadels: ReadableCitadelFacade? = null
-) : ActionValidator<ActionData> {
-    override val actionClass = ActionData::class.java
+) : ActionValidator<Action> {
+    override val actionClass = Action::class.java
 
-    override fun validate(action: ActionData): ActionValidator.Result {
+    override fun validate(action: Action): ActionValidator.Result {
         if (action !is PlaceAction && action !is UpgradeAction) return ActionValidator.Result.Neutral
         val block = server.findLoadedPlacementBlock(action, citadels) ?: return ActionValidator.Result.Rejected
         if (!isAllowed(block.type)) return ActionValidator.Result.Rejected

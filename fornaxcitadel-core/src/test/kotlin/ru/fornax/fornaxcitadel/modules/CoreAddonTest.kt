@@ -1,10 +1,14 @@
 package ru.fornax.fornaxcitadel.modules
 
+import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
+import ru.fornax.fornaxcitadel.core.resolver.ExactPositionResolver
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
@@ -15,7 +19,7 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -49,18 +53,19 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class CitadelModuleTest {
+class CoreAddonTest {
     @Test
-    fun `registering another definition with the same key preserves the original`() {
-        val fixture = Fixture()
-        val original = CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.coreAddon.health)))
-        fixture.module.registerDefinition(original)
+    fun `addon rejects duplicate registrations while its registry accepts the same instance again`() {
+        val addon = Fixture().addon
+        val original = CitadelDefinition(DEFAULT_KIND, emptyList())
+        val replacement = CitadelDefinition(DEFAULT_KIND, emptyList())
+        addon.registerDefinition(original)
 
-        assertFailsWith<IllegalArgumentException> {
-            fixture.module.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.coreAddon.health))))
-        }
-
-        assertSame(original, fixture.module.definitions.find(DEFAULT_KIND))
+        assertFailsWith<IllegalArgumentException> { addon.registerDefinition(original) }
+        assertFailsWith<IllegalArgumentException> { addon.registerDefinition(replacement) }
+        addon.definitions.register(original)
+        assertFailsWith<IllegalArgumentException> { addon.definitions.register(replacement) }
+        assertSame(original, addon.definitions.find(DEFAULT_KIND))
     }
 
     @Test
@@ -68,12 +73,12 @@ class CitadelModuleTest {
         val fixture = Fixture()
         val clock = Clock.fixed(Instant.ofEpochMilli(1_793_204_123_456L), ZoneOffset.UTC)
         fixture.register(initializers = listOf(MaturingInitializer(clock)))
-        fixture.module.coreAddon.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.addon.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         var observedKind: Key? = null
         var observedHealth: Double? = null
         var observedStart: Long? = null
-        fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
+        fixture.actions.registerHandler(object : ActionHandler<PlaceAction> {
             override val actionClass = PlaceAction::class.java
             override fun handle(action: PlaceAction) {
                 val handle = fixture.find(action.position) ?: return
@@ -165,7 +170,7 @@ class CitadelModuleTest {
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         var removalValidationCalls = 0
-        fixture.module.actions.registerValidator(object : ActionValidator<RemoveAction> {
+        fixture.actions.registerValidator(object : ActionValidator<RemoveAction> {
             override val actionClass = RemoveAction::class.java
             override fun validate(action: RemoveAction): ActionValidator.Result {
                 removalValidationCalls++
@@ -175,10 +180,10 @@ class CitadelModuleTest {
 
         val hit = DamageAction(STRANGER_CONTEXT, POSITION, 25.0)
         val lethalHit = DamageAction(STRANGER_CONTEXT, POSITION, 75.0)
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(hit))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(hit))
         assertEquals(75.0, fixture.health().health)
         assertTrue(fixture.removals.isEmpty())
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(lethalHit))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(lethalHit))
 
         assertNull(fixture.find())
         assertEquals(0, removalValidationCalls)
@@ -202,7 +207,7 @@ class CitadelModuleTest {
         assertEquals(ActionResult.DENIED, fixture.damage(STRANGER_CONTEXT, 1_000.0))
         assertEquals(
             ActionResult.DENIED,
-            fixture.module.actions.execute(SpecializedDamage(ActionContext.SYSTEM, POSITION, 1_000.0))
+            fixture.actions.execute(SpecializedDamage(ActionContext.SYSTEM, POSITION, 1_000.0))
         )
 
         assertEquals(100.0, fixture.health().health)
@@ -221,7 +226,7 @@ class CitadelModuleTest {
         assertEquals(ActionResult.DENIED, fixture.damage(PLACER_CONTEXT, 100.0))
         assertEquals(
             ActionResult.DENIED,
-            fixture.module.actions.execute(SpecializedDamage(ActionContext.SYSTEM, POSITION, 100.0))
+            fixture.actions.execute(SpecializedDamage(ActionContext.SYSTEM, POSITION, 100.0))
         )
         assertNotNull(fixture.find())
         assertTrue(fixture.removals.isEmpty())
@@ -255,7 +260,7 @@ class CitadelModuleTest {
             val fixture = Fixture(authorizeDestruction = { context, citadel ->
                 context.actorId == PLACER && citadel.position == POSITION
             })
-            fixture.module.coreAddon.health.registerModifier(DamageModifier { _, _, _ ->
+            fixture.addon.health.registerModifier(DamageModifier { _, _, _ ->
                 modifierCalls++
                 error("Destruction must not calculate damage")
             })
@@ -298,7 +303,7 @@ class CitadelModuleTest {
 
     @Test
     fun `generic and damage validators can reject authorized destruction`() {
-        for (rejectedType in listOf(ActionData::class.java, DamageAction::class.java)) {
+        for (rejectedType in listOf(Action::class.java, DamageAction::class.java)) {
             val fixture = Fixture(authorizeDestruction = { _, _ -> true })
             fixture.register(authorizeDamage = { _, _ -> false })
             fixture.load()
@@ -326,11 +331,11 @@ class CitadelModuleTest {
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
-        fixture.module.actions.post(DamageAction(PLACER_CONTEXT, POSITION, 0.0, DamageAction.Mode.DESTROY))
+        fixture.actions.post(DamageAction(PLACER_CONTEXT, POSITION, 0.0, DamageAction.Mode.DESTROY))
         assertEquals(0, validationCalls)
         authorized = false
 
-        assertEquals(1, fixture.module.actions.drainPosted())
+        assertEquals(1, fixture.actions.drainPosted())
 
         assertEquals(1, validationCalls)
         assertEquals(100.0, fixture.health().health)
@@ -382,7 +387,7 @@ class CitadelModuleTest {
 
         for (action in actions) {
             assertEquals(DamageAction.Mode.DAMAGE, action.mode)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(action))
         }
 
         assertEquals(80.0, fixture.health().health)
@@ -400,13 +405,13 @@ class CitadelModuleTest {
         fixture.chunk().resetDirty()
 
         assertEquals(ActionResult.DENIED, fixture.damage(STRANGER_CONTEXT, 10.0))
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
             SpecializedDamage(ActionContext.SYSTEM, POSITION, 10.0)
         ))
         assertEquals(100.0, fixture.health().health)
         assertFalse(fixture.chunk().isDirty)
 
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(
             SpecializedDamage(PLACER_CONTEXT, POSITION, 10.0)
         ))
         assertEquals(90.0, fixture.health().health)
@@ -414,7 +419,7 @@ class CitadelModuleTest {
         fixture.reject(DamageAction::class.java)
 
         assertEquals(ActionResult.DENIED, fixture.damage(PLACER_CONTEXT, 10.0))
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
             SpecializedDamage(PLACER_CONTEXT, POSITION, 10.0)
         ))
         assertEquals(90.0, fixture.health().health)
@@ -436,19 +441,19 @@ class CitadelModuleTest {
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         val validatedContexts = mutableListOf<ActionContext>()
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 validatedContexts.add(action.context)
                 return ActionValidator.Result.Neutral
             }
         })
-        fixture.module.actions.post(DamageAction(context, POSITION, 10.0))
-        fixture.module.actions.post(DamageAction(ActionContext(PLACER, NamedActionSource(source.key)), POSITION, 10.0))
+        fixture.actions.post(DamageAction(context, POSITION, 10.0))
+        fixture.actions.post(DamageAction(ActionContext(PLACER, NamedActionSource(source.key)), POSITION, 10.0))
 
         assertEquals(100.0, fixture.health().health)
         assertTrue(authorizationContexts.isEmpty())
-        assertEquals(1, fixture.module.actions.drainPosted(1))
+        assertEquals(1, fixture.actions.drainPosted(1))
         assertEquals(90.0, fixture.health().health)
         // Authorization sees the original context once during validation.
         assertEquals(1, authorizationContexts.size)
@@ -458,7 +463,7 @@ class CitadelModuleTest {
         fixture.chunk().resetDirty()
 
         // Reusing a key cannot supply the typed information required by the validator.
-        assertEquals(1, fixture.module.actions.drainPosted())
+        assertEquals(1, fixture.actions.drainPosted())
         assertEquals(90.0, fixture.health().health)
         assertFalse(fixture.chunk().isDirty)
         assertEquals(2, authorizationContexts.size)
@@ -468,8 +473,8 @@ class CitadelModuleTest {
     @Test
     fun `a type with health but no approving damage validator rejects damage`() {
         val fixture = Fixture()
-        fixture.module.coreAddon.health.registerDefinition(DEFAULT_KIND, HealthDefinition(100.0))
-        fixture.module.definitions.register(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.module.coreAddon.health))))
+        fixture.addon.health.registerDefinition(DEFAULT_KIND, HealthDefinition(100.0))
+        fixture.addon.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.addon.health))))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
@@ -494,17 +499,17 @@ class CitadelModuleTest {
         assertEquals(ActionResult.DENIED, fixture.place())
         assertEquals(
             ActionResult.DENIED,
-            fixture.module.actions.execute(ActionData(Key("test", "unhandled"), WORLD, 1, 64, 2))
+            fixture.actions.execute(Action(Key("test", "unhandled"), WORLD, 1, 64, 2))
         )
     }
 
     @Test
-    fun `one module applies maturation per target while stored health stays directly readable`() {
+    fun `one addon applies maturation per target while stored health stays directly readable`() {
         val fixture = Fixture()
         val clock = Clock.fixed(Instant.ofEpochMilli(Long.MAX_VALUE), ZoneOffset.UTC)
         fixture.register(maxHealth = 25.0)
         fixture.register(MATURING_KIND, initializers = listOf(MaturingInitializer(clock)))
-        fixture.module.coreAddon.health.maturation.registerDefinition(MATURING_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.addon.health.maturation.registerDefinition(MATURING_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.place(SECOND_POSITION, MATURING_KIND))
@@ -535,12 +540,12 @@ class CitadelModuleTest {
         assertEquals(ActionResult.SUCCESS, fixture.place())
         val forgedSource = ActionContext(STRANGER, NamedActionSource(Key("test", "admin")))
 
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RemoveAction(forgedSource, POSITION)))
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RemoveAction(PLACER_CONTEXT, POSITION)))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(RemoveAction(forgedSource, POSITION)))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(RemoveAction(PLACER_CONTEXT, POSITION)))
         assertNotNull(fixture.find())
         assertEquals(
             ActionResult.SUCCESS,
-            fixture.module.actions.execute(RemoveAction(ActionContext(ADMIN, PLAYER_SOURCE), POSITION))
+            fixture.actions.execute(RemoveAction(ActionContext(ADMIN, PLAYER_SOURCE), POSITION))
         )
 
         assertNull(fixture.find())
@@ -554,7 +559,7 @@ class CitadelModuleTest {
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
 
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(RemoveAction(ActionContext.SYSTEM, POSITION)))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(RemoveAction(ActionContext.SYSTEM, POSITION)))
         assertNotNull(fixture.find())
     }
 
@@ -564,14 +569,14 @@ class CitadelModuleTest {
         fixture.register()
         fixture.load()
 
-        assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.place.place(PlaceAction(PLACER_CONTEXT, POSITION, DEFAULT_KIND)))
-        assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.place.place(PlaceAction(PLACER_CONTEXT, SECOND_POSITION, DEFAULT_KIND)))
+        assertEquals(ActionResult.SUCCESS, fixture.addon.place.place(PlaceAction(PLACER_CONTEXT, POSITION, DEFAULT_KIND)))
+        assertEquals(ActionResult.SUCCESS, fixture.addon.place.place(PlaceAction(PLACER_CONTEXT, SECOND_POSITION, DEFAULT_KIND)))
         val first = fixture.handle()
         val second = fixture.handle(SECOND_POSITION)
-        assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.health.damage(first, 25.0))
+        assertEquals(ActionResult.SUCCESS, fixture.addon.health.damage(first, 25.0))
         assertEquals(75.0, fixture.health().health)
-        assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.remove.remove(first))
-        assertEquals(1, fixture.module.coreAddon.remove.removeAll(listOf(first, second)))
+        assertEquals(ActionResult.SUCCESS, fixture.addon.remove.remove(first))
+        assertEquals(1, fixture.addon.remove.removeAll(listOf(first, second)))
 
         assertFalse(first.isCurrent)
         assertFalse(second.isCurrent)
@@ -586,13 +591,13 @@ class CitadelModuleTest {
         fixture.load()
         var laterPlaced = 0
         var laterRemoved = 0
-        fixture.module.actions.registerHandler(object : ActionHandler<ActionData> {
-            override val actionClass = ActionData::class.java
-            override fun handle(action: ActionData) = error("Broken action handler")
+        fixture.actions.registerHandler(object : ActionHandler<Action> {
+            override val actionClass = Action::class.java
+            override fun handle(action: Action) = error("Broken action handler")
         })
-        fixture.module.actions.registerHandler(object : ActionHandler<ActionData> {
-            override val actionClass = ActionData::class.java
-            override fun handle(action: ActionData) {
+        fixture.actions.registerHandler(object : ActionHandler<Action> {
+            override val actionClass = Action::class.java
+            override fun handle(action: Action) {
                 when (action) {
                     is PlaceAction -> laterPlaced++
                     is RemoveAction -> laterRemoved++
@@ -617,24 +622,24 @@ class CitadelModuleTest {
         var nestedExecutionFailure: IllegalStateException? = null
         var nestedDrainFailure: IllegalStateException? = null
         var laterObserverSawEntity = false
-        fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
+        fixture.actions.registerHandler(object : ActionHandler<PlaceAction> {
             override val actionClass = PlaceAction::class.java
             override fun handle(action: PlaceAction) {
                 val position = action.position
                 try {
-                    fixture.module.actions.execute(RemoveAction(PLACER_CONTEXT, position))
+                    fixture.actions.execute(RemoveAction(PLACER_CONTEXT, position))
                 } catch (failure: IllegalStateException) {
                     nestedExecutionFailure = failure
                 }
                 try {
-                    fixture.module.actions.drainPosted()
+                    fixture.actions.drainPosted()
                 } catch (failure: IllegalStateException) {
                     nestedDrainFailure = failure
                 }
-                fixture.module.actions.post(RemoveAction(PLACER_CONTEXT, position))
+                fixture.actions.post(RemoveAction(PLACER_CONTEXT, position))
             }
         })
-        fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
+        fixture.actions.registerHandler(object : ActionHandler<PlaceAction> {
             override val actionClass = PlaceAction::class.java
             override fun handle(action: PlaceAction) {
                 laterObserverSawEntity = fixture.find(action.position) != null
@@ -648,10 +653,10 @@ class CitadelModuleTest {
         assertTrue(laterObserverSawEntity)
         assertNotNull(fixture.find())
         assertTrue(fixture.removals.isEmpty())
-        assertEquals(1, fixture.module.actions.drainPosted())
+        assertEquals(1, fixture.actions.drainPosted())
         assertNull(fixture.find())
         assertEquals(listOf(POSITION), fixture.removals.map { it.position })
-        assertEquals(0, fixture.module.actions.drainPosted())
+        assertEquals(0, fixture.actions.drainPosted())
     }
 
     @Test
@@ -660,23 +665,23 @@ class CitadelModuleTest {
         val executed = mutableListOf<Int>()
         fixture.registerProbe { action ->
             executed.add(action.number)
-            if (action.number == 1) fixture.module.actions.post(ProbeAction(3))
+            if (action.number == 1) fixture.actions.post(ProbeAction(3))
             ActionResult.SUCCESS
         }
-        fixture.module.actions.post(ProbeAction(1))
-        fixture.module.actions.post(ProbeAction(2))
+        fixture.actions.post(ProbeAction(1))
+        fixture.actions.post(ProbeAction(2))
 
-        assertEquals(0, fixture.module.actions.drainPosted(0))
+        assertEquals(0, fixture.actions.drainPosted(0))
         assertTrue(executed.isEmpty())
-        assertFailsWith<IllegalArgumentException> { fixture.module.actions.drainPosted(-1) }
-        assertEquals(1, fixture.module.actions.drainPosted(1))
+        assertFailsWith<IllegalArgumentException> { fixture.actions.drainPosted(-1) }
+        assertEquals(1, fixture.actions.drainPosted(1))
         assertEquals(listOf(1), executed)
 
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(ProbeAction(4)))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(ProbeAction(4)))
         assertEquals(listOf(1, 4), executed)
-        assertEquals(2, fixture.module.actions.drainPosted())
+        assertEquals(2, fixture.actions.drainPosted())
         assertEquals(listOf(1, 4, 2, 3), executed)
-        assertEquals(0, fixture.module.actions.drainPosted())
+        assertEquals(0, fixture.actions.drainPosted())
     }
 
     @Test
@@ -688,13 +693,13 @@ class CitadelModuleTest {
             check(action.number != 1) { "Processor failure" }
             ActionResult.SUCCESS
         }
-        fixture.module.actions.post(ProbeAction(1))
-        fixture.module.actions.post(ProbeAction(2))
+        fixture.actions.post(ProbeAction(1))
+        fixture.actions.post(ProbeAction(2))
 
-        assertFailsWith<IllegalStateException> { fixture.module.actions.drainPosted() }
+        assertFailsWith<IllegalStateException> { fixture.actions.drainPosted() }
         assertEquals(listOf(1), attempted)
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(ProbeAction(3)))
-        assertEquals(1, fixture.module.actions.drainPosted())
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(ProbeAction(3)))
+        assertEquals(1, fixture.actions.drainPosted())
         assertEquals(listOf(1, 3, 2), attempted)
     }
 
@@ -706,7 +711,7 @@ class CitadelModuleTest {
             executed.add(action.number)
             ActionResult.SUCCESS
         }
-        fixture.module.actions.registerValidator(object : ActionValidator<ProbeAction> {
+        fixture.actions.registerValidator(object : ActionValidator<ProbeAction> {
             override val actionClass = ProbeAction::class.java
             override fun validate(action: ProbeAction): ActionValidator.Result {
                 check(action.number != 1) { "Validator failure" }
@@ -714,9 +719,9 @@ class CitadelModuleTest {
             }
         })
 
-        assertFailsWith<IllegalStateException> { fixture.module.actions.execute(ProbeAction(1)) }
+        assertFailsWith<IllegalStateException> { fixture.actions.execute(ProbeAction(1)) }
         assertTrue(executed.isEmpty())
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(ProbeAction(2)))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(ProbeAction(2)))
         assertEquals(listOf(2), executed)
     }
 
@@ -726,7 +731,7 @@ class CitadelModuleTest {
         val startedAt = Long.MAX_VALUE
         val clock = Clock.fixed(Instant.ofEpochMilli(startedAt), ZoneOffset.UTC)
         fixture.register(initializers = listOf(MaturingInitializer(clock)))
-        fixture.module.coreAddon.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.addon.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 15.0))
@@ -771,7 +776,7 @@ class CitadelModuleTest {
         val replacement = fixture.handle()
         fixture.chunk().resetDirty()
 
-        assertEquals(ActionResult.DENIED, fixture.module.coreAddon.remove.remove(oldHandle))
+        assertEquals(ActionResult.DENIED, fixture.addon.remove.remove(oldHandle))
 
         assertFalse(oldHandle.isCurrent)
         assertTrue(replacement.isCurrent)
@@ -791,13 +796,11 @@ class CitadelModuleTest {
         val scheduler = ManualScheduler()
         val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
-        val module = CitadelModule(manager, scheduler).apply {
-            authorizeRemoval?.let { actions.validateRemoval(citadels, it) }
-            authorizeDestruction?.let { actions.validateDamage(citadels, mode = DamageAction.Mode.DESTROY, allowed = it) }
-            coreAddon.onEnable()
-            enable()
-        }
-        val completed = mutableListOf<ActionData>()
+        val actions = ActionManager()
+        val citadels = CitadelFacade(manager, ExactPositionResolver)
+        val addon = CoreAddon(citadels, ActionFacade(actions))
+
+        val completed = mutableListOf<Action>()
         val placements get() = completed.filterIsInstance<PlaceAction>().map { it.position }
         val removals get() = completed.filterIsInstance<RemoveAction>()
         val damages get() = completed.filterIsInstance<DamageAction>()
@@ -805,9 +808,11 @@ class CitadelModuleTest {
         val damageSawExistingEntity = mutableListOf<Boolean>()
 
         init {
-            module.actions.registerHandler(object : ActionHandler<ActionData> {
-                override val actionClass = ActionData::class.java
-                override fun handle(action: ActionData) {
+            authorizeRemoval?.let { actions.validateRemoval(citadels, it) }
+            authorizeDestruction?.let { actions.validateDamage(citadels, mode = DamageAction.Mode.DESTROY, allowed = it) }
+            actions.registerHandler(object : ActionHandler<Action> {
+                override val actionClass = Action::class.java
+                override fun handle(action: Action) {
                     completed.add(action)
                     when (action) {
                         is RemoveAction -> removalSawExistingEntity.add(find(action.position) != null)
@@ -823,10 +828,10 @@ class CitadelModuleTest {
             authorizeDamage: (ActionContext, ReadableHandle) -> Boolean = { _, _ -> true },
             initializers: List<CitadelInitializer> = emptyList()
         ) {
-            maxHealth?.let { module.coreAddon.health.registerDefinition(key, HealthDefinition(it)) }
-            val prepared = initializers + HealthInitializer(module.coreAddon.health)
-            module.registerDefinition(CitadelDefinition(key, prepared))
-            module.actions.validateDamage(module.citadels, key, allowed = authorizeDamage)
+            maxHealth?.let { addon.health.registerDefinition(key, HealthDefinition(it)) }
+            val prepared = initializers + HealthInitializer(addon.health)
+            addon.registerDefinition(CitadelDefinition(key, prepared))
+            actions.validateDamage(citadels, key, allowed = authorizeDamage)
         }
 
         fun load() { manager.loadChunk(WORLD, 0, 0).join() }
@@ -835,16 +840,16 @@ class CitadelModuleTest {
             position: CitadelPosition = POSITION,
             key: Key = DEFAULT_KIND,
             context: ActionContext = PLACER_CONTEXT
-        ): ActionResult = module.actions.execute(PlaceAction(context, position, key))
+        ): ActionResult = actions.execute(PlaceAction(context, position, key))
 
         fun damage(context: ActionContext, damage: Double, position: CitadelPosition = POSITION): ActionResult =
-            module.actions.execute(DamageAction(context, position, damage))
+            actions.execute(DamageAction(context, position, damage))
 
         fun destroy(context: ActionContext, position: CitadelPosition = POSITION): ActionResult =
-            module.actions.execute(DamageAction(context, position, 0.0, DamageAction.Mode.DESTROY))
+            actions.execute(DamageAction(context, position, 0.0, DamageAction.Mode.DESTROY))
 
         fun remove(context: ActionContext, position: CitadelPosition = POSITION): ActionResult =
-            module.actions.execute(RemoveAction(context, position))
+            actions.execute(RemoveAction(context, position))
 
         fun find(position: CitadelPosition = POSITION) =
             manager.findCitadel(position.world, position.x, position.y, position.z)
@@ -853,15 +858,15 @@ class CitadelModuleTest {
         fun health(position: CitadelPosition = POSITION) = assertNotNull(handle(position).getComponent(Health::class.java))
         fun chunk() = assertNotNull(storage.getIfChunkLoaded(WXZCord(WORLD, 0, 0)))
 
-        fun <T : ActionData> reject(type: Class<T>) {
-            module.actions.registerValidator(object : ActionValidator<T> {
+        fun <T : Action> reject(type: Class<T>) {
+            actions.registerValidator(object : ActionValidator<T> {
                 override val actionClass = type
                 override fun validate(action: T) = ActionValidator.Result.Rejected
             })
         }
 
         fun registerProbe(handler: (ProbeAction) -> ActionResult) {
-            module.actions.registerProcessor(object : ActionProcessor<ProbeAction>() {
+            actions.registerProcessor(object : ActionProcessor<ProbeAction>() {
                 override val actionClass = ProbeAction::class.java
                 override val actionKey = PROBE_KEY
                 override fun execute(action: ProbeAction): ActionResult = handler(action)
@@ -869,7 +874,7 @@ class CitadelModuleTest {
         }
     }
 
-    private class ProbeAction(val number: Int) : ActionData(PROBE_KEY, WORLD, 0, 0, 0)
+    private class ProbeAction(val number: Int) : Action(PROBE_KEY, WORLD, 0, 0, 0)
 
     private class SpecializedDamage(context: ActionContext, position: CitadelPosition, damage: Double) :
         DamageAction(context, position, damage)

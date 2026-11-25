@@ -9,7 +9,7 @@ package ru.fornax.fornaxcitadel.core.systems.action
  * post another action to request changes. Nested action execution is rejected until handling finishes.
  * Direct service calls do not notify handlers.
  */
-interface ActionHandler<T : ActionData> {
+interface ActionHandler<T : Action> {
     val actionClass: Class<T>
 
     fun handle(action: T)

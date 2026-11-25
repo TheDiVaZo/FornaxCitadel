@@ -3,14 +3,14 @@ package ru.fornax.fornaxcitadel.modules.health;
 import org.jetbrains.annotations.NotNull;
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData;
+import ru.fornax.fornaxcitadel.core.systems.action.Action;
 import ru.fornax.fornaxcitadel.core.util.Key;
 
 import java.util.Objects;
 import java.util.UUID;
 
 /** Carries input damage; common modifiers are applied once by HealthService after action validation. */
-public class DamageAction extends ActionData {
+public class DamageAction extends Action {
     public static final Key KEY = Key.key("health:damage");
 
     /**

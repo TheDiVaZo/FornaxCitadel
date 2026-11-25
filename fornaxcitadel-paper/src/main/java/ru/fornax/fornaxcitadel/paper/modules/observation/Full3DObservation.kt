@@ -14,7 +14,7 @@ import org.bukkit.event.player.PlayerTeleportEvent
 import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
@@ -40,7 +40,7 @@ import java.util.logging.Level
  */
 class Full3DObservation @JvmOverloads constructor(
     private val plugin: Plugin,
-    private val actions: ActionManager,
+    private val actions: ActionFacade,
     private val citadels: ReadableCitadelFacade,
     private val chunks: PaperChunkService,
     private val settings: Full3DObservationSettings = Full3DObservationSettings()

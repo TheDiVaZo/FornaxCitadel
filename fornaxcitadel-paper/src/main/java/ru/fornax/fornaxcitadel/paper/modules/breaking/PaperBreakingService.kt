@@ -6,7 +6,7 @@ import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.block.data.type.Bed
 import org.bukkit.block.data.type.Door
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
@@ -17,7 +17,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -30,7 +30,7 @@ import java.util.logging.Level
 /** Submits ordinary mining damage or creative destruction through the shared action pipeline. */
 class PaperBreakingService @JvmOverloads constructor(
     private val plugin: Plugin,
-    private val actions: ActionManager,
+    private val actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val remove: RemoveService,
     private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService(),
@@ -48,7 +48,7 @@ class PaperBreakingService @JvmOverloads constructor(
     }
 
     /** Removes one logical reinforcement target, even if its material refuses physical destruction. */
-    fun destroy(block: Block, reinforcements: List<CitadelHandle>, actions: List<ActionData>,
+    fun destroy(block: Block, reinforcements: List<CitadelHandle>, actions: List<Action>,
                 materials: MaterialRegistry, placement: MaterialPlacementService,
                 validate: () -> Boolean): ActionResult {
         check(plugin.server.isPrimaryThread && enabled) { "Destruction requires the active server thread" }

@@ -36,23 +36,23 @@ class PaperDismantleServiceTest {
     fun `ownership approves the source player while nonowners and administrators need another authorizer`() {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             fixture.place()
-            val actions = fixture.module.actions
+            val actions = fixture.actions
             val owner = DismantleAction(ActionContext(fixture.stranger.id, PlayerSource(fixture.installer.player)), fixture.position)
             val stranger = fixture.action(fixture.stranger)
             fixture.stranger.permissions.add("fornaxcitadel.admin")
             assertTrue(actions.isAllowed(owner))
             assertFalse(actions.isAllowed(stranger))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(stranger))
             assertTrue(fixture.playerBreaks.isEmpty())
 
             val grant = fixture.validate { ActionValidator.Result.Success }
             val veto = fixture.validate { ActionValidator.Result.Rejected }
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(stranger))
             assertTrue(fixture.playerBreaks.isEmpty())
             actions.unregisterValidator(veto)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(stranger))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(stranger))
             assertTrue(fixture.playerBreaks.isEmpty())
-            assertNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertNull(fixture.citadels.findProtecting(fixture.position))
             assertEquals(Material.STONE, fixture.block().type)
             assertEquals(1, fixture.droppedItems.size)
             actions.unregisterValidator(grant)
@@ -63,9 +63,9 @@ class PaperDismantleServiceTest {
     fun `successful dismantle preserves the block without damage and handles completion after refund`() {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             fixture.place()
-            val original = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            val original = assertNotNull(fixture.citadels.findProtecting(fixture.position))
             val completed = mutableListOf<DismantleAction>()
-            fixture.module.actions.registerHandler(object : ActionHandler<DismantleAction> {
+            fixture.actions.registerHandler(object : ActionHandler<DismantleAction> {
                 override val actionClass = DismantleAction::class.java
                 override fun handle(action: DismantleAction) {
                     assertFalse(original.isCurrent)
@@ -74,22 +74,22 @@ class PaperDismantleServiceTest {
                     completed.add(action)
                 }
             })
-            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result = error("Dismantle reentered damage")
             })
             fixture.beforeBreakEvent = { error("Dismantle fired a block break event") }
             fixture.afterBreakEvent = { error("Dismantle fired a block break event") }
 
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.action()))
             assertEquals(fixture.position, completed.single().position)
             assertTrue(fixture.playerBreaks.isEmpty())
-            assertNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertNull(fixture.citadels.findProtecting(fixture.position))
             val (location, refund) = fixture.droppedItems.single()
             assertEquals(fixture.block().location.add(0.5, 0.5, 0.5), location)
             assertEquals(Material.IRON_INGOT, refund.type)
             assertEquals(1, refund.amount)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(fixture.action()))
             assertTrue(fixture.playerBreaks.isEmpty())
             assertEquals(1, fixture.droppedItems.size)
             assertEquals(1, completed.size)
@@ -111,10 +111,10 @@ class PaperDismantleServiceTest {
                 }))
                 fixture.placeWithItem(key)
 
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(fixture.action()))
                 assertTrue(fixture.playerBreaks.isEmpty())
                 assertTrue(fixture.droppedItems.isEmpty())
-                assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+                assertNotNull(fixture.citadels.findProtecting(fixture.position))
                 assertEquals(Material.STONE, fixture.block().type)
             }
         }
@@ -127,11 +127,11 @@ class PaperDismantleServiceTest {
                 dismantleRandom = { error("Guaranteed refund must not roll") }).use { fixture ->
                 fixture.place()
                 if (!withHealth) {
-                    val citadel = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+                    val citadel = assertNotNull(fixture.citadels.findProtecting(fixture.position))
                     assertNotNull(citadel.removeComponent(Health::class.java))
                 }
 
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
+                assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.action()))
                 val refund = fixture.droppedItems.single().second
                 assertEquals(Material.IRON_INGOT, refund.type)
                 assertEquals(1, refund.amount)
@@ -148,26 +148,26 @@ class PaperDismantleServiceTest {
             var rolls = 0
             PaperTestFixture(dismantleSettings = DismantleSettings(chance), dismantleRandom = { rolls++; sample }).use { fixture ->
                 fixture.place()
-                assertTrue(assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+                assertTrue(assertNotNull(fixture.citadels.findProtecting(fixture.position))
                     .editComponent(Health::class.java) { it.health = 99.0 })
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
+                assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.action()))
                 assertEquals(if (refunded) 1 else 0, fixture.droppedItems.size)
                 assertEquals(if (chance in listOf(0.0, 1.0)) 0 else 1, rolls)
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(fixture.action()))
                 assertEquals(if (refunded) 1 else 0, fixture.droppedItems.size)
             }
         }
         PaperTestFixture(dismantleSettings = DismantleSettings(1.0),
             dismantleRandom = { error("Missing metadata must not roll") }).use { fixture ->
             fixture.placeWithItem(null)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.action()))
             assertTrue(fixture.droppedItems.isEmpty())
         }
         PaperTestFixture(dismantleSettings = DismantleSettings(0.0)).use { fixture ->
             fixture.placeWithItem(Key("missing", "material"))
-            assertTrue(assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertTrue(assertNotNull(fixture.citadels.findProtecting(fixture.position))
                 .editComponent(Health::class.java) { it.health = 99.0 })
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.action()))
             assertTrue(fixture.droppedItems.isEmpty())
         }
     }
@@ -177,20 +177,20 @@ class PaperDismantleServiceTest {
         PaperTestFixture(permissions = false).use { fixture ->
             fixture.place()
             fixture.validate { ActionValidator.Result.Success }
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(DismantleAction(ActionContext.SYSTEM, fixture.position)))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(DismantleAction(ActionContext.SYSTEM, fixture.position)))
             fixture.installer.online = false
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(fixture.action()))
             fixture.installer.online = true
             fixture.installer.gameMode = GameMode.SPECTATOR
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(fixture.action()))
             fixture.installer.gameMode = GameMode.SURVIVAL
             val otherWorld = paperProxy<World>("other world") { method, _ ->
                 if (method.name == "getUID") UUID(99, 1) else unsupported(method)
             }
             fixture.installer.location = Location(otherWorld, 0.0, 64.0, 0.0)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.action()))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(fixture.action()))
             assertTrue(fixture.playerBreaks.isEmpty())
-            assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertNotNull(fixture.citadels.findProtecting(fixture.position))
         }
     }
 
@@ -208,11 +208,11 @@ class PaperDismantleServiceTest {
                 assertEquals(if (mode == GameMode.CREATIVE) 2 else 1, fixture.installer.held.amount)
                 fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
                 fixture.loadChunk(0, 0)
-                val restored = assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+                val restored = assertNotNull(fixture.citadels.findProtecting(fixture.position))
                 assertEquals(fixture.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
                 assertEquals(adapter.getKey(), fixture.citadelTypes.itemKey(restored))
 
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action()))
+                assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.action()))
                 val returned = fixture.droppedItems.single().second
                 assertEquals(1, returned.amount)
                 assertTrue(adapter.isConsists(returned))
@@ -225,12 +225,12 @@ class PaperDismantleServiceTest {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             val (lower, upper) = fixture.door()
             // Existing linked protection is independent of the current solid-block placement filter.
-            assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.place.place(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, fixture.coreAddon.place.place(PlaceAction(
                 fixture.context(fixture.installer), upper.testPosition(), PaperCitadelTypes.REINFORCED)))
-            val original = assertNotNull(fixture.module.citadels.findProtecting(upper.testPosition()))
+            val original = assertNotNull(fixture.citadels.findProtecting(upper.testPosition()))
             assertEquals(lower.testPosition(), original.position)
 
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.action(position = upper.testPosition())))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.action(position = upper.testPosition())))
             assertTrue(fixture.playerBreaks.isEmpty())
             assertEquals(Material.OAK_DOOR, lower.type)
             assertEquals(Material.OAK_DOOR, upper.type)
@@ -241,22 +241,22 @@ class PaperDismantleServiceTest {
     }
 
     @Test
-    fun `dismantle lifecycle leaves external validators alone and restores owner approval`() {
+    fun `disabled dismantle denies execution and preserves owner approval`() {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.place()
             val action = fixture.action()
-            val actions = fixture.module.actions
+            val actions = fixture.actions
             assertTrue(actions.isAllowed(action))
             val grant = fixture.validate { ActionValidator.Result.Success }
             fixture.dismantleService.disable()
             fixture.dismantleService.disable()
-            assertTrue(actions.isAllowed(action))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
-            fixture.dismantleService.enable()
-            fixture.dismantleService.enable()
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
-            assertEquals(Material.IRON_INGOT, fixture.droppedItems.single().second.type)
             assertTrue(actions.unregisterValidator(grant))
+            assertTrue(actions.isAllowed(action))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
+            fixture.dismantleService.enable()
+            fixture.dismantleService.enable()
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(action))
+            assertEquals(Material.IRON_INGOT, fixture.droppedItems.single().second.type)
         }
     }
 
@@ -264,7 +264,7 @@ class PaperDismantleServiceTest {
         DismantleAction(context(player), position)
 
     private fun PaperTestFixture.placeWithItem(key: Key?) {
-        assertEquals(ActionResult.SUCCESS, module.actions.execute(
+        assertEquals(ActionResult.SUCCESS, actions.execute(
             PlaceAction(context(installer), position, PaperCitadelTypes.REINFORCED)))
         if (key == null) assertNotNull(manager.findCitadel(worldId, position.x, position.y, position.z)).removeComponent(CitadelKind::class.java)
     }
@@ -273,5 +273,5 @@ class PaperDismantleServiceTest {
         object : ActionValidator<DismantleAction> {
             override val actionClass = DismantleAction::class.java
             override fun validate(action: DismantleAction) = check(action)
-        }.also(module.actions::registerValidator)
+        }.also(actions::registerValidator)
 }

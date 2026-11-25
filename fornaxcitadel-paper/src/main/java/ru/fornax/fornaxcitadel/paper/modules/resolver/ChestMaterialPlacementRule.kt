@@ -4,16 +4,14 @@ import org.bukkit.Material
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.block.data.type.Chest
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 
 /**
  * Double chests place on the selected half; existing reinforcement on either side takes local priority.
  * Copper halves may have different oxidation and wax states. Unconnected chests remain independent.
  */
 class ChestMaterialPlacementRule(
-    findExact: (Block) -> CitadelHandle?,
     private val findRelative: (Block, BlockFace) -> Block?
-) : DefaultMaterialPlacementRule(findExact) {
+) : DefaultMaterialPlacementRule() {
     override fun getRelatedBlock(block: Block): Block? {
         if (!supports(block.type)) return null
         val chest = block.blockData as? Chest ?: return null

@@ -1,13 +1,14 @@
 package ru.fornax.fornaxcitadel.core.systems.action
 
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.util.Key
 
 /**
  * Performs an authorized action. Finish checks before committing state.
- * Unexpected failures do not roll back committed state. Use ActionManager.post for subsequent actions;
- * nested execution through the manager is not allowed.
+ * Previously committed changes survive unexpected failures. During execution, use [ActionFacade.publish]
+ * to queue a subsequent action.
  */
-abstract class ActionProcessor<T: ActionData> {
+abstract class ActionProcessor<T: Action> {
     abstract val actionClass: Class<T>
     abstract val actionKey: Key
 

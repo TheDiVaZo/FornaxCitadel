@@ -1,5 +1,9 @@
 package ru.fornax.fornaxcitadel.core.facade
 
+import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.core.resolver.ExactPositionResolver
+import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
+import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
@@ -11,7 +15,6 @@ import ru.fornax.fornaxcitadel.core.component.ReadableComponent
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
-import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -23,7 +26,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.validateDamage
 import ru.fornax.fornaxcitadel.modules.validateRemoval
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -48,9 +50,9 @@ import kotlin.test.assertTrue
 
 class CitadelFacadeTest {
     @Test
-    fun `default facade keeps exact coordinates and distinguishes unavailable data`() {
+    fun `direct resolver keeps exact coordinates and distinguishes unavailable data`() {
         Fixture(useRules = false).use { fixture ->
-            val facade = fixture.module.citadels
+            val facade = fixture.citadels
             assertNull(facade.findProtecting(TOP))
             val placed = assertNotNull(facade.createCitadel(TOP, fixture::fill))
             assertEquals(TOP, placed.position)
@@ -64,9 +66,25 @@ class CitadelFacadeTest {
     }
 
     @Test
+    fun `lookup returns the current entity at the first occupied candidate even if the next chunk is unavailable`() {
+        Fixture().use { fixture ->
+            val facade = fixture.citadels
+            fixture.target = OTHER_CHUNK
+            val original = fixture.createExact(TOP)
+            assertEquals(original.runtimeId, facade.findProtecting(TOP)?.runtimeId)
+
+            assertTrue(facade.removeCitadel(original))
+            val replacement = fixture.createExact(TOP)
+            assertFalse(original.isCurrent)
+            assertEquals(replacement.runtimeId, facade.findProtecting(TOP)?.runtimeId)
+            assertFalse(facade.isChunkLoaded(WORLD, 1, 0))
+        }
+    }
+
+    @Test
     fun `exact lookup finds only the stored half of a linked block`() {
         Fixture().use { fixture ->
-            val facade = fixture.module.citadels
+            val facade = fixture.citadels
             val bottom = fixture.createExact(BOTTOM)
 
             assertEquals(bottom.runtimeId, facade.findProtecting(TOP)?.runtimeId)
@@ -83,7 +101,7 @@ class CitadelFacadeTest {
         Fixture().use { fixture ->
             var fills = 0
             lateinit var retainedDraft: CitadelDraft
-            val placed = assertNotNull(fixture.module.citadels.createCitadel(TOP) { draft ->
+            val placed = assertNotNull(fixture.citadels.createCitadel(TOP) { draft ->
                 fills++
                 retainedDraft = draft
                 assertEquals(BOTTOM, draft.position)
@@ -105,14 +123,14 @@ class CitadelFacadeTest {
         for (occupied in listOf(TOP, BOTTOM)) {
             Fixture().use { fixture ->
                 fixture.createExact(occupied)
-                assertNull(fixture.module.citadels.createCitadel(TOP) { error("Must not initialize") })
-                assertNull(fixture.module.citadels.createCitadel(BOTTOM) { error("Must not initialize") })
+                assertNull(fixture.citadels.createCitadel(TOP) { error("Must not initialize") })
+                assertNull(fixture.citadels.createCitadel(BOTTOM) { error("Must not initialize") })
             }
         }
         Fixture().use { fixture ->
             fixture.target = OTHER_CHUNK
-            assertNull(fixture.module.citadels.createCitadel(TOP) { error("Must not initialize") })
-            assertNull(fixture.module.citadels.createCitadel(TOP.copy(y = -65)) { error("Must not initialize") })
+            assertNull(fixture.citadels.createCitadel(TOP) { error("Must not initialize") })
+            assertNull(fixture.citadels.createCitadel(TOP.copy(y = -65)) { error("Must not initialize") })
             assertFalse(fixture.manager.isChunkLoaded(WORLD, 1, 0))
         }
     }
@@ -121,13 +139,13 @@ class CitadelFacadeTest {
     fun `initializer and component validation failures publish nothing`() {
         Fixture().use { fixture ->
             assertFailsWith<IllegalStateException> {
-                fixture.module.citadels.createCitadel(TOP) { draft ->
+                fixture.citadels.createCitadel(TOP) { draft ->
                     fixture.fill(draft)
                     error("Initializer failed")
                 }
             }
             assertFailsWith<IllegalArgumentException> {
-                fixture.module.citadels.createCitadel(TOP) { draft ->
+                fixture.citadels.createCitadel(TOP) { draft ->
                     draft.addComponent(UnregisteredComponent::class.java, UnregisteredComponent())
                 }
             }
@@ -141,7 +159,7 @@ class CitadelFacadeTest {
     fun `commit rechecks conflicts without choosing a new responsible position`() {
         Fixture().use { fixture ->
             var conflicting: CitadelHandle? = null
-            assertNull(fixture.module.citadels.createCitadel(TOP) { draft ->
+            assertNull(fixture.citadels.createCitadel(TOP) { draft ->
                 fixture.fill(draft)
                 // Deliberately violate the initializer contract to exercise the final storage guard.
                 conflicting = fixture.createExact(BOTTOM)
@@ -157,17 +175,17 @@ class CitadelFacadeTest {
         Fixture().use { fixture ->
             val initialized = mutableListOf<CitadelPosition>()
             val placed = mutableListOf<PlaceAction>()
-            fixture.module.coreAddon.health.registerDefinition(CUSTOM_TYPE, HealthDefinition(100.0))
-            fixture.module.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
-                CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(fixture.module.coreAddon.health)
+            fixture.addon.health.registerDefinition(CUSTOM_TYPE, HealthDefinition(100.0))
+            fixture.addon.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
+                CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(fixture.addon.health)
             )))
-            fixture.module.actions.validateDamage(fixture.module.citadels, CUSTOM_TYPE)
-            fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
+            fixture.actions.validateDamage(fixture.citadels, CUSTOM_TYPE)
+            fixture.actions.registerHandler(object : ActionHandler<PlaceAction> {
                 override val actionClass = PlaceAction::class.java
                 override fun handle(action: PlaceAction) { placed.add(action) }
             })
             val placement = PlaceAction(CONTEXT, TOP, CUSTOM_TYPE)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(placement))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(placement))
             assertEquals(listOf(BOTTOM), initialized)
             assertSame(placement, placed.single())
             assertEquals(TOP, placed.single().position)
@@ -175,7 +193,7 @@ class CitadelFacadeTest {
 
             val request = SpecializedDamage(TOP, 7.0)
             var seen = false
-            fixture.module.actions.registerValidator(object : ActionValidator<SpecializedDamage> {
+            fixture.actions.registerValidator(object : ActionValidator<SpecializedDamage> {
                 override val actionClass = SpecializedDamage::class.java
                 override fun validate(action: SpecializedDamage): ActionValidator.Result {
                     assertSame(request, action)
@@ -184,10 +202,10 @@ class CitadelFacadeTest {
                     return ActionValidator.Result.Neutral
                 }
             })
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(request))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(request))
             assertTrue(seen)
             assertEquals(93.0, fixture.health(BOTTOM))
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(RemoveAction(CONTEXT, TOP)))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(RemoveAction(CONTEXT, TOP)))
             assertNull(fixture.exact(BOTTOM))
         }
     }
@@ -198,7 +216,7 @@ class CitadelFacadeTest {
             fixture.createExact(BOTTOM)
             val alternative = BOTTOM.copy(x = 3)
             fixture.createExact(alternative)
-            fixture.module.actions.post(DamageAction(CONTEXT, TOP, 9.0))
+            fixture.actions.post(DamageAction(CONTEXT, TOP, 9.0))
             fixture.target = alternative
             fixture.scheduler.tick()
             assertEquals(100.0, fixture.health(BOTTOM))
@@ -210,17 +228,17 @@ class CitadelFacadeTest {
     fun `damage validators apply to resolved reinforcement when queued actions execute`() {
         Fixture().use { fixture ->
             fixture.createExact(BOTTOM, BLOCKED_TYPE)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(DamageAction(CONTEXT, TOP, 9.0)))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(DamageAction(CONTEXT, TOP, 9.0)))
             assertEquals(100.0, fixture.health(BOTTOM))
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(
                 DamageAction(CONTEXT, TOP, 0.0, DamageAction.Mode.DESTROY)
             ))
             fixture.createExact(BOTTOM)
             val blocked = BOTTOM.copy(x = 3)
             fixture.createExact(blocked, BLOCKED_TYPE)
-            fixture.module.actions.post(DamageAction(CONTEXT, TOP, 9.0))
+            fixture.actions.post(DamageAction(CONTEXT, TOP, 9.0))
             fixture.target = blocked
-            assertEquals(1, fixture.module.actions.drainPosted())
+            assertEquals(1, fixture.actions.drainPosted())
             assertEquals(100.0, fixture.health(BOTTOM))
             assertEquals(100.0, fixture.health(blocked))
         }
@@ -230,10 +248,10 @@ class CitadelFacadeTest {
     fun `unavailable related data rejects all core actions without initializing or loading`() {
         Fixture().use { fixture ->
             fixture.target = OTHER_CHUNK
-            val module = fixture.module
-            assertEquals(ActionResult.DENIED, module.actions.execute(PlaceAction(CONTEXT, TOP, TYPE)))
-            assertEquals(ActionResult.DENIED, module.actions.execute(DamageAction(CONTEXT, TOP, 1.0)))
-            assertEquals(ActionResult.DENIED, module.actions.execute(RemoveAction(CONTEXT, TOP)))
+            val actions = fixture.actions
+            assertEquals(ActionResult.DENIED, actions.execute(PlaceAction(CONTEXT, TOP, TYPE)))
+            assertEquals(ActionResult.DENIED, actions.execute(DamageAction(CONTEXT, TOP, 1.0)))
+            assertEquals(ActionResult.DENIED, actions.execute(RemoveAction(CONTEXT, TOP)))
             assertFalse(fixture.manager.isChunkLoaded(WORLD, 1, 0))
             assertTrue(fixture.chunk().isEmpty)
         }
@@ -244,13 +262,13 @@ class CitadelFacadeTest {
         Fixture().use { fixture ->
             val top = fixture.createExact(TOP)
             val bottom = fixture.createExact(BOTTOM)
-            assertEquals(top.runtimeId, fixture.module.citadels.findProtecting(TOP)?.runtimeId)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(DamageAction(CONTEXT, TOP, 5.0)))
+            assertEquals(top.runtimeId, fixture.citadels.findProtecting(TOP)?.runtimeId)
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(CONTEXT, TOP, 5.0)))
             assertEquals(95.0, fixture.health(TOP))
             assertEquals(100.0, fixture.health(BOTTOM))
-            assertEquals(ActionResult.SUCCESS, fixture.module.coreAddon.remove.remove(top))
-            assertEquals(bottom.runtimeId, fixture.module.citadels.findProtecting(TOP)?.runtimeId)
-            assertEquals(ActionResult.DENIED, fixture.module.coreAddon.remove.remove(top))
+            assertEquals(ActionResult.SUCCESS, fixture.addon.remove.remove(top))
+            assertEquals(bottom.runtimeId, fixture.citadels.findProtecting(TOP)?.runtimeId)
+            assertEquals(ActionResult.DENIED, fixture.addon.remove.remove(top))
             assertTrue(bottom.isCurrent)
         }
     }
@@ -263,48 +281,47 @@ class CitadelFacadeTest {
         val manager = ComponentManager(storage, types)
         var target = BOTTOM
         var responsibleLookups = 0
-        private val direct = DirectCitadelResolver(manager)
         private val resolver = object : CitadelResolver {
             override fun getResponsiblePosition(position: CitadelPosition): CitadelPosition {
                 responsibleLookups++
                 return if (position == TOP) target else position
             }
 
-            override fun getReinforcementProtecting(position: CitadelPosition): CitadelHandle? {
-                direct.getReinforcementProtecting(position)?.let { return it }
-                val related = when (position) {
-                    TOP -> target
-                    target -> TOP
-                    else -> return null
+            override fun getProtectionCandidates(position: CitadelPosition): Sequence<CitadelPosition> =
+                when (position) {
+                    TOP -> sequenceOf(position, target)
+                    target -> sequenceOf(position, TOP)
+                    else -> sequenceOf(position)
                 }
-                return direct.getReinforcementProtecting(related)
-            }
         }
-        val module = CitadelModule(manager, scheduler, resolver = if (useRules) resolver else direct)
+        val actions = ActionManager()
+        val citadels = CitadelFacade(manager, if (useRules) resolver else ExactPositionResolver)
+        private val actionFacade = ActionFacade(actions)
+        val addon = CoreAddon(citadels, actionFacade)
+        private val queue = ActionQueueService(actionFacade, scheduler, ActionSettings())
 
         init {
-            module.coreAddon.health.registerDefinition(TYPE, HealthDefinition(100.0))
-            module.coreAddon.health.registerDefinition(BLOCKED_TYPE, HealthDefinition(100.0))
-            module.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(module.coreAddon.health))))
-            module.actions.validateDamage(module.citadels, TYPE)
-            module.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(module.coreAddon.health))))
-            module.actions.validateDamage(module.citadels, BLOCKED_TYPE) { _, _ -> false }
-            module.actions.validateDamage(module.citadels, mode = DamageAction.Mode.DESTROY)
-            module.actions.validateRemoval(module.citadels)
-            module.coreAddon.onEnable()
-            module.enable()
+            addon.health.registerDefinition(TYPE, HealthDefinition(100.0))
+            addon.health.registerDefinition(BLOCKED_TYPE, HealthDefinition(100.0))
+            addon.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(addon.health))))
+            actions.validateDamage(citadels, TYPE)
+            addon.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(addon.health))))
+            actions.validateDamage(citadels, BLOCKED_TYPE) { _, _ -> false }
+            actions.validateDamage(citadels, mode = DamageAction.Mode.DESTROY)
+            actions.validateRemoval(citadels)
+            queue.enable()
             manager.loadChunk(WORLD, 0, 0).join()
         }
 
         fun fill(draft: CitadelDraft) {
             draft.addComponent(CitadelKind::class.java, CitadelKind(TYPE))
-            HealthInitializer(module.coreAddon.health).initialize(CONTEXT, draft)
+            HealthInitializer(addon.health).initialize(CONTEXT, draft)
         }
 
         fun createExact(position: CitadelPosition, type: Key = TYPE): CitadelHandle {
             val draft = MutableCitadelDraft(position)
             draft.addComponent(CitadelKind::class.java, CitadelKind(type))
-            HealthInitializer(module.coreAddon.health).initialize(CONTEXT, draft)
+            HealthInitializer(addon.health).initialize(CONTEXT, draft)
             assertEquals(ActionResult.SUCCESS, manager.createCitadel(draft))
             return assertNotNull(exact(position))
         }
@@ -318,8 +335,7 @@ class CitadelFacadeTest {
         fun chunk() = assertNotNull(storage.getIfChunkLoaded(WXZCord(WORLD, 0, 0)))
 
         override fun close() {
-            module.disable()
-            module.coreAddon.onDisable()
+            queue.disable()
             manager.closeAndSaveAll().join()
         }
     }

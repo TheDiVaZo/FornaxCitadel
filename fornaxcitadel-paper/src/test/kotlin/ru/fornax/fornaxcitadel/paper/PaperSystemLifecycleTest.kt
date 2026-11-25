@@ -51,7 +51,7 @@ class PaperSystemLifecycleTest {
     }
 
     @Test
-    fun `placement removes only its validators and preserves reinforcement data and material bindings`() {
+    fun `disabled placement retains its validators and preserves reinforcement data and material bindings`() {
         PaperTestFixture(trackListenerLifecycle = true).use { fixture ->
             fixture.place()
             val handle = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
@@ -70,7 +70,7 @@ class PaperSystemLifecycleTest {
                     return ActionValidator.Result.Neutral
                 }
             }
-            val actions = fixture.module.actions
+            val actions = fixture.actions
             actions.registerValidator(external)
             val validationPosition = fixture.position.copy(x = 3)
             val action = PlaceAction(fixture.context(fixture.installer), validationPosition, PaperCitadelTypes.REINFORCED)
@@ -79,8 +79,8 @@ class PaperSystemLifecycleTest {
 
             fixture.placementService.disable()
 
-            assertTrue(actions.isAllowed(action))
-            assertEquals(1, externalCalls)
+            assertFalse(actions.isAllowed(action))
+            assertEquals(0, externalCalls)
             assertSame(kindType, fixture.types.getType(CitadelKind::class.java))
             assertSame(healthType, fixture.types.getType(Health::class.java))
             assertSame(health, handle.getComponent(Health::class.java))
@@ -98,7 +98,7 @@ class PaperSystemLifecycleTest {
             actions.registerActionMeta(PlaceAction.KEY, ActionMeta(false))
             fixture.material(Material.STONE, validationPosition)
             assertTrue(actions.isAllowed(action))
-            assertEquals(3, externalCalls)
+            assertEquals(1, externalCalls)
             assertSame(health, handle.getComponent(Health::class.java))
             assertEquals(material.getKey(), fixture.placementService.heldMaterialKey(fixture.installer.player, fixture.installer.held))
             fixture.placementService.place(fixture.installer.player, target, material.getKey())
@@ -116,29 +116,29 @@ class PaperSystemLifecycleTest {
             assertTrue(fixture.listenerRegistrations.isEmpty())
             fixture.material(Material.PISTON)
             val action = PlaceAction(fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.REINFORCED)
-            assertTrue(fixture.module.actions.isAllowed(action))
+            assertFalse(fixture.actions.isAllowed(action))
 
             fixture.listenerRegistrationFailure = null
             fixture.placementService.enable()
 
             assertEquals(1, fixture.listenerRegistrations.size)
-            assertFalse(fixture.module.actions.isAllowed(action))
+            assertFalse(fixture.actions.isAllowed(action))
         }
     }
 
     @Test
-    fun `explosion source validation is detached and restored without removing external validators`() {
+    fun `explosion source validation survives listener restarts alongside external validators`() {
         PaperTestFixture(initializeSystems = false, trackListenerLifecycle = true).use { fixture ->
             fixture.place()
             val source = ExplosionSource.Block(ExplosionPosition(UUID(9L, 10L), 1.0, 64.0, 2.0), 4.0f, Material.TNT)
             val action = DamageAction(ActionContext(null, source), fixture.position, 10.0)
-            val actions = fixture.module.actions
+            val actions = fixture.actions
             val external = object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Success
             }
             actions.registerValidator(external)
-            assertTrue(actions.isAllowed(action))
+            assertFalse(actions.isAllowed(action))
 
             repeat(2) {
                 fixture.explosionService.enable()
@@ -146,7 +146,7 @@ class PaperSystemLifecycleTest {
                 assertFalse(actions.isAllowed(action))
                 fixture.explosionService.disable()
                 fixture.explosionService.disable()
-                assertTrue(actions.isAllowed(action))
+                assertFalse(actions.isAllowed(action))
             }
 
             assertTrue(actions.unregisterValidator(external))
@@ -155,7 +155,7 @@ class PaperSystemLifecycleTest {
     }
 
     @Test
-    fun `failed explosion enable removes its source validator and can be retried`() {
+    fun `failed explosion enable keeps source validation and can be retried`() {
         PaperTestFixture(initializeSystems = false, trackListenerLifecycle = true).use { fixture ->
             fixture.place()
             val source = ExplosionSource.Block(ExplosionPosition(UUID(9L, 10L), 1.0, 64.0, 2.0), 4.0f, Material.TNT)
@@ -165,11 +165,11 @@ class PaperSystemLifecycleTest {
 
             assertSame(failure, assertFailsWith<IllegalStateException> { fixture.explosionService.enable() })
             assertTrue(fixture.listenerRegistrations.isEmpty())
-            assertTrue(fixture.module.actions.isAllowed(action))
+            assertFalse(fixture.actions.isAllowed(action))
 
             fixture.listenerRegistrationFailure = null
             fixture.explosionService.enable()
-            assertFalse(fixture.module.actions.isAllowed(action))
+            assertFalse(fixture.actions.isAllowed(action))
         }
     }
 

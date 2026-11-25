@@ -4,9 +4,13 @@ import org.bukkit.NamespacedKey
 import org.bukkit.event.world.ChunkLoadEvent
 import org.bukkit.event.world.ChunkUnloadEvent
 import org.bukkit.event.world.WorldUnloadEvent
+import ru.fornax.fornaxcitadel.addon.CoreAddon
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.component.TypeManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
@@ -14,7 +18,6 @@ import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
@@ -42,7 +45,7 @@ class PaperChunkPersistenceTest {
     fun `world unload writes pending PDC and detaches all chunks before world disappearance`() {
         val fixture = Fixture()
         fixture.service.enable()
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         val event = WorldUnloadEvent(fixture.paper.world)
@@ -63,7 +66,7 @@ class PaperChunkPersistenceTest {
     fun `late cancellation of world unload restores core from the saved PDC`() {
         val fixture = Fixture()
         fixture.service.enable()
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         val event = WorldUnloadEvent(fixture.paper.world)
@@ -93,10 +96,10 @@ class PaperChunkPersistenceTest {
     fun `dirty unload synchronously writes PDC before unregister and reload restores type and damage`() {
         val fixture = Fixture()
         fixture.service.enable()
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(DamageAction(
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(
             fixture.paper.context(fixture.paper.stranger), fixture.paper.position, 25.0
         )))
         val oldHandle = assertNotNull(fixture.manager.findCitadel(fixture.paper.worldId, 1, 64, 2))
@@ -161,7 +164,7 @@ class PaperChunkPersistenceTest {
     fun `shutdown writes dirty state inline and releases backend chunk references`() {
         val fixture = Fixture()
         fixture.service.enable()
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         fixture.paper.enabled = false
@@ -203,7 +206,7 @@ class PaperChunkPersistenceTest {
     fun `different Bukkit wrappers share pending save status and unload registration`() {
         val fixture = Fixture()
         fixture.service.enable()
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
             fixture.paper.context(fixture.paper.installer), fixture.paper.position, PaperCitadelTypes.REINFORCED
         )))
         fixture.service.saveAll()
@@ -240,13 +243,13 @@ class PaperChunkPersistenceTest {
         private val types = TypeManager()
         private val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
-        val module = CitadelModule(manager, ManualScheduler())
+        val actions = ActionManager()
+        private val citadels = CitadelFacade(manager, ExactTestCitadelResolver)
+        private val coreAddon = CoreAddon(citadels, ActionFacade(actions))
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
         val listener = PaperChunkListener(service)
 
         fun closeStorage() {
-            module.disable()
-            module.coreAddon.onDisable()
             service.disable()
             manager.closeAndSaveAll().join()
             backend.flushPendingWorldSaves()
@@ -254,14 +257,12 @@ class PaperChunkPersistenceTest {
         }
 
         init {
-            module.coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
-            module.registerDefinition(
-                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(module.coreAddon.health)))
+            coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
+            coreAddon.registerDefinition(
+                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreAddon.health)))
             )
-            module.actions.registerValidator(
-                PaperDamageValidator(module.citadels, paper.citadelTypes, true))
-            module.coreAddon.onEnable()
-            module.enable()
+            actions.registerValidator(
+                PaperDamageValidator(citadels, paper.citadelTypes, true))
         }
     }
 }

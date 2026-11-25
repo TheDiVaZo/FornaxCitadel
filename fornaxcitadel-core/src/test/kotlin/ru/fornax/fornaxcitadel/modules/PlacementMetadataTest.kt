@@ -1,5 +1,10 @@
 package ru.fornax.fornaxcitadel.modules
 
+import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
+import ru.fornax.fornaxcitadel.core.resolver.ExactPositionResolver
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
@@ -50,7 +55,7 @@ class PlacementMetadataTest {
             var observerCalls = 0
             var observedOwner: UUID? = null
             var observedKind: Key? = null
-            fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
+            fixture.actions.registerHandler(object : ActionHandler<PlaceAction> {
                 override val actionClass = PlaceAction::class.java
                 override fun handle(action: PlaceAction) {
                     observerCalls++
@@ -88,14 +93,14 @@ class PlacementMetadataTest {
             }) else emptyList()
             Fixture(initializers).use { fixture ->
                 var notifications = 0
-                fixture.module.actions.registerHandler(object : ActionHandler<PlaceAction> {
+                fixture.actions.registerHandler(object : ActionHandler<PlaceAction> {
                     override val actionClass = PlaceAction::class.java
                     override fun handle(action: PlaceAction) { notifications++ }
                 })
                 if (initializerFails) {
                     assertFailsWith<IllegalStateException> { fixture.place() }
                 } else {
-                    fixture.module.actions.registerValidator(object : ActionValidator<PlaceAction> {
+                    fixture.actions.registerValidator(object : ActionValidator<PlaceAction> {
                         override val actionClass = PlaceAction::class.java
                         override fun validate(action: PlaceAction) = ActionValidator.Result.Rejected
                     })
@@ -170,7 +175,7 @@ class PlacementMetadataTest {
         Fixture().use { fixture ->
             assertEquals(ActionResult.SUCCESS, fixture.place())
             var executed = 0
-            fixture.module.actions.registerProcessor(object : ActionProcessor<DismantleAction>() {
+            fixture.actions.registerProcessor(object : ActionProcessor<DismantleAction>() {
                 override val actionClass = DismantleAction::class.java
                 override val actionKey = DismantleAction.KEY
                 override fun execute(action: DismantleAction): ActionResult {
@@ -179,17 +184,17 @@ class PlacementMetadataTest {
                 }
             })
             val action = DismantleAction(CONTEXT, POSITION)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
             fixture.validateDismantle(ActionValidator.Result.Neutral)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
             assertEquals(0, executed)
 
             fixture.validateDismantle(ActionValidator.Result.Success)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(action))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(action))
             assertEquals(1, executed)
 
             fixture.validateDismantle(ActionValidator.Result.Rejected)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
             assertEquals(1, executed)
         }
     }
@@ -210,17 +215,17 @@ class PlacementMetadataTest {
             MemoryBackend(snapshot), scheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run)
         )
         private val manager = ComponentManager(storage, types)
-        val module = CitadelModule(manager, scheduler)
+        val actions = ActionManager()
+        val citadels = CitadelFacade(manager, ExactPositionResolver)
+        val addon = CoreAddon(citadels, ActionFacade(actions))
 
         init {
-            module.registerDefinition(CitadelDefinition(TYPE, initializers))
-            module.coreAddon.onEnable()
-            module.enable()
+            addon.registerDefinition(CitadelDefinition(TYPE, initializers))
             manager.loadChunk(WORLD, 0, 0).join()
         }
 
         fun place(context: ActionContext = CONTEXT, position: CitadelPosition = POSITION) =
-            module.actions.execute(PlaceAction(context, position, TYPE))
+            actions.execute(PlaceAction(context, position, TYPE))
 
         fun find(position: CitadelPosition = POSITION) =
             manager.findCitadel(position.world, position.x, position.y, position.z)
@@ -236,15 +241,13 @@ class PlacementMetadataTest {
         }
 
         fun validateDismantle(result: ActionValidator.Result) {
-            module.actions.registerValidator(object : ActionValidator<DismantleAction> {
+            actions.registerValidator(object : ActionValidator<DismantleAction> {
                 override val actionClass = DismantleAction::class.java
                 override fun validate(action: DismantleAction) = result
             })
         }
 
         override fun close() {
-            module.disable()
-            module.coreAddon.onDisable()
             manager.closeAndSaveAll().join()
         }
     }

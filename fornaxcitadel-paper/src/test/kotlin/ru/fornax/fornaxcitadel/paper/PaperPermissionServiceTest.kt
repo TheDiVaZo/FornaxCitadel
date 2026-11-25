@@ -4,7 +4,7 @@ import org.bukkit.GameMode
 import org.bukkit.Material
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -15,11 +15,9 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
-import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -58,7 +56,7 @@ class PaperPermissionServiceTest {
             val validator = PaperPermissionValidator(fixture.citadelTypes)
             fixture.installer.permissions.add("fornaxcitadel.admin")
             val context = ActionContext(fixture.stranger.id, PlayerSource(fixture.installer.player))
-            val checks: List<Triple<ActionData, String, ActionValidator.Result>> = listOf(
+            val checks: List<Triple<Action, String, ActionValidator.Result>> = listOf(
                 Triple(PlaceAction(context, fixture.position, PaperCitadelTypes.REINFORCED),
                     "fornaxcitadel.place", ActionValidator.Result.Success),
                 Triple(RemoveAction(context, fixture.position),
@@ -91,44 +89,19 @@ class PaperPermissionServiceTest {
     }
 
     @Test
-    fun `permission lifecycle owns the supplied validator and leaves external checks registered`() {
-        PaperTestFixture(initializeSystems = false).use { fixture ->
-            val validator = PaperPermissionValidator(fixture.citadelTypes)
-            val service = ValidatorRegistration(fixture.module.actions, validator)
-            val actions = fixture.module.actions
+    fun `permission validation stays active when placement listeners stop`() {
+        PaperTestFixture(permissions = true).use { fixture ->
             val action = PlaceAction(fixture.context(fixture.installer), fixture.position, PaperCitadelTypes.REINFORCED)
-            var externalCalls = 0
-            val external = object : ActionValidator<PlaceAction> {
-                override val actionClass = PlaceAction::class.java
-                override fun validate(action: PlaceAction): ActionValidator.Result {
-                    externalCalls++
-                    return ActionValidator.Result.Neutral
-                }
-            }
-            actions.registerValidator(external)
+            fixture.actions.registerActionMeta(PlaceAction.KEY, ActionMeta(false))
             fixture.installer.permissions.clear()
+            assertFalse(fixture.actions.isAllowed(action))
 
-            service.disable()
-            service.enable()
-            service.enable()
-            assertFalse(actions.isAllowed(action))
-            service.disable()
-            service.disable()
-            assertTrue(actions.isAllowed(action))
-            assertEquals(2, externalCalls)
-            actions.registerActionMeta(PlaceAction.KEY, ActionMeta(false))
-
-            service.enable()
-            assertFalse(actions.isAllowed(action))
+            fixture.placementService.disable()
+            assertFalse(fixture.actions.isAllowed(action))
             fixture.installer.permissions.add("fornaxcitadel.place")
-            assertTrue(actions.isAllowed(action))
-            assertTrue(actions.unregisterValidator(validator))
-            assertFalse(actions.isAllowed(action))
-            service.enable()
-            assertTrue(actions.isAllowed(action))
-            service.disable()
-            assertFalse(actions.isAllowed(action))
-            assertTrue(actions.unregisterValidator(external))
+            assertTrue(fixture.actions.isAllowed(action))
+            fixture.placementService.enable()
+            assertTrue(fixture.actions.isAllowed(action))
         }
     }
 }

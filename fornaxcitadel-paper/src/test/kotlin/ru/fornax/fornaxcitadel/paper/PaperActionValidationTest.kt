@@ -7,7 +7,7 @@ import org.bukkit.World
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -18,7 +18,6 @@ import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
-import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -90,28 +89,23 @@ class PaperActionValidationTest {
     }
 
     @Test
-    fun `state validation grants no ownership and lifecycle removes only its own registration`() {
+    fun `state validation grants no ownership and rejects damage while the world is unavailable`() {
         PaperTestFixture().use { fixture ->
             fixture.place()
             val stranger = DismantleAction(fixture.context(fixture.stranger), fixture.position)
             assertSame(ActionValidator.Result.Neutral, PaperActionStateValidator(fixture.server).validate(stranger))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(stranger))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(stranger))
             assertTrue(fixture.playerBreaks.isEmpty())
 
             val probe = Probe(fixture)
             val action = DamageAction(ActionContext.SYSTEM, fixture.position, 1.0)
             fixture.worldAvailable = false
-            repeat(2) {
-                assertEquals(ActionResult.DENIED, probe.actions.execute(action))
-                probe.service.disable()
-                probe.service.disable()
-                assertEquals(ActionResult.SUCCESS, probe.actions.execute(action))
-                probe.service.enable()
-                probe.service.enable()
-            }
             assertEquals(ActionResult.DENIED, probe.actions.execute(action))
-            assertEquals(2, probe.processorCalls)
-            val custom = ActionData(Key("test", "unrelated"), fixture.position, ActionContext.SYSTEM)
+            assertEquals(0, probe.processorCalls)
+            fixture.worldAvailable = true
+            assertEquals(ActionResult.SUCCESS, probe.actions.execute(action))
+            assertEquals(1, probe.processorCalls)
+            val custom = Action(Key("test", "unrelated"), fixture.position, ActionContext.SYSTEM)
             assertSame(ActionValidator.Result.Neutral, probe.validator.validate(custom))
         }
     }
@@ -127,17 +121,17 @@ class PaperActionValidationTest {
                 { it.location = Location(otherWorld(), 1.0, 64.0, 2.0) }
             )
             for (change in changes) {
-                fixture.module.actions.post(action)
+                fixture.actions.post(action)
                 change(fixture.installer)
-                assertEquals(1, fixture.module.actions.drainPosted())
+                assertEquals(1, fixture.actions.drainPosted())
                 assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
                 assertTrue(fixture.playerBreaks.isEmpty())
                 fixture.installer.online = true
                 fixture.installer.gameMode = GameMode.SURVIVAL
                 fixture.installer.location = fixture.block().location
             }
-            fixture.module.actions.post(action)
-            assertEquals(1, fixture.module.actions.drainPosted())
+            fixture.actions.post(action)
+            assertEquals(1, fixture.actions.drainPosted())
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
             assertTrue(fixture.playerBreaks.isEmpty())
             assertEquals(Material.STONE, fixture.block().type)
@@ -147,26 +141,25 @@ class PaperActionValidationTest {
     private class Probe(fixture: PaperTestFixture) {
         val actions = ActionManager()
         val validator = PaperActionStateValidator(fixture.server)
-        val service = ValidatorRegistration(actions, validator)
         var processorCalls = 0
             private set
 
         init {
-            actions.registerValidator(object : ActionValidator<ActionData> {
-                override val actionClass = ActionData::class.java
-                override fun validate(action: ActionData) = ActionValidator.Result.Success
+            actions.registerValidator(object : ActionValidator<Action> {
+                override val actionClass = Action::class.java
+                override fun validate(action: Action) = ActionValidator.Result.Success
             })
             for (key in listOf(PlaceAction.KEY, DamageAction.KEY, RemoveAction.KEY, DismantleAction.KEY)) {
-                actions.registerProcessor(object : ActionProcessor<ActionData>() {
-                    override val actionClass = ActionData::class.java
+                actions.registerProcessor(object : ActionProcessor<Action>() {
+                    override val actionClass = Action::class.java
                     override val actionKey = key
-                    override fun execute(action: ActionData): ActionResult {
+                    override fun execute(action: Action): ActionResult {
                         processorCalls++
                         return ActionResult.SUCCESS
                     }
                 })
             }
-            service.enable()
+            actions.registerValidator(validator)
         }
     }
 

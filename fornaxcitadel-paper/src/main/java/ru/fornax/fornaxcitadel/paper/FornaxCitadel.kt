@@ -3,18 +3,25 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.java.JavaPlugin
+import ru.fornax.fornaxcitadel.addon.CoreAddon
 import ru.fornax.fornaxcitadel.core.component.TypeManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.facade.ObservationFacade
+import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
-import ru.fornax.fornaxcitadel.modules.CitadelModule
+import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
 import ru.fornax.fornaxcitadel.paper.command.CitadelCommandRegistration
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
+import ru.fornax.fornaxcitadel.paper.material.MaterialFacade
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.modules.observation.Full3DObservation
 import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationService
@@ -26,24 +33,17 @@ import java.util.concurrent.Executor
 import java.util.logging.Level
 
 class FornaxCitadel : JavaPlugin() {
-    lateinit var paperAddon: PaperAddon
+    /** Public API for plugins on the server's main thread after startup. */
+    lateinit var api: FornaxCitadelAPI
         private set
-    /**
-     * Register external material providers on the server's main thread after enable.
-     * Configured item and block keys resolve on use, so providers may register later.
-     */
-    lateinit var materials: CombineMaterialRegistry
-        private set
-    /** Register block placement/protection rules on the main thread after enable. */
-    lateinit var materialPlacement: MaterialPlacementService
-        private set
-    /** Register presentation systems on the main thread after enable. Players are observed automatically. */
-    lateinit var observation: ObservationService<Player>
-        private set
+    private lateinit var paperAddon: PaperAddon
     private var schedulerAdapter: PaperScheduler? = null
     private var citadelStorage: CitadelStorage? = null
     private var chunkBackend: PersistContainerChunkStorage? = null
-    private val shutdownSteps = ArrayDeque<() -> Unit>()
+    private var chunkService: PaperChunkService? = null
+    private var actionQueue: PluginActionQueue? = null
+    private var observationService: PaperObservationService? = null
+    private var commandRegistration: CitadelCommandRegistration? = null
 
     override fun onEnable() {
         try {
@@ -65,66 +65,85 @@ class FornaxCitadel : JavaPlugin() {
             val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, mapper, Executor { it.run() })
                 .also { citadelStorage = it }
             val manager = ComponentManager(storage, types)
-            materials = CombineMaterialRegistry()
-            materialPlacement = MaterialPlacementService(server, materials, manager)
+            val materials = CombineMaterialRegistry()
+            val materialPlacement = MaterialPlacementService(server, materials, manager::isChunkLoaded)
+            val actionManager = ActionManager()
+            val actions = ActionFacade(actionManager)
+            val citadels = CitadelFacade(manager, materialPlacement)
+            val coreAddon = CoreAddon(citadels, actions)
             val actionSettings = ActionSettings(maxActionsPerTick = settings.postedActionLimit) { failure ->
                 logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
             }
-            val module = CitadelModule(manager, scheduler, materialPlacement, actionSettings)
-            val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks)
-            observation = ObservationService(manager, scheduler, settings.observation.intervalTicks) { failure ->
+            val queue = PluginActionQueue(ActionQueueService(actions, scheduler, actionSettings), actionManager)
+                .also { actionQueue = it }
+            val chunks = PaperChunkService(this, manager, backend, settings.saveIntervalTicks).also { chunkService = it }
+            val observation = ObservationService<Player>(manager, scheduler, settings.observation.intervalTicks) { failure ->
                 logger.log(Level.SEVERE, "Citadel observation failed", failure)
             }
             paperAddon = PaperAddon(
-                this, settings, messages, module.actions, module.citadels, module.definitions,
-                module.coreAddon.health, module.coreAddon.remove, materials, materialPlacement, observation, chunks::saveAll
+                this, settings, messages, actions, citadels, coreAddon,
+                materials, materialPlacement, observation, chunks::saveAll
             )
-            val observationSource = Full3DObservation(this, module.actions, module.citadels, chunks,
+            val observationSource = Full3DObservation(this, actions, citadels, chunks,
                 settings.observation.full3D)
-            val observers = PaperObservationService(this, observation, observationSource)
+            val observers = PaperObservationService(this, observation, observationSource).also { observationService = it }
             val commands = CitadelCommandRegistration(::getCommand, paperAddon.commands, messages)
+                .also { commandRegistration = it }
 
-            start(chunks::enable, chunks::disable)
-            start(paperAddon::onEnable, paperAddon::onDisable)
-            start(module.coreAddon::onEnable, module.coreAddon::onDisable)
-            start(module::enable, module::disable)
-            start(observers::enable, observers::disable)
-            start(commands::enable, commands::disable)
-        } catch (exception: Exception) {
-            logger.log(Level.SEVERE, "Could not enable FornaxCitadel", exception)
-            shutdown()
+            chunks.enable()
+            paperAddon.onEnable()
+            queue.enable()
+            observers.enable()
+            commands.enable()
+            api = FornaxCitadelAPI(
+                citadel = citadels,
+                action = actions,
+                resolver = materialPlacement,
+                observation = ObservationFacade(observation),
+                materials = MaterialFacade(materials, materialPlacement, paperAddon.placement),
+                playerDamage = paperAddon.playerDamage
+            )
+        } catch (failure: Throwable) {
+            logger.log(Level.SEVERE, "Could not enable FornaxCitadel", failure)
+            onDisable()
+            if (failure !is Exception) throw failure
             server.pluginManager.disablePlugin(this)
         }
     }
 
-    override fun onDisable() = shutdown()
-
-    private fun start(enable: () -> Unit, disable: () -> Unit) {
-        shutdownSteps.addFirst(disable)
-        enable()
-    }
-
-    private fun shutdown() {
-        while (shutdownSteps.isNotEmpty()) {
-            try {
-                shutdownSteps.removeFirst().invoke()
-            } catch (exception: Exception) {
-                logger.log(Level.SEVERE, "Could not stop a citadel service", exception)
-            }
+    override fun onDisable() {
+        stop("citadel commands") { commandRegistration?.disable() }
+        commandRegistration = null
+        stop("player observation") { observationService?.disable() }
+        observationService = null
+        stop("the action queue") { actionQueue?.disable() }
+        actionQueue = null
+        stop("the Paper addon") {
+            if (::paperAddon.isInitialized) paperAddon.onDisable()
         }
-        HandlerList.unregisterAll(this)
-        server.scheduler.cancelTasks(this)
-        try {
+        stop("the chunk service") {
+            chunkService?.disable()
+            chunkService = null
+        }
+        stop("Bukkit listeners") { HandlerList.unregisterAll(this) }
+        stop("Bukkit tasks") { server.scheduler.cancelTasks(this) }
+        stop("the citadel scheduler") {
             schedulerAdapter?.close()
             schedulerAdapter = null
-        } catch (exception: Exception) {
-            logger.log(Level.SEVERE, "Could not close the citadel scheduler", exception)
         }
         try {
             closeStorage()
         } catch (exception: Exception) {
             // Keep storage/backend references so a later shutdown attempt can retry pending saves.
             logger.log(Level.SEVERE, "Could not save all citadel data during shutdown", exception)
+        }
+    }
+
+    private inline fun stop(name: String, operation: () -> Unit) {
+        try {
+            operation()
+        } catch (failure: Throwable) {
+            logger.log(Level.SEVERE, "Could not stop $name", failure)
         }
     }
 
@@ -141,5 +160,28 @@ class FornaxCitadel : JavaPlugin() {
         chunkBackend?.clearRegisteredChunks()
         citadelStorage = null
         chunkBackend = null
+    }
+}
+
+/** Discards pending actions when the plugin stops. The queue itself can be paused independently. */
+internal class PluginActionQueue(
+    private val queue: ActionQueueService,
+    private val actionManager: ActionManager
+) : LifecycleService {
+    override fun enable() {
+        try {
+            queue.enable()
+        } catch (failure: Throwable) {
+            actionManager.clearPosted()
+            throw failure
+        }
+    }
+
+    override fun disable() {
+        try {
+            queue.disable()
+        } finally {
+            actionManager.clearPosted()
+        }
     }
 }

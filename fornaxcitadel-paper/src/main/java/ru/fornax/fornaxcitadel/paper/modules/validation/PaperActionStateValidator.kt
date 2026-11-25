@@ -3,7 +3,7 @@ package ru.fornax.fornaxcitadel.paper.modules.validation
 import org.bukkit.GameMode
 import org.bukkit.Server
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -14,10 +14,10 @@ import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 
 /** Checks platform prerequisites without granting authorization or loading chunks. */
-class PaperActionStateValidator(private val server: Server) : ActionValidator<ActionData> {
-    override val actionClass = ActionData::class.java
+class PaperActionStateValidator(private val server: Server) : ActionValidator<Action> {
+    override val actionClass = Action::class.java
 
-    override fun validate(action: ActionData): ActionValidator.Result {
+    override fun validate(action: Action): ActionValidator.Result {
         if (action !is PlaceAction && action !is DamageAction && action !is RemoveAction &&
             action !is DismantleAction && action !is RepairAction && action !is UpgradeAction) {
             return ActionValidator.Result.Neutral
@@ -27,19 +27,20 @@ class PaperActionStateValidator(private val server: Server) : ActionValidator<Ac
         if (player != null && (!player.isOnline || player.gameMode == GameMode.SPECTATOR)) {
             return ActionValidator.Result.Rejected
         }
+        val position = action.position
         val requiresPlayerBlock = action is DismantleAction || action is RepairAction || action is UpgradeAction
-        if (requiresPlayerBlock && (player == null || player.world.uid != action.citadelW)) {
+        if (requiresPlayerBlock && (player == null || player.world.uid != position.world)) {
             return ActionValidator.Result.Rejected
         }
-        if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) {
+        if (!CitadelPosition.isSupported(position.x, position.y, position.z)) {
             return ActionValidator.Result.Rejected
         }
-        val world = server.getWorld(action.citadelW) ?: return ActionValidator.Result.Rejected
-        if (action.citadelY !in world.minHeight until world.maxHeight ||
-            !world.isChunkLoaded(action.citadelX shr 4, action.citadelZ shr 4)) {
+        val world = server.getWorld(position.world) ?: return ActionValidator.Result.Rejected
+        if (position.y !in world.minHeight until world.maxHeight ||
+            !world.isChunkLoaded(position.x shr 4, position.z shr 4)) {
             return ActionValidator.Result.Rejected
         }
-        if (requiresPlayerBlock && world.getBlockAt(action.citadelX, action.citadelY, action.citadelZ).isEmpty) {
+        if (requiresPlayerBlock && world.getBlockAt(position.x, position.y, position.z).isEmpty) {
             return ActionValidator.Result.Rejected
         }
         return ActionValidator.Result.Neutral

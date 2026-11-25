@@ -49,7 +49,7 @@ class AcidServiceTest {
                 assertTrue(target.isCurrent)
                 assertEquals(owner, target.getComponent(CitadelOwner::class.java)?.playerId)
                 assertEquals(if (reason == "claimed") f.stranger.id else null,
-                    f.module.citadels.findProtecting(f.position)?.getComponent(CitadelOwner::class.java)?.playerId)
+                    f.citadels.findProtecting(f.position)?.getComponent(CitadelOwner::class.java)?.playerId)
             }
         }
     }
@@ -57,7 +57,7 @@ class AcidServiceTest {
     @Test
     fun `natural destruction runs once per source and target without Bukkit break events`() =
         fixture(Material.DIAMOND_BLOCK).use { f ->
-            val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val source = assertNotNull(f.citadels.findProtecting(f.position))
             val blocks = listOf(f.block().getRelative(BlockFace.UP), f.block().getRelative(BlockFace.DOWN))
             val targets = blocks.map { reinforce(f, it) }
             f.beforeNaturalBreak = { block ->
@@ -73,7 +73,7 @@ class AcidServiceTest {
 
     @Test
     fun `invulnerable targets stay protected from high tier creative acid`() = fixture().use { f ->
-        val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+        val source = assertNotNull(f.citadels.findProtecting(f.position))
         source.editComponent(CitadelKind::class.java) { it.definitionKey = Key("fornaxcitadel", "tier_1000") }
         f.installer.permissions.add("fornaxcitadel.admin")
         val target = reinforce(f, f.block().getRelative(BlockFace.UP), PaperCitadelTypes.INVULNERABLE)
@@ -105,30 +105,28 @@ class AcidServiceTest {
         }
 
     @Test
-    fun `disabling acid keeps saved reinforcement data and restores ordinary maturity`() =
-        fixture(sourceType = PaperCitadelTypes.MATURING).use { f ->
-            val source = assertNotNull(f.module.citadels.findProtecting(f.position))
-            val startedAt = System.currentTimeMillis() - 900_000
-            source.editComponent(Maturing::class.java) { it.startedAtMillis = startedAt }
-            assertFalse(f.module.coreAddon.health.maturation.isMature(source))
-            f.acidService!!.disable()
-            val disabled = AcidService(
-                f.plugin, f.module.actions, f.module.citadels, f.module.coreAddon.health.maturation,
-                f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService,
-                AcidRegistry(AcidSettings(enabled = false))
-            )
-            disabled.enable()
-            try {
-                assertTrue(f.module.coreAddon.health.maturation.isMature(source))
-                assertFailure(AcidFailure.DISABLED, disabled.activate(f.installer.player, f.block()))
+    fun `disabling acid keeps saved reinforcement data and restores ordinary maturity`() {
+        for (enabled in listOf(true, false)) {
+            fixture(settings = AcidSettings(enabled = enabled), sourceType = PaperCitadelTypes.MATURING).use { f ->
+                val source = assertNotNull(f.citadels.findProtecting(f.position))
+                val startedAt = System.currentTimeMillis() - 900_000
+                source.editComponent(Maturing::class.java) { it.startedAtMillis = startedAt }
+                val acid = assertNotNull(f.acidService)
+                if (enabled) {
+                    assertFalse(f.coreAddon.health.maturation.isMature(source))
+                    acid.disable()
+                }
+                assertTrue(f.coreAddon.health.maturation.isMature(source))
+                assertFailure(AcidFailure.DISABLED, acid.activate(f.installer.player, f.block()))
                 f.manager.unloadChunk(f.worldId, 0, 0).join()
                 f.manager.loadChunk(f.worldId, 0, 0).join()
-                val restored = assertNotNull(f.module.citadels.findProtecting(f.position))
+                val restored = assertNotNull(f.citadels.findProtecting(f.position))
                 assertEquals(source.position, restored.position)
                 assertEquals(startedAt, restored.getComponent(Maturing::class.java)?.startedAtMillis)
                 unchanged(f)
-            } finally { disabled.disable() }
+            }
         }
+    }
 
     @Test
     fun `provider chunk failure during execution is an error and stops remaining targets`() = fixture(Material.DIAMOND_BLOCK).use { f ->
@@ -154,8 +152,8 @@ class AcidServiceTest {
     @Test
     fun `missing or refusing physical providers remove reinforcements and continue activation`() {
         for (missing in listOf(false, true)) for (retainSource in listOf(false, true)) {
-            fixture(Material.DIAMOND_BLOCK).use { f ->
-                val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+            fixture(Material.DIAMOND_BLOCK, settings = null).use { f ->
+                val source = assertNotNull(f.citadels.findProtecting(f.position))
                 val firstBlock = f.block().getRelative(BlockFace.UP)
                 val secondBlock = f.block().getRelative(BlockFace.DOWN)
                 val first = reinforce(f, firstBlock)
@@ -203,7 +201,7 @@ class AcidServiceTest {
     }
 
     @Test
-    fun `missing physical provider does not bypass a core target veto`() = fixture().use { f ->
+    fun `missing physical provider does not bypass a core target veto`() = fixture(settings = null).use { f ->
         val targetBlock = f.block().getRelative(BlockFace.UP)
         val target = reinforce(f, targetBlock)
         val materials = object : MaterialRegistry by f.dismantleMaterials {
@@ -222,7 +220,7 @@ class AcidServiceTest {
     }
 
     @Test
-    fun `acid never requests block item factories or reinforcement refunds`() = fixture().use { f ->
+    fun `acid never requests block item factories or reinforcement refunds`() = fixture(settings = null).use { f ->
         val target = f.block().getRelative(BlockFace.UP)
         reinforce(f, target)
         val materials = object : MaterialRegistry by f.dismantleMaterials {
@@ -292,7 +290,7 @@ class AcidServiceTest {
         high.editComponent(CitadelKind::class.java) { it.definitionKey = Key("fornaxcitadel", "reinforced_heavy") }
         val veto = f.block().getRelative(BlockFace.NORTH)
         reinforce(f, veto)
-        f.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        f.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = if (action.position == veto.testPosition())
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
@@ -335,8 +333,8 @@ class AcidServiceTest {
             f.material(Material.STONE)
             assertFailure(AcidFailure.NOT_FOUND, activate(f))
             f.material(Material.GOLD_BLOCK)
-            val own = assertNotNull(f.module.citadels.findProtecting(f.position))
-            f.module.coreAddon.remove.remove(own)
+            val own = assertNotNull(f.citadels.findProtecting(f.position))
+            f.coreAddon.remove.remove(own)
             assertFailure(AcidFailure.NOT_REINFORCED, activate(f))
             assertEquals(Material.GOLD_BLOCK, f.block().type)
         }
@@ -352,7 +350,7 @@ class AcidServiceTest {
         f.stranger.permissions.add("fornaxcitadel.admin")
         assertFailure(AcidFailure.NOT_OWNER, f.acidService!!.activate(f.stranger.player, f.block()))
         unchanged(f)
-        val acid = assertNotNull(f.module.citadels.findProtecting(f.position))
+        val acid = assertNotNull(f.citadels.findProtecting(f.position))
         acid.editComponent(CitadelOwner::class.java) { it.playerId = f.stranger.id }
         assertFailure(AcidFailure.NOT_OWNER, activate(f))
         assertEquals(AcidResult.Activated(1), f.acidService.activate(f.stranger.player, f.block()))
@@ -369,19 +367,19 @@ class AcidServiceTest {
     @Test
     fun `maturation uses live profile and persisted start time`() =
         fixture(sourceType = PaperCitadelTypes.MATURING).use { f ->
-            val acid = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val acid = assertNotNull(f.citadels.findProtecting(f.position))
             val maturity = assertNotNull(acid.getComponent(Maturing::class.java))
             reinforce(f, f.block().getRelative(BlockFace.UP))
             acid.editComponent(Maturing::class.java) { it.startedAtMillis = System.currentTimeMillis() - 900_000 }
-            assertEquals(Duration.ofMinutes(10), f.module.coreAddon.health.maturation.findDefinition(PaperCitadelTypes.MATURING)?.duration)
-            assertFalse(f.module.coreAddon.health.maturation.isMature(acid))
+            assertEquals(Duration.ofMinutes(10), f.coreAddon.health.maturation.findDefinition(PaperCitadelTypes.MATURING)?.duration)
+            assertFalse(f.coreAddon.health.maturation.isMature(acid))
             assertFailure(AcidFailure.IMMATURE, activate(f))
             unchanged(f)
-            val incoming = f.module.coreAddon.health.maturation.progress(acid)
+            val incoming = f.coreAddon.health.maturation.progress(acid)
             assertTrue(incoming in 0.74..0.76)
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.manager.loadChunk(f.worldId, 0, 0).join()
-            val restored = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val restored = assertNotNull(f.citadels.findProtecting(f.position))
             assertEquals(maturity.startedAtMillis, restored.getComponent(Maturing::class.java)?.startedAtMillis)
             assertFailure(AcidFailure.IMMATURE, activate(f))
             restored.editComponent(Maturing::class.java) { it.startedAtMillis = 0 }
@@ -424,13 +422,13 @@ class AcidServiceTest {
         val first = reinforce(f, f.block().getRelative(BlockFace.UP))
         val second = reinforce(f, f.block().getRelative(BlockFace.DOWN))
         var veto = false
-        f.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        f.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = if (veto && action.position == first.position)
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
         })
         val notified = mutableListOf<ru.fornax.fornaxcitadel.core.citadel.CitadelPosition>()
-        f.module.actions.registerHandler(object : ActionHandler<DamageAction> {
+        f.actions.registerHandler(object : ActionHandler<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun handle(action: DamageAction) { notified.add(action.position) }
         })
@@ -450,7 +448,7 @@ class AcidServiceTest {
         val second = reinforce(f, f.block().getRelative(BlockFace.DOWN))
         var replacement: CitadelHandle? = null
         f.afterNaturalBreak = { if (it === f.block()) {
-            assertEquals(ActionResult.SUCCESS, f.module.coreAddon.remove.remove(first))
+            assertEquals(ActionResult.SUCCESS, f.coreAddon.remove.remove(first))
             replacement = f.placeExact(firstBlock)
         } }
 
@@ -481,9 +479,9 @@ class AcidServiceTest {
     fun `repeat nested and forged acid actions cannot reuse the source`() = fixture().use { f ->
         val target = f.block().getRelative(BlockFace.UP)
         reinforce(f, target)
-        val acid = assertNotNull(f.module.citadels.findProtecting(f.position))
+        val acid = assertNotNull(f.citadels.findProtecting(f.position))
         val forged = AcidDestroyAction(f.context(f.installer), target.testPosition(), f.position, acid.runtimeId)
-        assertEquals(ActionResult.DENIED, f.module.actions.execute(forged))
+        assertEquals(ActionResult.DENIED, f.actions.execute(forged))
         f.beforeNaturalBreak = { assertFailure(AcidFailure.BUSY, activate(f)) }
         assertEquals(AcidResult.Activated(1), activate(f))
         val drops = f.droppedItems.size
@@ -551,7 +549,7 @@ class AcidServiceTest {
         f.mainThread = false
         assertFailure(AcidFailure.WRONG_THREAD, activate(f))
         f.mainThread = true
-        val acid = assertNotNull(f.module.citadels.findProtecting(f.position))
+        val acid = assertNotNull(f.citadels.findProtecting(f.position))
         acid.editComponent(CitadelOwner::class.java) { it.playerId = java.util.UUID(0, 0) }
         assertFailure(AcidFailure.NOT_OWNER, activate(f))
         unchanged(f)
@@ -563,13 +561,14 @@ class AcidServiceTest {
         val notified = mutableListOf<AcidDestroyAction>()
         val remaining = mutableListOf<List<Boolean>>()
         val physical = mutableListOf<Boolean>()
-        f.module.actions.registerHandler(object : ActionHandler<DamageAction> {
+        f.actions.registerHandler(object : ActionHandler<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun handle(action: DamageAction) {
                 if (action is AcidDestroyAction) {
                     notified.add(action)
                     remaining.add(targets.map { it.isCurrent })
-                    physical.add(f.block(action.citadelX, action.citadelY, action.citadelZ).isEmpty)
+                    val position = action.position
+                    physical.add(f.block(position.x, position.y, position.z).isEmpty)
                 }
             }
         })
@@ -609,18 +608,17 @@ class AcidServiceTest {
 
     @Test
     fun `new definitions apply to persisted reinforcements without rewriting maturation`() =
-        fixture(sourceType = PaperCitadelTypes.MATURING).use { f ->
-            val original = assertNotNull(f.module.citadels.findProtecting(f.position))
+        fixture(settings = null, sourceType = PaperCitadelTypes.MATURING).use { f ->
+            val original = assertNotNull(f.citadels.findProtecting(f.position))
             val startedAt = System.currentTimeMillis() - 900_000
             original.editComponent(Maturing::class.java) { it.startedAtMillis = startedAt }
             reinforce(f, f.block().getRelative(BlockFace.UP))
             reinforce(f, f.block().getRelative(BlockFace.DOWN))
-            f.acidService!!.disable()
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.manager.loadChunk(f.worldId, 0, 0).join()
             val settings = AcidSettings(types = listOf(AcidType("changed", Material.GOLD_BLOCK, 2, 1.0)))
             val service = AcidService(
-                f.plugin, f.module.actions, f.module.citadels, f.module.coreAddon.health.maturation,
+                f.plugin, f.actionFacade, f.citadels, f.coreAddon.health.maturation,
                 f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService, AcidRegistry(settings)
             )
             service.enable()
@@ -637,17 +635,17 @@ class AcidServiceTest {
     @Test
     fun `live base duration changes maturity of saved acid without rewriting placement time`() =
         fixture(sourceType = PaperCitadelTypes.MATURING).use { f ->
-            val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val source = assertNotNull(f.citadels.findProtecting(f.position))
             val startedAt = System.currentTimeMillis() - 900_000
             source.editComponent(Maturing::class.java) { it.startedAtMillis = startedAt }
-            val maturation = f.module.coreAddon.health.maturation
+            val maturation = f.coreAddon.health.maturation
             assertEquals(0.75, maturation.progress(source), 0.01)
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             maturation.registerDefinition(PaperCitadelTypes.MATURING,
                 MaturationDefinition(Duration.ofMinutes(20), 8.0))
             f.manager.loadChunk(f.worldId, 0, 0).join()
 
-            val restored = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val restored = assertNotNull(f.citadels.findProtecting(f.position))
             assertEquals(0.375, maturation.progress(restored), 0.01)
             assertFailure(AcidFailure.IMMATURE, activate(f))
             maturation.registerDefinition(PaperCitadelTypes.MATURING,
@@ -659,17 +657,17 @@ class AcidServiceTest {
 
     @Test
     fun `instant reinforcement keeps placement time when its profile gains a duration`() = fixture().use { f ->
-        val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+        val source = assertNotNull(f.citadels.findProtecting(f.position))
         val startedAt = assertNotNull(source.getComponent(Maturing::class.java)).startedAtMillis
         assertTrue(startedAt > 0)
-        assertTrue(f.module.coreAddon.health.maturation.isMature(source))
+        assertTrue(f.coreAddon.health.maturation.isMature(source))
         f.manager.unloadChunk(f.worldId, 0, 0).join()
-        f.module.coreAddon.health.maturation.registerDefinition(PaperCitadelTypes.REINFORCED,
+        f.coreAddon.health.maturation.registerDefinition(PaperCitadelTypes.REINFORCED,
             MaturationDefinition(Duration.ofDays(1), 4.0))
         f.manager.loadChunk(f.worldId, 0, 0).join()
-        val restored = assertNotNull(f.module.citadels.findProtecting(f.position))
+        val restored = assertNotNull(f.citadels.findProtecting(f.position))
         assertEquals(startedAt, restored.getComponent(Maturing::class.java)?.startedAtMillis)
-        assertFalse(f.module.coreAddon.health.maturation.isMature(restored))
+        assertFalse(f.coreAddon.health.maturation.isMature(restored))
         assertFailure(AcidFailure.IMMATURE, activate(f))
         unchanged(f)
     }
@@ -677,9 +675,9 @@ class AcidServiceTest {
     @Test
     fun `acid lifecycle preserves other maturation rules and never registers its factor twice`() =
         fixture(sourceType = PaperCitadelTypes.MATURING).use { f ->
-            val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val source = assertNotNull(f.citadels.findProtecting(f.position))
             source.editComponent(Maturing::class.java) { it.startedAtMillis = System.currentTimeMillis() - 900_000 }
-            val maturation = f.module.coreAddon.health.maturation
+            val maturation = f.coreAddon.health.maturation
             val acid = f.acidService!!
             val otherRule = MaturationMultiplier { 2.0 }
             maturation.registerMultiplier(otherRule)
@@ -695,7 +693,7 @@ class AcidServiceTest {
             assertEquals(0.75, maturation.progress(source), 0.01)
         }
 
-    private fun fixture(material: Material = Material.GOLD_BLOCK, settings: AcidSettings = AcidSettings(),
+    private fun fixture(material: Material = Material.GOLD_BLOCK, settings: AcidSettings? = AcidSettings(),
                         sourceType: Key = PaperCitadelTypes.REINFORCED) = PaperTestFixture(permissions = true, acidSettings = settings, citadelSettings = CitadelTypesSettings(
                             CitadelTypesSettings.DEFAULT_TYPES + ("tier_1000" to CitadelTypeSettings(
                                 Key("minecraft", "gold_ingot"), 1000, health = HealthSettings(100.0))))).apply {
@@ -705,12 +703,12 @@ class AcidServiceTest {
 
     private fun reinforce(f: PaperTestFixture, block: Block, type: Key = PaperCitadelTypes.REINFORCED,
                           player: TestPlayer = f.installer): CitadelHandle {
-        assertEquals(ActionResult.SUCCESS, f.module.actions.execute(PlaceAction(f.context(player), block.testPosition(), type)))
-        return assertNotNull(f.module.citadels.findProtecting(block.testPosition()))
+        assertEquals(ActionResult.SUCCESS, f.actions.execute(PlaceAction(f.context(player), block.testPosition(), type)))
+        return assertNotNull(f.citadels.findProtecting(block.testPosition()))
     }
 
     private fun PaperTestFixture.vetoAcid(predicate: (AcidDestroyAction) -> Boolean) {
-        module.actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
+        actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
             override val actionClass = AcidDestroyAction::class.java
             override fun validate(action: AcidDestroyAction) = if (predicate(action))
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
@@ -718,11 +716,10 @@ class AcidServiceTest {
     }
 
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
-        val original = assertNotNull(f.acidService)
-        original.disable()
+        check(f.acidService == null)
         val service = AcidService(
-            f.plugin, f.module.actions, f.module.citadels, f.module.coreAddon.health.maturation,
-            f.citadelTypes, materials, f.materialPlacement, f.breakingService, original.registry
+            f.plugin, f.actionFacade, f.citadels, f.coreAddon.health.maturation,
+            f.citadelTypes, materials, f.materialPlacement, f.breakingService, AcidRegistry(AcidSettings())
         )
         service.enable()
         try { body(service) } finally { service.disable() }
@@ -733,11 +730,11 @@ class AcidServiceTest {
     private fun unchanged(f: PaperTestFixture) {
         assertEquals(0, f.vanillaBlockChanges)
         assertFalse(f.block().isEmpty)
-        assertNotNull(f.module.citadels.findProtecting(f.position))
+        assertNotNull(f.citadels.findProtecting(f.position))
     }
     private fun consumed(f: PaperTestFixture) {
         assertTrue(f.block().isEmpty)
-        assertNull(f.module.citadels.findProtecting(f.position))
+        assertNull(f.citadels.findProtecting(f.position))
     }
     private val faces = listOf(BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST)
 }

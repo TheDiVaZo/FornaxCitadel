@@ -11,6 +11,7 @@ import ru.fornax.fornaxcitadel.core.component.Component
 import ru.fornax.fornaxcitadel.core.component.ReadableComponent
 import ru.fornax.fornaxcitadel.testing.ReadableTestValue
 import ru.fornax.fornaxcitadel.core.component.TypeManager
+import ru.fornax.fornaxcitadel.core.resolver.ExactPositionResolver
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
@@ -46,7 +47,7 @@ class ComponentManagerTest {
         fixture.load()
         val original = fixture.put(10)
         val writable = assertNotNull(fixture.manager.findCitadel(WORLD, 0, 0, 0))
-        val queries: ReadableCitadelFacade = CitadelFacade(fixture.manager)
+        val queries: ReadableCitadelFacade = CitadelFacade(fixture.manager, ExactPositionResolver)
         val reader: ReadableHandle = assertNotNull(queries.findProtecting(writable.position))
         fixture.manager.saveAll().join()
 

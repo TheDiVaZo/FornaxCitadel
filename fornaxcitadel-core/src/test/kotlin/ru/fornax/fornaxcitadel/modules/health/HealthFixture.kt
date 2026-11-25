@@ -8,6 +8,7 @@ import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
+import ru.fornax.fornaxcitadel.core.resolver.ExactPositionResolver
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
@@ -34,7 +35,7 @@ internal class HealthFixture(
     val types = TypeManager()
     val storage = MemoryStorage(if (loaded) ChunkCord(WXZCord(WORLD, 0, 0)) else null)
     val manager = ComponentManager(storage, types)
-    val citadels = CitadelFacade(manager)
+    val citadels = CitadelFacade(manager, ExactPositionResolver)
     val service = HealthService(RemoveService(citadels), citadels, clock)
     val actions = ActionManager()
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)

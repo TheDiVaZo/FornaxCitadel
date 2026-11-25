@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.core.facade
 
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
@@ -22,7 +22,13 @@ class ActionManager {
     private val handlerCoordinator = HandlerCoordinator()
     private val actionMetaRegistry = ActionMetaRegistry(ActionMeta.DEFAULT)
     private var executing = false
-    private val posted = ArrayDeque<ActionData>()
+    private val posted = ArrayDeque<() -> Unit>()
+
+    @get:JvmSynthetic
+    internal val canStartExecution: Boolean get() = !executing && !handlerCoordinator.isHandling
+
+    @get:JvmSynthetic
+    internal val hasPostedActions: Boolean get() = posted.isNotEmpty()
 
     /** Registers one processor per action key. Registering the same instance again is a no-op. */
     fun registerProcessor(processor: ActionProcessor<*>) = processorCoordinator.registerProcessor(processor)
@@ -49,9 +55,9 @@ class ActionManager {
         actionMetaRegistry.unregister(key, meta)
 
     /** Read-only authorization using the same metadata as execute. Does not notify handlers. */
-    fun isAllowed(action: ActionData): Boolean = runRoot { validate(action) }
+    fun isAllowed(action: Action): Boolean = runRoot { validate(action) }
 
-    private fun validate(action: ActionData): Boolean = when (validatorCoordinator.validate(action)) {
+    private fun validate(action: Action): Boolean = when (validatorCoordinator.validate(action)) {
         ActionValidator.Result.Rejected -> false
         ActionValidator.Result.Success -> true
         ActionValidator.Result.Neutral -> actionMetaRegistry.getMetaOrDefault(action.type).executeIfNeutralActionResult
@@ -65,7 +71,7 @@ class ActionManager {
      * This is not a world transaction: unexpected commit failures propagate without simulated rollback.
      * Notifications run only after the entire commit succeeds, under the normal reentrancy guard.
      */
-    fun executeBatch(actions: List<ActionData>, prepare: () -> Boolean, commit: () -> Unit): ActionResult = runRoot {
+    fun executeBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult = runRoot {
         require(actions.isNotEmpty()) { "A batch must contain an action" }
         val snapshot = actions.toList()
         if (!snapshot.all(::validate) || !prepare() || !snapshot.all(::validate)) return@runRoot ActionResult.DENIED
@@ -86,7 +92,7 @@ class ActionManager {
      * and is not checked at runtime. Use [post] to request subsequent changes.
      * Nested execution is rejected through the last handler.
      */
-    fun execute(action: ActionData): ActionResult = runRoot {
+    fun execute(action: Action): ActionResult = runRoot {
         if (!validate(action)) return@runRoot ActionResult.DENIED
         val result = processorCoordinator.execute(action)
         if (result == ActionResult.SUCCESS) handlerCoordinator.handle(action)
@@ -94,7 +100,7 @@ class ActionManager {
     }
 
     private inline fun <T> runRoot(operation: () -> T): T {
-        check(!executing && !handlerCoordinator.isHandling) {
+        check(canStartExecution) {
             "Nested action execution is not allowed; post the action instead"
         }
         executing = true
@@ -106,26 +112,30 @@ class ActionManager {
     }
 
     /** Queues intent only, without claiming success. Call on the owning game thread. */
-    fun post(action: ActionData) { posted.addLast(action) }
+    fun post(action: Action) = post { execute(action) }
 
-    /** Discards pending intents when the owning module stops, without executing them. */
+    @JvmSynthetic
+    internal fun post(operation: () -> Unit) { posted.addLast(operation) }
+
+    /** Discards pending intents during shutdown. */
     fun clearPosted() { posted.clear() }
 
     /**
-     * Runs at most [limit] queued actions on the owning thread. The module's queue service
-     * calls this on subsequent ticks while the module is enabled.
+     * Runs at most [limit] queued entries on the owning thread. A single action or a batch
+     * published through [ActionFacade.publish] counts as one entry. The queue service
+     * calls this on each tick while active.
      * Returns the number attempted. Failures propagate; remaining actions stay queued.
      * Callers needing each result should use execute directly outside handler callbacks.
      */
     @JvmOverloads
     fun drainPosted(limit: Int = 1024): Int {
         require(limit >= 0) { "Action limit must be non-negative" }
-        check(!executing && !handlerCoordinator.isHandling) { "Cannot drain actions during another action or handling" }
+        check(canStartExecution) { "Cannot drain actions during another action or handling" }
         var count = 0
         while (count < limit && posted.isNotEmpty()) {
-            val action = posted.removeFirst()
+            val operation = posted.removeFirst()
             count++
-            execute(action)
+            operation()
         }
         return count
     }

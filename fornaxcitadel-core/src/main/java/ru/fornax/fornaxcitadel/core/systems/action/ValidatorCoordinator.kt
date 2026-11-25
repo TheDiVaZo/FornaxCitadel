@@ -26,7 +26,7 @@ class ValidatorCoordinator {
      * are applied in order when validation finishes, including after rejection or an exception.
      * The active list remains unchanged during traversal. Nested validation on this coordinator is rejected.
      */
-    fun validate(action: ActionData): Result {
+    fun validate(action: Action): Result {
         val current = validators.beginIteration()
         try {
             var result: Result = Result.Neutral
@@ -44,7 +44,7 @@ class ValidatorCoordinator {
         }
     }
 
-    private fun <T : ActionData> validateAction(validator: ActionValidator<T>, action: ActionData): Result {
+    private fun <T : Action> validateAction(validator: ActionValidator<T>, action: Action): Result {
         val actionClass = validator.actionClass
         if (!actionClass.isInstance(action)) return Result.Neutral
         return validator.validate(actionClass.cast(action))

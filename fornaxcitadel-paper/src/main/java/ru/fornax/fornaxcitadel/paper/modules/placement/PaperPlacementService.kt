@@ -8,7 +8,7 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
@@ -29,7 +29,7 @@ import java.util.logging.Level
 /** Resolves reinforcement item use into placement, repair or upgrade through core actions. */
 class PaperPlacementService @JvmOverloads constructor(
     private val plugin: Plugin,
-    private val actions: ActionManager,
+    private val actions: ActionFacade,
     private val citadels: ReadableCitadelFacade,
     private val health: HealthService,
     private val citadelTypes: PaperCitadelTypes,
@@ -38,36 +38,31 @@ class PaperPlacementService @JvmOverloads constructor(
     private val messages: PaperMessages = PaperMessages.defaults()
 ) : LifecycleService {
     private val definitionsByMaterial = mutableMapOf<Key, Key>()
-    private val blockValidator = ReinforceableBlockValidator(plugin.server, citadels)
-    private val blockListValidator = PlacementBlockListValidator(
-        plugin.server, materials, settings.listType, settings.blocks, citadels
-    )
     private val listener = PaperPlacementListener(this)
     private var enabled = false
+
+    init {
+        actions.registerValidator(ReinforceableBlockValidator(plugin.server, citadels))
+        actions.registerValidator(PlacementBlockListValidator(
+            plugin.server, materials, settings.listType, settings.blocks, citadels
+        ))
+    }
 
     override fun enable() {
         if (enabled) return
         try {
-            actions.registerValidator(blockValidator)
-            actions.registerValidator(blockListValidator)
             plugin.server.pluginManager.registerEvents(listener, plugin)
             enabled = true
         } catch (failure: Throwable) {
-            unregister()
+            HandlerList.unregisterAll(listener)
             throw failure
         }
     }
 
     override fun disable() {
         if (!enabled) return
-        unregister()
-        enabled = false
-    }
-
-    private fun unregister() {
         HandlerList.unregisterAll(listener)
-        actions.unregisterValidator(blockListValidator)
-        actions.unregisterValidator(blockValidator)
+        enabled = false
     }
 
     /**

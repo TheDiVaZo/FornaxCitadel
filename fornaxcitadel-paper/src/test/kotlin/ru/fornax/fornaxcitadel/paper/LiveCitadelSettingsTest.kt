@@ -39,16 +39,16 @@ class LiveCitadelSettingsTest {
     @Test
     fun `restart adds effective health without writes or repair cost until first authorized damage`() {
         restored(savedWithoutHealth(), changed(100.0)).use { f ->
-            val target = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val target = assertNotNull(f.citadels.findProtecting(f.position))
             val owner = target.getComponent(CitadelOwner::class.java)?.playerId
             val started = target.getComponent(Maturing::class.java)?.startedAtMillis
             val saves = f.backend.saves
             assertNull(target.getComponent(Health::class.java))
-            assertEquals(100.0, f.module.coreAddon.health.currentHealth(target))
+            assertEquals(100.0, f.coreAddon.health.currentHealth(target))
             assertTrue(info(f).any { it.contains("100.0 / 100.0") })
 
             f.installer.held = TestItemStack(Material.DIAMOND, 2)
-            assertEquals(ActionResult.DENIED, f.module.actions.execute(RepairAction(f.context(f.installer), f.position)))
+            assertEquals(ActionResult.DENIED, f.actions.execute(RepairAction(f.context(f.installer), f.position)))
             val event = PlayerInteractEvent(f.installer.player, Action.RIGHT_CLICK_BLOCK, f.installer.held,
                 f.block(), BlockFace.UP, EquipmentSlot.HAND)
             val blockUse = event.useInteractedBlock()
@@ -67,10 +67,10 @@ class LiveCitadelSettingsTest {
             assertEquals(started, target.getComponent(Maturing::class.java)?.startedAtMillis)
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.loadChunk(0, 0)
-            val reloaded = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val reloaded = assertNotNull(f.citadels.findProtecting(f.position))
             assertEquals(90.0, reloaded.getComponent(Health::class.java)?.health)
-            f.module.coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(200.0))
-            assertEquals(90.0, f.module.coreAddon.health.currentHealth(reloaded))
+            f.coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(200.0))
+            assertEquals(90.0, f.coreAddon.health.currentHealth(reloaded))
             assertTrue(info(f).any { it.contains("90.0 / 200.0") })
         }
     }
@@ -78,7 +78,7 @@ class LiveCitadelSettingsTest {
     @Test
     fun `denied ineffective and failed first hits leave restored reinforcement without health or new saves`() {
         restored(savedWithoutHealth(), changed(100.0)).use { f ->
-            val target = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val target = assertNotNull(f.citadels.findProtecting(f.position))
             val saves = f.backend.saves
             f.stranger.permissions.remove("fornaxcitadel.damage")
             assertEquals(ActionResult.DENIED, damage(f, 10.0))
@@ -87,18 +87,18 @@ class LiveCitadelSettingsTest {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
             }
-            f.module.actions.registerValidator(reject)
+            f.actions.registerValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 10.0))
-            f.module.actions.unregisterValidator(reject)
+            f.actions.unregisterValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 0.0))
             val zero = DamageModifier { _, _, _ -> 0.0 }
-            f.module.coreAddon.health.registerModifier(zero)
+            f.coreAddon.health.registerModifier(zero)
             assertEquals(ActionResult.DENIED, damage(f, 10.0))
-            f.module.coreAddon.health.unregisterModifier(zero)
-            f.module.coreAddon.health.registerModifier { _, _, _ -> error("Calculation failed") }
+            f.coreAddon.health.unregisterModifier(zero)
+            f.coreAddon.health.registerModifier { _, _, _ -> error("Calculation failed") }
             assertFailsWith<IllegalStateException> { damage(f, 10.0) }
             assertNull(target.getComponent(Health::class.java))
-            assertEquals(100.0, f.module.coreAddon.health.currentHealth(target))
+            assertEquals(100.0, f.coreAddon.health.currentHealth(target))
             f.manager.saveAll().join()
             assertEquals(saves, f.backend.saves)
         }
@@ -107,16 +107,16 @@ class LiveCitadelSettingsTest {
     @Test
     fun `restored reinforcement reads new item level and max without rewriting HP`() {
         restored(saved(), changed(50.0)).use { f ->
-            val target = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val target = assertNotNull(f.citadels.findProtecting(f.position))
             assertEquals(80.0, f.health())
-            assertEquals(50.0, f.module.coreAddon.health.maxHealth(target))
+            assertEquals(50.0, f.coreAddon.health.maxHealth(target))
             assertEquals(7, f.citadelTypes.level(target))
             assertEquals(Key("minecraft", "diamond"), f.citadelTypes.itemKey(target))
             val saves = f.backend.saves
-            assertEquals(80.0, f.module.coreAddon.health.currentHealth(target))
+            assertEquals(80.0, f.coreAddon.health.currentHealth(target))
             assertTrue(info(f).any { it.contains("50.0 / 50.0") })
             assertEquals(80.0, f.health())
-            assertEquals(80.0, f.module.coreAddon.health.currentHealth(target))
+            assertEquals(80.0, f.coreAddon.health.currentHealth(target))
             f.manager.saveAll().join()
             assertEquals(saves, f.backend.saves)
 
@@ -124,10 +124,10 @@ class LiveCitadelSettingsTest {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
             }
-            f.module.actions.registerValidator(reject)
+            f.actions.registerValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 1.0))
             assertEquals(80.0, f.health())
-            f.module.actions.unregisterValidator(reject)
+            f.actions.unregisterValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 0.0))
             assertEquals(80.0, f.health())
             assertEquals(ActionResult.SUCCESS, damage(f, 1.0))
@@ -142,11 +142,11 @@ class LiveCitadelSettingsTest {
             assertEquals(80.0, f.health())
             val repair = RepairAction(f.context(f.installer), f.position)
             f.installer.held = TestItemStack(Material.IRON_INGOT, 2)
-            assertEquals(ActionResult.DENIED, f.module.actions.execute(repair))
+            assertEquals(ActionResult.DENIED, f.actions.execute(repair))
             assertEquals(80.0, f.health())
             assertEquals(2, f.installer.held.amount)
             f.installer.held = TestItemStack(Material.DIAMOND, 2)
-            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(repair))
+            assertEquals(ActionResult.SUCCESS, f.actions.execute(repair))
             assertEquals(200.0, f.health())
             assertEquals(1, f.installer.held.amount)
         }
@@ -155,7 +155,7 @@ class LiveCitadelSettingsTest {
     @Test
     fun `dismantle treats overmaximum HP as full and refunds the new material`() {
         restored(saved(), changed(50.0)).use { f ->
-            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(DismantleAction(f.context(f.installer), f.position)))
+            assertEquals(ActionResult.SUCCESS, f.actions.execute(DismantleAction(f.context(f.installer), f.position)))
             assertEquals(Material.DIAMOND, f.droppedItems.single().second.type)
             assertEquals(1, f.droppedItems.single().second.amount)
         }
@@ -173,16 +173,16 @@ class LiveCitadelSettingsTest {
     @Test
     fun `removed type retains usable HP shows no invented maximum and dismantles without refund`() {
         restored(saved(), CitadelTypesSettings(emptyMap())).use { f ->
-            val target = assertNotNull(f.module.citadels.findProtecting(f.position))
-            assertNull(f.module.coreAddon.health.maxHealth(target))
+            val target = assertNotNull(f.citadels.findProtecting(f.position))
+            assertNull(f.coreAddon.health.maxHealth(target))
             assertNull(f.citadelTypes.itemKey(target))
             assertNull(f.citadelTypes.level(target))
             assertEquals(80.0, f.health())
             assertTrue(info(f).any { it.contains("80.0") && !it.contains("/") })
             assertEquals(ActionResult.SUCCESS, damage(f, 1.0))
             assertEquals(79.0, f.health())
-            assertEquals(ActionResult.DENIED, f.module.actions.execute(RepairAction(f.context(f.installer), f.position)))
-            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(DismantleAction(f.context(f.installer), f.position)))
+            assertEquals(ActionResult.DENIED, f.actions.execute(RepairAction(f.context(f.installer), f.position)))
+            assertEquals(ActionResult.SUCCESS, f.actions.execute(DismantleAction(f.context(f.installer), f.position)))
             assertTrue(f.droppedItems.isEmpty())
         }
     }
@@ -190,13 +190,13 @@ class LiveCitadelSettingsTest {
     @Test
     fun `absent maximum prevents repair and uses configured damaged refund chance`() {
         restored(saved(), changed(50.0)).use { f ->
-            f.module.coreAddon.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
+            f.coreAddon.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
             assertEquals(ActionResult.SUCCESS, damage(f, 1.0))
             assertEquals(79.0, f.health())
             f.installer.held = TestItemStack(Material.DIAMOND, 2)
-            assertEquals(ActionResult.DENIED, f.module.actions.execute(RepairAction(f.context(f.installer), f.position)))
+            assertEquals(ActionResult.DENIED, f.actions.execute(RepairAction(f.context(f.installer), f.position)))
             assertEquals(2, f.installer.held.amount)
-            assertEquals(ActionResult.SUCCESS, f.module.actions.execute(DismantleAction(f.context(f.installer), f.position)))
+            assertEquals(ActionResult.SUCCESS, f.actions.execute(DismantleAction(f.context(f.installer), f.position)))
             assertTrue(f.droppedItems.isEmpty())
         }
     }
@@ -207,11 +207,11 @@ class LiveCitadelSettingsTest {
             PaperTestFixture(permissions = true, acidSettings = AcidSettings()).use { f ->
                 f.material(Material.GOLD_BLOCK)
                 f.place()
-                val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+                val source = assertNotNull(f.citadels.findProtecting(f.position))
                 val adjacent = f.block().getRelative(BlockFace.UP)
-                assertEquals(ActionResult.SUCCESS, f.module.actions.execute(PlaceAction(
+                assertEquals(ActionResult.SUCCESS, f.actions.execute(PlaceAction(
                     f.context(f.installer), adjacent.testPosition(), PaperCitadelTypes.MATURING)))
-                val target = assertNotNull(f.module.citadels.findProtecting(adjacent.testPosition()))
+                val target = assertNotNull(f.citadels.findProtecting(adjacent.testPosition()))
                 if (!sourceKnown) source.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "missing_source") }
                 if (!targetKnown) target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "missing_target") }
                 val info = assertIs<AcidResult.Information>(f.acidService!!.inspect(f.installer.player, f.block()))
@@ -229,8 +229,8 @@ class LiveCitadelSettingsTest {
     private fun saved(neighbor: Boolean = false): ChunkCordSnapshot =
         PaperTestFixture(permissions = true, citadelSettings = original).use { f ->
             f.place()
-            assertNotNull(f.module.citadels.findProtecting(f.position)).editComponent(Health::class.java) { it.health = 80.0 }
-            if (neighbor) assertEquals(ActionResult.SUCCESS, f.module.actions.execute(PlaceAction(
+            assertNotNull(f.citadels.findProtecting(f.position)).editComponent(Health::class.java) { it.health = 80.0 }
+            if (neighbor) assertEquals(ActionResult.SUCCESS, f.actions.execute(PlaceAction(
                 f.context(f.installer), f.position.copy(y = f.position.y + 1), PaperCitadelTypes.REINFORCED)))
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             assertNotNull(f.backend.loadChunk(WXZCord(f.worldId, 0, 0)).join())
@@ -242,7 +242,7 @@ class LiveCitadelSettingsTest {
         return PaperTestFixture(permissions = true, citadelSettings = prior).use { f ->
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place()
-            assertNull(f.module.citadels.findProtecting(f.position)?.getComponent(Health::class.java))
+            assertNull(f.citadels.findProtecting(f.position)?.getComponent(Health::class.java))
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             assertNotNull(f.backend.loadChunk(WXZCord(f.worldId, 0, 0)).join())
         }
@@ -258,7 +258,7 @@ class LiveCitadelSettingsTest {
         }
 
     private fun damage(f: PaperTestFixture, amount: Double) =
-        f.module.actions.execute(DamageAction(f.context(f.stranger), f.position, amount))
+        f.actions.execute(DamageAction(f.context(f.stranger), f.position, amount))
 
     private fun info(f: PaperTestFixture): List<String> {
         f.installer.target = f.block()

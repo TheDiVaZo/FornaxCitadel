@@ -3,14 +3,10 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.addon.Addon
-import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
-import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
-import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
-import ru.fornax.fornaxcitadel.modules.health.HealthService
-import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import ru.fornax.fornaxcitadel.paper.command.CitadelCommand
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.config.PaperSettings
@@ -33,43 +29,54 @@ import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.upgrade.PaperUpgradeService
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
 
-/** Configures the gameplay catalog before chunk loading and owns its runtime registrations. */
+/** Registers the catalog and actions at construction and owns Paper gameplay during plugin activation. */
 class PaperAddon(
     plugin: Plugin,
     settings: PaperSettings,
     messages: PaperMessages,
-    actions: ActionManager,
+    actions: ActionFacade,
     citadels: CitadelFacade,
-    definitions: CitadelDefinitionRegistry,
-    health: HealthService,
-    remove: RemoveService,
+    coreAddon: CoreAddon,
     materials: MaterialRegistry,
     materialPlacement: MaterialPlacementService,
-    observation: ObservationService<Player>,
+    private val observation: ObservationService<Player>,
     save: () -> Unit
 ) : Addon {
-    val citadelTypes = PaperCitadelTypes(settings.citadelTypes).apply { register(definitions, health) }
+    val citadelTypes = PaperCitadelTypes(settings.citadelTypes).apply { register(coreAddon) }
+
+    init {
+        actions.registerValidator(PaperActionStateValidator(plugin.server))
+        actions.registerValidator(PaperPermissionValidator(citadelTypes))
+        actions.registerValidator(PaperDamageValidator(citadels, citadelTypes, settings.playerDamage.creativeModeEnabled))
+    }
+
     val placement = PaperPlacementService(
-        plugin, actions, citadels, health, citadelTypes, materials, settings.placement, messages
+        plugin, actions, citadels, coreAddon.health, citadelTypes, materials, settings.placement, messages
     )
     val dismantle = PaperDismantleService(
-        plugin, actions, citadels, health, remove, citadelTypes, materials, settings.dismantle
+        plugin, actions, citadels, coreAddon.health, coreAddon.remove,
+        citadelTypes, materials, settings.dismantle
     )
-    val repair = PaperRepairService(actions, citadels, health, citadelTypes, materials)
+    val repair = PaperRepairService(actions, citadels, coreAddon.health, citadelTypes, materials)
     val upgrade = PaperUpgradeService(
-        plugin, actions, citadels, definitions, health, citadelTypes, materials, settings.dismantle
+        plugin, actions, citadels, coreAddon.definitions, coreAddon.health,
+        citadelTypes, materials, settings.dismantle
     )
     /** Register modifiers for ordinary player damage on the main thread. */
     val playerDamage = PlayerDamageModifierService()
     private val breaking = PaperBreakingService(
-        plugin, actions, citadels, remove, playerDamage, messages, settings.playerDamage.creativeModeEnabled
+        plugin, actions, citadels, coreAddon.remove, playerDamage, messages,
+        settings.playerDamage.creativeModeEnabled
     )
     val acid = AcidService(
-        plugin, actions, citadels, health.maturation, citadelTypes, materials, materialPlacement, breaking,
-        AcidRegistry(settings.acid)
+        plugin, actions, citadels, coreAddon.health.maturation, citadelTypes, materials,
+        materialPlacement, breaking, AcidRegistry(settings.acid)
     )
+    private val explosion = PaperExplosionService(plugin, actions, citadels, coreAddon.remove, settings.explosionPowers)
+    private val environment = PaperEnvironmentService(plugin, citadels)
+    private val display = CrackHealthObservationSystem(plugin, coreAddon.health)
     internal val commands = CitadelCommand(
-        plugin, actions, citadels, health, materials, citadelTypes, messages, acid, save
+        plugin, actions, citadels, coreAddon.health, materials, citadelTypes, messages, acid, save
     )
 
     init {
@@ -83,57 +90,58 @@ class PaperAddon(
         }
     }
 
-    private val services = listOf(
-        ValidatorRegistration(actions, PaperActionStateValidator(plugin.server)),
-        ValidatorRegistration(actions, PaperPermissionValidator(citadelTypes)),
-        ValidatorRegistration(actions, PaperDamageValidator(citadels, citadelTypes, settings.playerDamage.creativeModeEnabled)),
-        placement,
-        dismantle,
-        repair,
-        upgrade,
-        breaking,
-        acid,
-        PaperExplosionService(plugin, actions, citadels, remove, settings.explosionPowers),
-        PaperEnvironmentService(plugin, citadels),
-        object : LifecycleService {
-            private val display = CrackHealthObservationSystem(plugin, health)
-            override fun enable() = observation.registerSystem(display)
-            override fun disable() {
-                observation.unregisterSystem(display)
-            }
-        }
-    )
-    private var startedServices = 0
+    private enum class State { STOPPED, STARTING, RUNNING, STOPPING }
+    private var state = State.STOPPED
 
-    override fun onEnable() {
-        if (startedServices != 0) return
+    fun onEnable() {
+        if (state == State.RUNNING) return
+        check(state == State.STOPPED) { "Paper gameplay is changing state" }
+        state = State.STARTING
         try {
-            for (service in services) {
-                // A failed enable can leave subscriptions that its disable must release.
-                startedServices++
-                service.enable()
-            }
+            placement.enable()
+            dismantle.enable()
+            repair.enable()
+            upgrade.enable()
+            breaking.enable()
+            acid.enable()
+            explosion.enable()
+            environment.enable()
+            observation.registerSystem(display)
+            state = State.RUNNING
         } catch (failure: Throwable) {
-            try {
-                onDisable()
-            } catch (cleanup: Throwable) {
-                if (cleanup !== failure) failure.addSuppressed(cleanup)
-            }
+            stopServices(failure)
             throw failure
         }
     }
 
-    override fun onDisable() {
-        var failure: Throwable? = null
-        while (startedServices > 0) {
-            val service = services[--startedServices]
+    fun onDisable() {
+        if (state == State.STOPPED) return
+        check(state == State.RUNNING) { "Paper gameplay is changing state" }
+        stopServices(null)?.let { throw it }
+    }
+
+    private fun stopServices(initialFailure: Throwable?): Throwable? {
+        state = State.STOPPING
+        var failure = initialFailure
+        fun stop(action: () -> Unit) {
             try {
-                service.disable()
+                action()
             } catch (cleanup: Throwable) {
-                if (failure == null) failure = cleanup
-                else if (failure !== cleanup) failure.addSuppressed(cleanup)
+                val first = failure
+                if (first == null) failure = cleanup
+                else if (first !== cleanup) first.addSuppressed(cleanup)
             }
         }
-        failure?.let { throw it }
+        stop { observation.unregisterSystem(display) }
+        stop { environment.disable() }
+        stop { explosion.disable() }
+        stop { acid.disable() }
+        stop { breaking.disable() }
+        stop { upgrade.disable() }
+        stop { repair.disable() }
+        stop { dismantle.disable() }
+        stop { placement.disable() }
+        state = State.STOPPED
+        return failure
     }
 }

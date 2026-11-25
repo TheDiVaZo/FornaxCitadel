@@ -2,7 +2,7 @@ package ru.fornax.fornaxcitadel.modules.health
 
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
@@ -249,9 +249,9 @@ class HealthServiceTest {
         val component = Health(20.0)
         val citadel = fixture.create(health = component)
         var handled = 0
-        fixture.actions.registerHandler(object : ActionHandler<ActionData> {
-            override val actionClass = ActionData::class.java
-            override fun handle(action: ActionData) { handled++ }
+        fixture.actions.registerHandler(object : ActionHandler<Action> {
+            override val actionClass = Action::class.java
+            override fun handle(action: Action) { handled++ }
         })
 
         assertEquals(ActionResult.SUCCESS, fixture.service.damage(citadel, 5.0))

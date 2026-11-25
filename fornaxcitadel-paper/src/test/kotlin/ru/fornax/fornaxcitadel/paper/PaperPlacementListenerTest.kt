@@ -87,7 +87,7 @@ class PaperPlacementListenerTest {
     fun `third party materials become placement items only after an explicit definition binding`() {
         val fixture = PaperTestFixture(permissions = true)
         val material = TestMaterialAdapter(Key("thirdparty", "reinforcement"))
-        assertTrue(fixture.materials.register("thirdparty", TestMaterialRegistry(material)))
+        assertTrue(fixture.materialFacade.registerMaterial("thirdparty", TestMaterialRegistry(material)))
         for (stack in listOf(TestItemStack(Material.STONE, 2), material.createItemStack(2))) {
             fixture.installer.held = stack
             val ordinary = fixture.interact()
@@ -102,10 +102,10 @@ class PaperPlacementListenerTest {
             assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         }
 
-        fixture.placementService.registerMaterial(material.getKey(), PaperCitadelTypes.REINFORCED)
-        fixture.placementService.registerMaterial(material.getKey(), PaperCitadelTypes.REINFORCED)
+        fixture.materialFacade.registerPlacementDefinition(material.getKey(), PaperCitadelTypes.REINFORCED)
+        fixture.materialFacade.registerPlacementDefinition(material.getKey(), PaperCitadelTypes.REINFORCED)
         assertFailsWith<IllegalArgumentException> {
-            fixture.placementService.registerMaterial(material.getKey(), PaperCitadelTypes.INVULNERABLE)
+            fixture.materialFacade.registerPlacementDefinition(material.getKey(), PaperCitadelTypes.INVULNERABLE)
         }
         dispatch(fixture.placementListener, fixture.interact(), fixture.plugin)
 

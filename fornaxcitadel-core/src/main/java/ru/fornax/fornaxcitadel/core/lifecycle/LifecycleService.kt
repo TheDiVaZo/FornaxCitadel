@@ -7,6 +7,6 @@ interface LifecycleService {
     /** Repeated calls while enabled do not duplicate registrations. */
     fun enable()
 
-    /** Releases owned registrations and transient work; persistent data and settings remain. */
+    /** Stops active work and releases resources acquired by [enable]. */
     fun disable()
 }

@@ -14,18 +14,18 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class HandlerCoordinatorTest {
-    private val action = ActionData(Key("test", "action"), UUID(0L, 0L), 1, 2, 3)
+    private val action = Action(Key("test", "action"), UUID(0L, 0L), 1, 2, 3)
 
     @Test
     fun `direct handling matches base and specific classes in registration order`() {
         val coordinator = HandlerCoordinator()
         coordinator.handle(action)
-        val calls = mutableListOf<Pair<String, ActionData>>()
+        val calls = mutableListOf<Pair<String, Action>>()
         var unrelatedCalls = 0
         coordinator.registerHandler(handler(OtherAction::class.java) { unrelatedCalls++ })
-        coordinator.registerHandler(handler(ActionData::class.java) { calls.add("first base" to it) })
+        coordinator.registerHandler(handler(Action::class.java) { calls.add("first base" to it) })
         coordinator.registerHandler(handler(SpecialAction::class.java) { calls.add("specific" to it) })
-        coordinator.registerHandler(handler(ActionData::class.java) { calls.add("last base" to it) })
+        coordinator.registerHandler(handler(Action::class.java) { calls.add("last base" to it) })
         val special = SpecialAction()
 
         coordinator.handle(special)
@@ -44,10 +44,10 @@ class HandlerCoordinatorTest {
     fun `pending additions and removals leave every current callback in place`() {
         val coordinator = HandlerCoordinator()
         val calls = mutableListOf<String>()
-        val later = handler(ActionData::class.java) { calls.add("later") }
-        val added = handler(ActionData::class.java) { calls.add("added") }
-        lateinit var first: ActionHandler<ActionData>
-        first = handler(ActionData::class.java) {
+        val later = handler(Action::class.java) { calls.add("later") }
+        val added = handler(Action::class.java) { calls.add("added") }
+        lateinit var first: ActionHandler<Action>
+        first = handler(Action::class.java) {
             calls.add("first")
             assertTrue(coordinator.unregisterHandler(first))
             assertTrue(coordinator.unregisterHandler(later))
@@ -70,11 +70,11 @@ class HandlerCoordinatorTest {
     fun `pending membership honors duplicate additions repeated removals and add then remove`() {
         val coordinator = HandlerCoordinator()
         val calls = mutableListOf<String>()
-        val retained = handler(ActionData::class.java) { calls.add("retained") }
-        val added = handler(ActionData::class.java) { calls.add("added") }
-        val temporary = handler(ActionData::class.java) { calls.add("temporary") }
+        val retained = handler(Action::class.java) { calls.add("retained") }
+        val added = handler(Action::class.java) { calls.add("added") }
+        val temporary = handler(Action::class.java) { calls.add("temporary") }
         var change = true
-        coordinator.registerHandler(handler(ActionData::class.java) {
+        coordinator.registerHandler(handler(Action::class.java) {
             calls.add("first")
             if (change) {
                 change = false
@@ -104,11 +104,11 @@ class HandlerCoordinatorTest {
     fun `remove then register appends the same instance in deferred operation order`() {
         val coordinator = HandlerCoordinator()
         val calls = mutableListOf<String>()
-        val moved = handler(ActionData::class.java) { calls.add("moved") }
-        val retained = handler(ActionData::class.java) { calls.add("retained") }
-        val added = handler(ActionData::class.java) { calls.add("added") }
+        val moved = handler(Action::class.java) { calls.add("moved") }
+        val retained = handler(Action::class.java) { calls.add("retained") }
+        val added = handler(Action::class.java) { calls.add("added") }
         var change = true
-        coordinator.registerHandler(handler(ActionData::class.java) {
+        coordinator.registerHandler(handler(Action::class.java) {
             calls.add("first")
             if (change) {
                 change = false
@@ -138,7 +138,7 @@ class HandlerCoordinatorTest {
         val second = EqualHandler("second", calls)
         val added = EqualHandler("added", calls)
         var change = true
-        coordinator.registerHandler(handler(ActionData::class.java) {
+        coordinator.registerHandler(handler(Action::class.java) {
             if (change) {
                 change = false
                 assertFalse(coordinator.unregisterHandler(added))
@@ -172,10 +172,10 @@ class HandlerCoordinatorTest {
             val coordinator = HandlerCoordinator()
             val calls = mutableListOf<String>()
             val failure = IllegalStateException("broken handler")
-            val later = handler(ActionData::class.java) { calls.add("later") }
-            val added = handler(ActionData::class.java) { calls.add("added") }
-            lateinit var broken: ActionHandler<ActionData>
-            broken = handler(ActionData::class.java) {
+            val later = handler(Action::class.java) { calls.add("later") }
+            val added = handler(Action::class.java) { calls.add("added") }
+            lateinit var broken: ActionHandler<Action>
+            broken = handler(Action::class.java) {
                 calls.add("broken")
                 assertTrue(coordinator.unregisterHandler(broken))
                 assertTrue(coordinator.unregisterHandler(later))
@@ -199,10 +199,10 @@ class HandlerCoordinatorTest {
     fun `nested handling is rejected without changing the outer traversal or pending state`() {
         val coordinator = HandlerCoordinator()
         val calls = mutableListOf<String>()
-        val later = handler(ActionData::class.java) { calls.add("later") }
-        val added = handler(ActionData::class.java) { calls.add("added") }
+        val later = handler(Action::class.java) { calls.add("later") }
+        val added = handler(Action::class.java) { calls.add("added") }
         var recurse = true
-        coordinator.registerHandler(handler(ActionData::class.java) {
+        coordinator.registerHandler(handler(Action::class.java) {
             calls.add("first")
             if (recurse) {
                 recurse = false
@@ -228,16 +228,16 @@ class HandlerCoordinatorTest {
             val coordinator = HandlerCoordinator()
             val calls = mutableListOf<String>()
             val fatal = AssertionError("fatal handler failure")
-            val added = handler(ActionData::class.java) { calls.add("added") }
-            lateinit var broken: ActionHandler<ActionData>
-            broken = handler(ActionData::class.java) {
+            val added = handler(Action::class.java) { calls.add("added") }
+            lateinit var broken: ActionHandler<Action>
+            broken = handler(Action::class.java) {
                 calls.add("broken")
                 assertTrue(coordinator.unregisterHandler(broken))
                 coordinator.registerHandler(added)
                 throw fatal
             }
             coordinator.registerHandler(broken)
-            coordinator.registerHandler(handler(ActionData::class.java) { calls.add("later") })
+            coordinator.registerHandler(handler(Action::class.java) { calls.add("later") })
 
             assertSame(fatal, assertFailsWith<AssertionError> { coordinator.handle(action) })
 
@@ -248,7 +248,7 @@ class HandlerCoordinatorTest {
             assertEquals(listOf("later", "added"), calls)
         }
 
-    private fun <T : ActionData> handler(actionClass: Class<T>, callback: (T) -> Unit): ActionHandler<T> =
+    private fun <T : Action> handler(actionClass: Class<T>, callback: (T) -> Unit): ActionHandler<T> =
         object : ActionHandler<T> {
             override val actionClass = actionClass
             override fun handle(action: T) = callback(action)
@@ -277,12 +277,12 @@ class HandlerCoordinatorTest {
         }
     }
 
-    private class SpecialAction : ActionData(Key("test", "special"), UUID(0L, 0L), 1, 2, 3)
-    private class OtherAction : ActionData(Key("test", "other"), UUID(0L, 0L), 1, 2, 3)
+    private class SpecialAction : Action(Key("test", "special"), UUID(0L, 0L), 1, 2, 3)
+    private class OtherAction : Action(Key("test", "other"), UUID(0L, 0L), 1, 2, 3)
 
-    private class EqualHandler(private val name: String, private val calls: MutableList<String>) : ActionHandler<ActionData> {
-        override val actionClass = ActionData::class.java
-        override fun handle(action: ActionData) { calls.add(name) }
+    private class EqualHandler(private val name: String, private val calls: MutableList<String>) : ActionHandler<Action> {
+        override val actionClass = Action::class.java
+        override fun handle(action: Action) { calls.add(name) }
         override fun equals(other: Any?) = other is EqualHandler
         override fun hashCode() = 0
     }

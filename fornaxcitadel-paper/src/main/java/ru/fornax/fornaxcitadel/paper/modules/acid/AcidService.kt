@@ -10,7 +10,7 @@ import ru.fornax.fornaxcitadel.core.citadel.isOwnerOrUnowned
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.modules.health.MaturationService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
@@ -34,7 +34,7 @@ import java.util.logging.Level
 /** No acid entities or timers: every operation resolves current material and existing components. */
 class AcidService(
     private val plugin: Plugin,
-    private val actions: ActionManager,
+    private val actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val maturation: MaturationService,
     private val citadelTypes: PaperCitadelTypes,
@@ -48,25 +48,27 @@ class AcidService(
     private val scopedActions = Collections.newSetFromMap(IdentityHashMap<AcidDestroyAction, Boolean>())
     private val isChunkLoaded: ChunkLoadCheck = citadels::isChunkLoaded
     private val multiplier = AcidMaturationMultiplier(registry, plugin.server, isChunkLoaded)
+
+    init {
+        actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
+            override val actionClass = AcidDestroyAction::class.java
+            override fun validate(action: AcidDestroyAction): ActionValidator.Result =
+                if (enabled && busy && action in scopedActions) ActionValidator.Result.Success else ActionValidator.Result.Rejected
+        })
+    }
+
     fun findTarget(player: Player): Block? {
         check(plugin.server.isPrimaryThread) { "Acid lookup requires the main server thread" }
         return LoadedBlockTarget.find(player, registry.settings.maxDistance, isChunkLoaded)
-    }
-    private val validator = object : ActionValidator<AcidDestroyAction> {
-        override val actionClass = AcidDestroyAction::class.java
-        override fun validate(action: AcidDestroyAction): ActionValidator.Result =
-            if (enabled && busy && action in scopedActions) ActionValidator.Result.Success else ActionValidator.Result.Rejected
     }
 
     override fun enable() {
         if (enabled) return
         maturation.registerMultiplier(multiplier)
-        actions.registerValidator(validator)
         enabled = true
     }
 
     override fun disable() {
-        actions.unregisterValidator(validator)
         maturation.unregisterMultiplier(multiplier)
         scopedActions.clear()
         enabled = false

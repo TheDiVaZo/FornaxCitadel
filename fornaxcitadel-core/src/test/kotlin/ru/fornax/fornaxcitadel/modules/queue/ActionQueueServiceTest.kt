@@ -1,8 +1,9 @@
 package ru.fornax.fornaxcitadel.modules.queue
 
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -102,7 +103,7 @@ class ActionQueueServiceTest {
         val executed = mutableListOf<Int>()
         val failures = mutableListOf<Exception>()
         val failuresByNumber = mutableMapOf<Int, Exception>()
-        val service = ActionQueueService(actions, scheduler, maxPerTick, failures::add)
+        val service = ActionQueueService(ActionFacade(actions), scheduler, maxPerTick, failures::add)
 
         init {
             actions.registerProcessor(object : ActionProcessor<ProbeAction>() {
@@ -117,7 +118,7 @@ class ActionQueueServiceTest {
         }
     }
 
-    private class ProbeAction(val number: Int) : ActionData(PROBE_KEY, UUID(0, 1), 0, 0, 0)
+    private class ProbeAction(val number: Int) : Action(PROBE_KEY, UUID(0, 1), 0, 0, 0)
 
     private companion object {
         val PROBE_KEY = Key("test", "queued_probe")

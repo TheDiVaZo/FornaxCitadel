@@ -3,20 +3,24 @@ package ru.fornax.fornaxcitadel.core.facade
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
+import ru.fornax.fornaxcitadel.core.component.Component
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
-import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.UUID
 
 /**
  * Resolves gameplay positions and accesses their reinforcement on the owning game thread.
- * This is a trusted data operation: external mutations must still enter through ActionManager.
+ * External callers request changes through [ActionFacade] so their actions pass validation.
  */
-class CitadelFacade @JvmOverloads constructor(
+class CitadelFacade(
     private val componentManager: ComponentManager,
-    private val resolver: CitadelResolver = DirectCitadelResolver(componentManager)
+    private val resolver: CitadelResolver
 ) : ReadableCitadelFacade {
+    fun <T : Component<*>> registerComponent(key: Key, componentClass: Class<T>) =
+        componentManager.registerComponent(key, componentClass)
+
     override fun getResponsiblePosition(position: CitadelPosition): CitadelPosition {
         requireAvailable(position)
         return resolver.getResponsiblePosition(position).also(::requireAvailable)
@@ -26,10 +30,10 @@ class CitadelFacade @JvmOverloads constructor(
     override fun findProtecting(position: CitadelPosition): CitadelHandle? {
         if (!isSupported(position)) return null
         requireAvailable(position)
-        val handle = resolver.getReinforcementProtecting(position) ?: return null
-        requireAvailable(handle.position)
-        check(isCurrent(handle)) { "Resolver returned a stale or foreign citadel handle" }
-        return handle
+        return resolver.getProtectionCandidates(position).firstNotNullOfOrNull { candidate ->
+            requireAvailable(candidate)
+            findExact(candidate)
+        }
     }
 
     /** Looks up the stored reinforcement at these exact coordinates. Unavailable positions return null. */

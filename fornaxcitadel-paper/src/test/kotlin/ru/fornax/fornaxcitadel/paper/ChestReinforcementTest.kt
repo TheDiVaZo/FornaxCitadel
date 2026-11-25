@@ -94,12 +94,12 @@ class ChestReinforcementTest {
                 fixture.blockData(chestData(type, facing, material), left.testPosition())
                 assertEquals(right.testPosition(),
                     fixture.materialPlacement.getResponsiblePosition(right.testPosition()))
-                assertNull(fixture.module.citadels.findProtecting(right.testPosition()))
+                assertNull(fixture.citadels.findProtecting(right.testPosition()))
             }
             fixture.doubleChest()
             fixture.blockData(chestData(Chest.Type.SINGLE, BlockFace.NORTH), right.testPosition())
             assertEquals(right.testPosition(), fixture.materialPlacement.getResponsiblePosition(right.testPosition()))
-            assertNull(fixture.module.citadels.findProtecting(right.testPosition()))
+            assertNull(fixture.citadels.findProtecting(right.testPosition()))
         }
     }
 
@@ -119,7 +119,7 @@ class ChestReinforcementTest {
 
                     dispatch(fixture.placementListener, ordinary, fixture.plugin)
 
-                    assertNull(fixture.module.citadels.findProtecting(selected.testPosition()))
+                    assertNull(fixture.citadels.findProtecting(selected.testPosition()))
                     assertEquals(3, fixture.installer.held.amount)
                     assertEquals(ordinaryBlockUse, ordinary.useInteractedBlock())
                     assertEquals(ordinaryItemUse, ordinary.useItemInHand())
@@ -135,8 +135,8 @@ class ChestReinforcementTest {
                         assertEquals(if (index == 0) Event.Result.DENY else itemUse, event.useItemInHand())
                     }
                     assertEquals(2, fixture.installer.held.amount)
-                    assertNotNull(fixture.materialPlacement.findExact(selected))
-                    assertNull(fixture.materialPlacement.findExact(other))
+                    assertNotNull(fixture.citadels.findExact(selected.testPosition()))
+                    assertNull(fixture.citadels.findExact(other.testPosition()))
                 }
             }
         }
@@ -150,15 +150,15 @@ class ChestReinforcementTest {
                 val legacy = fixture.placeExact(if (legacyLeft) left else right)
                 for (part in listOf(left, right)) {
                     assertEquals(legacy.runtimeId,
-                        assertNotNull(fixture.module.citadels.findProtecting(part.testPosition())).runtimeId)
-                    assertEquals(ActionResult.DENIED, fixture.module.actions.execute(PlaceAction(
+                        assertNotNull(fixture.citadels.findProtecting(part.testPosition())).runtimeId)
+                    assertEquals(ActionResult.DENIED, fixture.actions.execute(PlaceAction(
                         fixture.context(fixture.installer), part.testPosition(), PaperCitadelTypes.REINFORCED)))
                 }
                 val other = fixture.placeExact(if (legacyLeft) right else left)
                 assertEquals(legacy.runtimeId,
-                    assertNotNull(fixture.module.citadels.findProtecting(legacy.position)).runtimeId)
+                    assertNotNull(fixture.citadels.findProtecting(legacy.position)).runtimeId)
                 assertEquals(other.runtimeId,
-                    assertNotNull(fixture.module.citadels.findProtecting(other.position)).runtimeId)
+                    assertNotNull(fixture.citadels.findProtecting(other.position)).runtimeId)
             }
         }
     }
@@ -175,9 +175,9 @@ class ChestReinforcementTest {
                     fixture.blockData(chestData(Chest.Type.SINGLE, BlockFace.NORTH), part.testPosition())
                 }
                 assertEquals(handle.runtimeId,
-                    assertNotNull(fixture.module.citadels.findProtecting(reinforced.testPosition())).runtimeId)
-                assertNull(fixture.module.citadels.findProtecting(unreinforced.testPosition()))
-                assertNull(fixture.materialPlacement.findExact(unreinforced))
+                    assertNotNull(fixture.citadels.findProtecting(reinforced.testPosition())).runtimeId)
+                assertNull(fixture.citadels.findProtecting(unreinforced.testPosition()))
+                assertNull(fixture.citadels.findExact(unreinforced.testPosition()))
                 assertTrue(handle.isCurrent)
                 assertEquals(reinforced.testPosition(), handle.position)
             }
@@ -192,25 +192,25 @@ class ChestReinforcementTest {
                 val selected = (if (selectLeft) left else right).testPosition()
                 val source = (if (selectLeft) right else left).testPosition()
                 val observed = mutableListOf<CitadelPosition>()
-                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         observed.add(action.position)
                         return ActionValidator.Result.Neutral
                     }
                 })
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+                assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
                     fixture.context(fixture.installer), selected, PaperCitadelTypes.REINFORCED)))
-                val handle = assertNotNull(fixture.module.citadels.findProtecting(source))
+                val handle = assertNotNull(fixture.citadels.findProtecting(source))
                 assertEquals(selected, handle.position)
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(DamageAction(
+                assertEquals(ActionResult.SUCCESS, fixture.actions.execute(DamageAction(
                     fixture.context(fixture.stranger), source, 8.0)))
-                fixture.module.actions.post(DamageAction(fixture.context(fixture.stranger), source, 7.0))
-                assertEquals(1, fixture.module.actions.drainPosted())
+                fixture.actions.post(DamageAction(fixture.context(fixture.stranger), source, 7.0))
+                assertEquals(1, fixture.actions.drainPosted())
                 assertEquals(listOf(source, source), observed)
                 assertEquals(85.0, handle.getComponent(Health::class.java)?.health)
                 fixture.installer.permissions.add("fornaxcitadel.admin")
-                assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(RemoveAction(
+                assertEquals(ActionResult.SUCCESS, fixture.actions.execute(RemoveAction(
                     fixture.context(fixture.installer), source)))
                 assertFalse(handle.isCurrent)
             }
@@ -231,7 +231,7 @@ class ChestReinforcementTest {
                 })
                 val command = fixture.command(messages = messages)
                 command.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "reinforced"))
-                val handle = assertNotNull(fixture.module.citadels.findProtecting(other.testPosition()))
+                val handle = assertNotNull(fixture.citadels.findProtecting(other.testPosition()))
                 assertEquals(selected.testPosition(), handle.position)
                 fixture.installer.target = other
                 command.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("info"))
@@ -253,7 +253,7 @@ class ChestReinforcementTest {
                 val other = if (selectLeft) right else left
                 val handle = fixture.placeExact(selected)
                 var hits = 0
-                fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+                fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun validate(action: DamageAction): ActionValidator.Result {
                         hits++
@@ -286,26 +286,26 @@ class ChestReinforcementTest {
             val (left, right) = fixture.doubleChest(x = 16, facing = BlockFace.SOUTH)
             assertEquals(right.testPosition(), fixture.materialPlacement.getResponsiblePosition(right.testPosition()))
             assertFailsWith<CitadelResolutionUnavailableException> {
-                fixture.module.citadels.findProtecting(right.testPosition())
+                fixture.citadels.findProtecting(right.testPosition())
             }
             val breaking = BlockBreakEvent(right, fixture.stranger.player)
             dispatch(fixture.breakingListener, breaking, fixture.plugin)
             assertTrue(breaking.isCancelled)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(PlaceAction(
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(PlaceAction(
                 fixture.context(fixture.installer), right.testPosition(), PaperCitadelTypes.REINFORCED)))
             assertFalse(fixture.manager.isChunkLoaded(fixture.worldId, 1, 0))
             assertFalse(1 to 0 in fixture.loadedWorldChunks)
             fixture.loadedWorldChunks.add(1 to 0)
             assertEquals(right.testPosition(), fixture.materialPlacement.getResponsiblePosition(right.testPosition()))
             assertFailsWith<CitadelResolutionUnavailableException> {
-                fixture.module.citadels.findProtecting(right.testPosition())
+                fixture.citadels.findProtecting(right.testPosition())
             }
             fixture.loadChunk(1, 0)
             assertEquals(right.testPosition(), fixture.materialPlacement.getResponsiblePosition(right.testPosition()))
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
                 fixture.context(fixture.installer), right.testPosition(), PaperCitadelTypes.REINFORCED)))
-            assertNotNull(fixture.materialPlacement.findExact(right))
-            assertNull(fixture.materialPlacement.findExact(left))
+            assertNotNull(fixture.citadels.findExact(right.testPosition()))
+            assertNull(fixture.citadels.findExact(left.testPosition()))
         }
     }
 
@@ -314,7 +314,7 @@ class ChestReinforcementTest {
         PaperTestFixture(permissions = true).use { fixture ->
             for (material in listOf(Material.CHEST, Material.TRAPPED_CHEST) + copperChestMaterials) {
                 val (_, right) = fixture.doubleChest(leftMaterial = material)
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(PlaceAction(
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(PlaceAction(
                     fixture.context(fixture.installer), right.testPosition(), PaperCitadelTypes.REINFORCED)))
             }
             val defaultRule = fixture.materialPlacement.getRule(Key("minecraft", "stone"))

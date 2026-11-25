@@ -5,13 +5,14 @@ import org.bukkit.block.Block
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 
 /** Validators never load a world or chunk just to inspect a placement target. */
-internal fun Server.findLoadedPlacementBlock(action: ActionData, citadels: ReadableCitadelFacade? = null): Block? {
-    if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ)) return null
+internal fun Server.findLoadedPlacementBlock(action: Action, citadels: ReadableCitadelFacade? = null): Block? {
+    val target = action.position
+    if (!CitadelPosition.isSupported(target.x, target.y, target.z)) return null
     val position = try {
-        citadels?.getResponsiblePosition(action.position) ?: action.position
+        citadels?.getResponsiblePosition(target) ?: target
     } catch (_: CitadelResolutionUnavailableException) {
         return null
     }

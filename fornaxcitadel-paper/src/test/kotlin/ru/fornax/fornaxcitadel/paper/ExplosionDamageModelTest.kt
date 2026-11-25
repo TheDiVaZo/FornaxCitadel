@@ -138,7 +138,7 @@ class ExplosionDamageModelTest {
             ExplosionSource.fromBlock(blockState, 5.0f)
         )
         val observed = mutableListOf<DamageAction>()
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction): ActionValidator.Result {
                 observed.add(action)
@@ -146,7 +146,7 @@ class ExplosionDamageModelTest {
             }
         })
         for (source in sources) {
-            fixture.module.actions.post(DamageAction(ActionContext(fixture.installer.id, source), fixture.position, 12.0))
+            fixture.actions.post(DamageAction(ActionContext(fixture.installer.id, source), fixture.position, 12.0))
         }
 
         center.x = 1000.0
@@ -155,7 +155,7 @@ class ExplosionDamageModelTest {
         entityType = EntityType.COW
         material = Material.AIR
 
-        assertEquals(2, fixture.module.actions.drainPosted())
+        assertEquals(2, fixture.actions.drainPosted())
         assertEquals(76.0, fixture.health())
         assertEquals(2, observed.size)
         assertTrue(observed.all { it.javaClass == DamageAction::class.java && it.type == DamageAction.KEY })

@@ -31,10 +31,10 @@ class AcidIntegrationTest {
                     reinforce(f, f.block())
                     f.material(material)
                 } else acid(f)
-                val source = assertNotNull(f.module.citadels.findProtecting(f.position))
+                val source = assertNotNull(f.citadels.findProtecting(f.position))
                 val target = f.block(2, 64, 2)
                 reinforce(f, target)
-                val reinforcement = assertNotNull(f.module.citadels.findProtecting(target.testPosition()))
+                val reinforcement = assertNotNull(f.citadels.findProtecting(target.testPosition()))
                 if (!retainSource) f.material(material, target.testPosition())
 
                 assertEquals(AcidResult.Activated(1), activate(f))
@@ -91,11 +91,11 @@ class AcidIntegrationTest {
 
     @Test
     fun `one compound provider call owns both parts and may refuse without preserving the reinforcement`() {
-        for (door in listOf(false, true)) for (refuse in listOf(false, true)) fixture().use { f ->
+        for (door in listOf(false, true)) for (refuse in listOf(false, true)) fixture(settings = null).use { f ->
             acid(f)
             val (first, second) = if (door) f.door(2, 64, 2) else f.bed(2, 64, 2)
             reinforce(f, first)
-            val target = assertNotNull(f.module.citadels.findProtecting(first.testPosition()))
+            val target = assertNotNull(f.citadels.findProtecting(first.testPosition()))
             var attempts = 0
             val delegate = assertNotNull(f.dismantleMaterials.getTypeOrNull(first))
             val adapter = object : MaterialAdapter by delegate {
@@ -164,7 +164,7 @@ class AcidIntegrationTest {
     @Test
     fun `missing and refusing container providers preserve inventories and double chest links`() {
         for (chest in listOf(false, true)) for (missing in listOf(false, true)) {
-            fixture().use { f ->
+            fixture(settings = null).use { f ->
                 acid(f)
                 val (target, partner) = if (chest) f.doubleChest(2, 64, 2) else {
                     val block = f.block(2, 64, 2)
@@ -172,7 +172,7 @@ class AcidIntegrationTest {
                     block to null
                 }
                 reinforce(f, target)
-                val reinforcement = assertNotNull(f.module.citadels.findProtecting(target.testPosition()))
+                val reinforcement = assertNotNull(f.citadels.findProtecting(target.testPosition()))
                 val targetKey = Triple(target.x, target.y, target.z)
                 val contents = TestItemStack(Material.EMERALD, 7)
                 f.inventories[targetKey] = arrayOf(contents)
@@ -256,7 +256,7 @@ class AcidIntegrationTest {
         assertTrue(source.isEmpty && first.isEmpty)
         assertFalse(last.isEmpty)
         f.loadChunk(1, 0)
-        assertNotNull(f.module.citadels.findProtecting(last.testPosition()))
+        assertNotNull(f.citadels.findProtecting(last.testPosition()))
     }
 
     @Test
@@ -287,7 +287,7 @@ class AcidIntegrationTest {
             fixture(AcidSettings(types = listOf(AcidType("multipart", material, 1, 1.0)))).use { f ->
                 val (first, second) = if (material == Material.OAK_DOOR) f.door() else f.bed(1, 64, 2)
                 reinforce(f, second)
-                val source = assertNotNull(f.module.citadels.findProtecting(first.testPosition()))
+                val source = assertNotNull(f.citadels.findProtecting(first.testPosition()))
                 val anchor = if (first.testPosition() == source.position) first else second
                 val clicked = if (anchor === first) second else first
                 val target = anchor.getRelative(org.bukkit.block.BlockFace.NORTH)
@@ -404,27 +404,25 @@ class AcidIntegrationTest {
     }
     private fun reinforce(f: PaperTestFixture, block: Block) {
         val type = PaperCitadelTypes.REINFORCED
-        assertEquals(ActionResult.SUCCESS, f.module.actions.execute(PlaceAction(f.context(f.installer), block.testPosition(), type)))
+        assertEquals(ActionResult.SUCCESS, f.actions.execute(PlaceAction(f.context(f.installer), block.testPosition(), type)))
     }
     private fun PaperTestFixture.vetoAcid(predicate: (AcidDestroyAction) -> Boolean) {
-        module.actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
+        actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
             override val actionClass = AcidDestroyAction::class.java
             override fun validate(action: AcidDestroyAction) = if (predicate(action))
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
         })
     }
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
-        val original = assertNotNull(f.acidService)
-        original.disable()
         val service = AcidService(
-            f.plugin, f.module.actions, f.module.citadels, f.module.coreAddon.health.maturation,
-            f.citadelTypes, materials, f.materialPlacement, f.breakingService, original.registry
+            f.plugin, f.actionFacade, f.citadels, f.coreAddon.health.maturation,
+            f.citadelTypes, materials, f.materialPlacement, f.breakingService, AcidRegistry(AcidSettings())
         )
         service.enable()
         try { body(service) } finally { service.disable() }
     }
     private fun activate(f: PaperTestFixture) = f.acidService!!.activate(f.installer.player, f.block())
-    private fun fixture(settings: AcidSettings = AcidSettings()) = PaperTestFixture(permissions = true,
+    private fun fixture(settings: AcidSettings? = AcidSettings()) = PaperTestFixture(permissions = true,
         placementSettings = PlacementSettings(BlockListType.BLACKLIST, emptySet()), acidSettings = settings)
     private object TestCommand : Command("citadel") {
         override fun execute(sender: CommandSender, commandLabel: String, args: Array<out String>) = error("unused")

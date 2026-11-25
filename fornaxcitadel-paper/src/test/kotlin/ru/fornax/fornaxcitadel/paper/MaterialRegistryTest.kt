@@ -242,16 +242,25 @@ class MaterialRegistryTest {
     }
 
     @Test
-    fun `default registry supplies only vanilla materials until an external provider registers`() {
-        val fixture = PaperTestFixture(initializeSystems = false)
-        assertNull(fixture.materials.getType(PaperCitadelTypes.REINFORCED))
-        assertSame(BukkitMaterialRegistry[Material.AMETHYST_SHARD],
-            fixture.materials.getTypeOrNull(TestItemStack(Material.AMETHYST_SHARD, 1)))
-        assertSame(BukkitMaterialRegistry[Material.STONE], fixture.materials.getTypeOrNull(fixture.block()))
+    fun `material facade registers providers in the gameplay registry and resolves their items and blocks`() =
+        PaperTestFixture(initializeSystems = false).use { fixture ->
+            val facade = fixture.materialFacade
+            val block = fixture.block()
+            val key = PaperCitadelTypes.REINFORCED
+            assertNull(facade.getType(key))
+            assertSame(BukkitMaterialRegistry[Material.AMETHYST_SHARD],
+                facade.getTypeOrNull(TestItemStack(Material.AMETHYST_SHARD, 1)))
+            assertSame(BukkitMaterialRegistry[Material.STONE], facade.getTypeOrNull(block))
 
-        val custom = TestMaterialAdapter(PaperCitadelTypes.REINFORCED)
-        assertTrue(fixture.materials.register("fornaxcitadel", TestMaterialRegistry(custom)))
-        assertSame(custom, fixture.materials.getType(PaperCitadelTypes.REINFORCED))
-        assertSame(custom, fixture.materials.getTypeOrNull(custom.createItemStack(1)))
-    }
+            val custom = TestMaterialAdapter(key, taggedBlock = block)
+            val provider = TestMaterialRegistry(custom)
+            assertFailsWith<IllegalArgumentException> { facade.registerMaterial(key.namespace, facade) }
+            assertFailsWith<IllegalArgumentException> { facade.registerMaterial("minecraft", provider) }
+            assertTrue(facade.registerMaterial(key.namespace, provider))
+            assertFalse(facade.registerMaterial(key.namespace, TestMaterialRegistry()))
+            assertSame(custom, fixture.materials.getType(key))
+            assertSame(custom, facade.getType(key))
+            assertSame(custom, facade.getTypeOrNull(custom.createItemStack(1)))
+            assertSame(custom, facade.getTypeOrNull(block))
+        }
 }

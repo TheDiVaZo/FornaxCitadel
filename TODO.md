@@ -17,7 +17,7 @@
 - [X] Добавить ленивую инициализацию Health из актуального health.max при первом изменении HP; чтение и ремонт полного здоровья не создают компонент.
 - [X] Запретить ремонт, улучшение и снятие укреплений без CitadelOwner; владелец назначается при установке ([правила](docs/reinforcement-upgrades.md)).
 - [X] Разрушать цитадели без Health и health.max любым разрешённым уроном, включая нулевой; явный damage-policy: deny сохраняет бессмертие.
-- [ ] вынести Readable интерфейсы компонентов в API. Вообще, разработать публичное API для плагинов и API для аддонов.
+- [X] вынести Readable интерфейсы компонентов в API. Вообще, разработать публичное API для плагинов и API для аддонов.
 - [ ] переработать конфигурацию
 - [ ] Протестировать весь плагин
 - [ ] Сделать механизм подключения компонентов к цитаделям через citadel-types
@@ -83,8 +83,8 @@
 ## P2 — Граница API для сторонних плагинов
 
 - [ ] Отделить внешний API запросов от доверенных низкоуровневых операций до публикации SDK.
-  - `CitadelModule` открывает сервисы `place`, `remove`, `health` и фасад `citadels`. Требование выполнять внешние запросы через конвейер действий сейчас выражено преимущественно в документации.
+  - `CoreAddon` открывает сервисы `place`, `remove` и `health`. Требование выполнять внешние запросы через конвейер действий сейчас выражено преимущественно в документации.
   - Предоставить узкий интерфейс запросов и чтения состояния, а операции непосредственного изменения и управления жизненным циклом оставить внутренним API. Отдельно определить разрешённые точки регистрации расширений.
   - Проверить: внешние запросы проходят необходимые валидаторы и политики; внутренние операции согласования с состоянием мира сохраняют требуемые возможности.
 
-Код: [CitadelModule.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/modules/CitadelModule.kt), [ActionManager.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/facade/ActionManager.kt), [FornaxCitadel.kt](fornaxcitadel-paper/src/main/java/ru/fornax/fornaxcitadel/paper/FornaxCitadel.kt).
+Код: [CoreAddon.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/addon/CoreAddon.kt), [ActionManager.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/facade/ActionManager.kt), [FornaxCitadel.kt](fornaxcitadel-paper/src/main/java/ru/fornax/fornaxcitadel/paper/FornaxCitadel.kt).

@@ -37,10 +37,14 @@ import org.bukkit.plugin.PluginManager
 import org.bukkit.plugin.RegisteredListener
 import org.bukkit.scheduler.BukkitScheduler
 import org.bukkit.scheduler.BukkitTask
+import ru.fornax.fornaxcitadel.addon.CoreAddon
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
-import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
+import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.scheduler.ScheduledTask
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
@@ -51,13 +55,13 @@ import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
-import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
+import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
+import ru.fornax.fornaxcitadel.paper.material.MaterialFacade
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingListener
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
@@ -69,7 +73,6 @@ import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
-import ru.fornax.fornaxcitadel.core.systems.action.ValidatorRegistration
 import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
@@ -94,6 +97,11 @@ import java.util.concurrent.Executor
 import java.util.logging.Logger
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+
+internal object ExactTestCitadelResolver : CitadelResolver {
+    override fun getResponsiblePosition(position: CitadelPosition) = position
+    override fun getProtectionCandidates(position: CitadelPosition) = sequenceOf(position)
+}
 
 /** Real core lifecycle with a deliberately small Bukkit interface boundary. */
 internal class PaperTestFixture(
@@ -120,15 +128,16 @@ internal class PaperTestFixture(
             )
         )
     ),
-    moduleSchedulerFactory: (Plugin) -> Scheduler = { ManualScheduler() },
-    initializeModule: Boolean = true,
+    queueSchedulerFactory: (Plugin) -> Scheduler = { ManualScheduler() },
+    startQueue: Boolean = true,
     maxActionsPerTick: Int = 1024,
     messages: PaperMessages = PaperMessages.defaults(),
     creativeModeEnabled: Boolean = true,
     resolveMaterials: Boolean = true,
     dismantleSettings: DismantleSettings = DismantleSettings(),
     dismantleRandom: () -> Double = { 0.0 },
-    acidSettings: AcidSettings? = null
+    acidSettings: AcidSettings? = null,
+    serviceMaterials: (MaterialRegistry) -> MaterialRegistry = { it }
 ) : AutoCloseable {
     val worldId = UUID(1L, 2L)
     val position = CitadelPosition(worldId, 1, 64, 2)
@@ -160,6 +169,7 @@ internal class PaperTestFixture(
     private val listenerHistory = mutableListOf<Pair<Listener, Plugin>>()
     private val listenerHandlers by lazy { HandlerList() }
     var listenerRegistrationFailure: RuntimeException? = null
+    var failingListenerType: Class<out Listener> = Listener::class.java
     val listenerRegistrations: List<Pair<Listener, Plugin>>
         get() = if (!trackListenerLifecycle) listenerHistory else listenerHandlers.registeredListeners.map {
             it.listener to it.plugin
@@ -248,7 +258,7 @@ internal class PaperTestFixture(
                     listenerHandlers.register(RegisteredListener(listener, EventExecutor { _, _ -> },
                         EventPriority.NORMAL, owner, false))
                 }
-                listenerRegistrationFailure?.let { throw it }
+                if (failingListenerType.isInstance(listener)) listenerRegistrationFailure?.let { throw it }
                 null
             }
             else -> unsupported(method)
@@ -268,26 +278,31 @@ internal class PaperTestFixture(
     val backend = MemoryBackend()
     val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
     val manager = ComponentManager(storage, types)
-    private val moduleScheduler = moduleSchedulerFactory(plugin)
+    private val queueScheduler = queueSchedulerFactory(plugin)
     val citadelTypes = PaperCitadelTypes(citadelSettings)
-    private val permissionValidator = PaperPermissionValidator(citadelTypes)
     val materials = CombineMaterialRegistry()
-    val materialPlacement = MaterialPlacementService(server, materials, manager)
-    val module = CitadelModule(manager, moduleScheduler,
-        resolver = if (resolveMaterials) materialPlacement else DirectCitadelResolver(manager),
-        actionSettings = ActionSettings(maxActionsPerTick))
-    val actionValidationService = ValidatorRegistration(module.actions, PaperActionStateValidator(server))
-    val permissionService = ValidatorRegistration(module.actions, permissionValidator)
-    val damageValidationService = ValidatorRegistration(module.actions,
-        PaperDamageValidator(module.citadels, citadelTypes, creativeModeEnabled))
+    val materialPlacement = MaterialPlacementService(server, materials, manager::isChunkLoaded)
+    val actions = ActionManager()
+    val actionFacade = ActionFacade(actions)
+    val citadels = CitadelFacade(manager, if (resolveMaterials) materialPlacement else ExactTestCitadelResolver)
+    val coreAddon = CoreAddon(citadels, actionFacade)
+    val actionQueue = ActionQueueService(actionFacade, queueScheduler, maxActionsPerTick)
+    val pluginQueue = PluginActionQueue(actionQueue, actions)
+    init {
+        actionFacade.registerValidator(PaperActionStateValidator(server))
+        if (permissions) actionFacade.registerValidator(PaperPermissionValidator(citadelTypes))
+        actionFacade.registerValidator(PaperDamageValidator(citadels, citadelTypes, creativeModeEnabled))
+    }
+
     val placementService = PaperPlacementService(
-        plugin, module.actions, module.citadels, module.coreAddon.health,
+        plugin, actionFacade, citadels, coreAddon.health,
         citadelTypes, materials, placementSettings, messages
     ).also { service ->
         citadelTypes.keys.forEach { definition ->
             service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
         }
     }
+    val materialFacade = MaterialFacade(materials, materialPlacement, placementService)
     val playerDamage = PlayerDamageModifierService()
     // Vanilla item creation normally needs the running server's item factory; use the test stack at that boundary.
     val dismantleMaterials = object : MaterialRegistry by materials {
@@ -307,29 +322,29 @@ internal class PaperTestFixture(
         }
     }
     val dismantleService = PaperDismantleService(
-        plugin, module.actions, module.citadels, module.coreAddon.health, module.coreAddon.remove,
-        citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom
+        plugin, actionFacade, citadels, coreAddon.health, coreAddon.remove,
+        citadelTypes, serviceMaterials(dismantleMaterials), dismantleSettings, dismantleRandom
     )
     val repairService = PaperRepairService(
-        module.actions, module.citadels, module.coreAddon.health, citadelTypes, materials
+        actionFacade, citadels, coreAddon.health, citadelTypes, serviceMaterials(materials)
     )
     val upgradeService = PaperUpgradeService(
-        plugin, module.actions, module.citadels, module.definitions, module.coreAddon.health,
-        citadelTypes, dismantleMaterials, dismantleSettings, dismantleRandom
+        plugin, actionFacade, citadels, coreAddon.definitions, coreAddon.health,
+        citadelTypes, serviceMaterials(dismantleMaterials), dismantleSettings, dismantleRandom
     )
     val breakingService = PaperBreakingService(
-        plugin, module.actions, module.citadels, module.coreAddon.remove, playerDamage, messages, creativeModeEnabled
+        plugin, actionFacade, citadels, coreAddon.remove, playerDamage, messages, creativeModeEnabled
     )
     val acidService = acidSettings?.let {
         AcidService(
-            plugin, module.actions, module.citadels, module.coreAddon.health.maturation,
+            plugin, actionFacade, citadels, coreAddon.health.maturation,
             citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it)
         )
     }
     val explosionService = PaperExplosionService(
-        plugin, module.actions, module.citadels, module.coreAddon.remove, explosionPowers
+        plugin, actionFacade, citadels, coreAddon.remove, explosionPowers
     )
-    val environmentService = PaperEnvironmentService(plugin, module.citadels)
+    val environmentService = PaperEnvironmentService(plugin, citadels)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
     val breakingListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperBreakingListener>().single()
     val explosionListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperExplosionListener>().single()
@@ -338,14 +353,8 @@ internal class PaperTestFixture(
     val stranger = player(UUID(5L, 6L), "stranger")
 
     init {
-        if (registerTypes) citadelTypes.register(module.definitions, module.coreAddon.health)
-        actionValidationService.enable()
-        if (permissions) permissionService.enable()
-        damageValidationService.enable()
-        if (initializeModule) {
-            module.coreAddon.onEnable()
-            module.enable()
-        }
+        if (registerTypes) citadelTypes.register(coreAddon)
+        if (startQueue) pluginQueue.enable()
         if (initializeSystems) {
             dismantleService.enable()
             repairService.enable()
@@ -364,7 +373,7 @@ internal class PaperTestFixture(
         messages: PaperMessages = PaperMessages.defaults(),
         acid: AcidService? = null,
         save: () -> Unit = {}
-    ) = CitadelCommand(plugin, module.actions, module.citadels, module.coreAddon.health,
+    ) = CitadelCommand(plugin, actionFacade, citadels, coreAddon.health,
         materials, citadelTypes, messages, acid, save)
 
     fun player(id: UUID, name: String): TestPlayer = TestPlayer(id, name, world).also { player ->
@@ -506,7 +515,7 @@ internal class PaperTestFixture(
     }
 
     fun place(type: Key = PaperCitadelTypes.REINFORCED) {
-        assertEquals(ActionResult.SUCCESS, module.actions.execute(
+        assertEquals(ActionResult.SUCCESS, actions.execute(
             PlaceAction(context(installer), position, type)))
     }
 
@@ -552,12 +561,8 @@ internal class PaperTestFixture(
         upgradeService.disable()
         dismantleService.disable()
         placementService.disable()
-        module.disable()
-        module.coreAddon.onDisable()
-        damageValidationService.disable()
-        permissionService.disable()
-        actionValidationService.disable()
-        (moduleScheduler as? AutoCloseable)?.close()
+        pluginQueue.disable()
+        (queueScheduler as? AutoCloseable)?.close()
         HandlerList.unregisterAll(plugin)
     }
 }

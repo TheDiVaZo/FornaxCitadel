@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.modules.queue
 
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.scheduler.ScheduledTask
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
@@ -9,7 +9,7 @@ import java.util.logging.Logger
 
 /** Drains posted actions each tick. Disabling the service preserves pending actions. */
 class ActionQueueService(
-    private val actions: ActionManager,
+    private val actions: ActionFacade,
     private val scheduler: Scheduler,
     private val settings: ActionSettings
 ) : LifecycleService {
@@ -17,7 +17,7 @@ class ActionQueueService(
 
     @JvmOverloads
     constructor(
-        actions: ActionManager,
+        actions: ActionFacade,
         scheduler: Scheduler,
         maxPerTick: Int,
         failureHandler: (Exception) -> Unit = DEFAULT_FAILURE_HANDLER

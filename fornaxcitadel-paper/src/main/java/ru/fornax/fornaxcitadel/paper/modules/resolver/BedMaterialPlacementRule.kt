@@ -3,13 +3,11 @@ package ru.fornax.fornaxcitadel.paper.modules.resolver
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.block.data.type.Bed
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 
 /** Both bed halves place at the head; old reinforcement on either half stays accessible. */
 class BedMaterialPlacementRule(
-    findExact: (Block) -> CitadelHandle?,
     private val findRelative: (Block, BlockFace) -> Block?
-) : DefaultMaterialPlacementRule(findExact) {
+) : DefaultMaterialPlacementRule() {
     override fun getResponsibleBlock(block: Block): Block {
         val bed = block.blockData as? Bed ?: return block
         return if (bed.part == Bed.Part.FOOT) getRelatedBlock(block) ?: block else block

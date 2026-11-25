@@ -2,15 +2,18 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.event.Listener
 import org.bukkit.event.world.WorldUnloadEvent
+import ru.fornax.fornaxcitadel.addon.CoreAddon
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.component.TypeManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
-import ru.fornax.fornaxcitadel.modules.CitadelModule
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
@@ -228,25 +231,25 @@ class PaperChunkServiceTest {
         private val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler,
             ChunkCordSnapshotMapper(types), Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
-        private val module = CitadelModule(manager, ManualScheduler())
+        private val actions = ActionManager()
+        private val citadels = CitadelFacade(manager, ExactTestCitadelResolver)
+        private val coreAddon = CoreAddon(citadels, ActionFacade(actions))
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
 
         init {
-            module.coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
-            module.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(module.coreAddon.health))))
-            module.actions.registerValidator(
-                PaperDamageValidator(module.citadels, paper.citadelTypes, true))
-            module.coreAddon.onEnable()
-            module.enable()
+            coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
+            coreAddon.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreAddon.health))))
+            actions.registerValidator(
+                PaperDamageValidator(citadels, paper.citadelTypes, true))
         }
 
         fun place() {
-            assertEquals(ActionResult.SUCCESS, module.actions.execute(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, actions.execute(PlaceAction(
                 paper.context(paper.installer), paper.position, PaperCitadelTypes.REINFORCED)))
         }
 
         fun damage(amount: Double) {
-            assertEquals(ActionResult.SUCCESS, module.actions.execute(DamageAction(
+            assertEquals(ActionResult.SUCCESS, actions.execute(DamageAction(
                 paper.context(paper.stranger), paper.position, amount)))
         }
 
@@ -262,8 +265,6 @@ class PaperChunkServiceTest {
             paper.schedulerFailure = null
             service.disable()
             manager.closeAndSaveAll().join()
-            module.disable()
-            module.coreAddon.onDisable()
             paper.close()
         }
     }

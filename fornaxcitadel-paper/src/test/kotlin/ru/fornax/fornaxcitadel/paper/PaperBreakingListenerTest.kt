@@ -32,7 +32,7 @@ class PaperBreakingListenerTest {
             var modifierCalls = 0
             fixture.playerDamage.register(PlayerDamageModifier { _, _, current -> modifierCalls++; current * 2.0 })
             val sourceDamage = mutableListOf<Double>()
-            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result {
                     sourceDamage.add(action.damage)
@@ -43,7 +43,7 @@ class PaperBreakingListenerTest {
             dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
 
             assertEquals(32.0, fixture.health())
-            assertEquals(40.0, fixture.module.coreAddon.health.maxHealth(target))
+            assertEquals(40.0, fixture.coreAddon.health.maxHealth(target))
             assertEquals(listOf(2.0), sourceDamage)
             assertEquals(1, modifierCalls)
             fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()
@@ -66,7 +66,7 @@ class PaperBreakingListenerTest {
     @Test
     fun `explicit removal of damage protected reinforcement preserves the physical block`() {
         val fixture = PaperTestFixture(permissions = true)
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
         })
@@ -82,14 +82,14 @@ class PaperBreakingListenerTest {
 
         assertTrue(breaking.isCancelled)
         assertEquals(100.0, fixture.health())
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
             override fun validate(action: DamageAction) = ActionValidator.Result.Rejected
         })
         val removal = RemoveAction(fixture.context(fixture.installer), fixture.position)
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(removal))
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(removal))
         fixture.installer.permissions.add("fornaxcitadel.admin")
-        assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(removal))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(removal))
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(0, fixture.vanillaBlockChanges)
         val nextAttempt = BlockBreakEvent(fixture.block(), fixture.installer.player)
@@ -137,7 +137,7 @@ class PaperBreakingListenerTest {
         var nestedEvents = 0
         fixture.beforeBreakEvent = {
             assertTrue(lethal.isCancelled)
-            assertNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertNull(fixture.citadels.findProtecting(fixture.position))
         }
         fixture.afterBreakEvent = {
             nestedEvents++
@@ -177,7 +177,7 @@ class PaperBreakingListenerTest {
                 dispatch(fixture.breakingListener, lethal, fixture.plugin)
 
                 assertTrue(lethal.isCancelled, failure)
-                assertNull(fixture.module.citadels.findProtecting(fixture.position), failure)
+                assertNull(fixture.citadels.findProtecting(fixture.position), failure)
                 assertEquals(Material.STONE, fixture.block().type, failure)
                 assertEquals(0, fixture.vanillaBlockChanges, failure)
                 assertEquals(1, attempts, failure)
@@ -190,7 +190,7 @@ class PaperBreakingListenerTest {
                 dispatch(fixture.breakingListener, retry, fixture.plugin)
 
                 assertTrue(retry.isCancelled, failure)
-                assertNull(fixture.module.citadels.findProtecting(fixture.position), failure)
+                assertNull(fixture.citadels.findProtecting(fixture.position), failure)
                 assertEquals(Material.AIR, fixture.block().type, failure)
                 assertEquals(1, fixture.vanillaBlockChanges, failure)
             }
@@ -202,7 +202,7 @@ class PaperBreakingListenerTest {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.place()
             fixture.playerDamage.register(PlayerDamageModifier { _, _, _ -> 100.0 })
-            fixture.module.actions.registerHandler(object : ActionHandler<DamageAction> {
+            fixture.actions.registerHandler(object : ActionHandler<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun handle(action: DamageAction) { fixture.material(Material.AIR) }
             })
@@ -211,7 +211,7 @@ class PaperBreakingListenerTest {
             dispatch(fixture.breakingListener, lethal, fixture.plugin)
 
             assertTrue(lethal.isCancelled)
-            assertNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertNull(fixture.citadels.findProtecting(fixture.position))
             assertEquals(Material.AIR, fixture.block().type)
             assertTrue(fixture.playerBreaks.isEmpty())
         }
@@ -235,7 +235,7 @@ class PaperBreakingListenerTest {
         fixture.place()
         val event = BlockBreakEvent(fixture.block(), fixture.stranger.player)
         var cancelledDuringValidation: Boolean? = null
-        fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+        fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
 
             override fun validate(action: DamageAction): ActionValidator.Result {
@@ -277,7 +277,7 @@ class PaperBreakingListenerTest {
 
         assertTrue(event.isCancelled)
         assertEquals(100.0, fixture.health())
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
             DamageAction(fixture.context(fixture.installer), fixture.position, 100.0)
         ))
         assertEquals(100.0, fixture.health())
@@ -306,7 +306,7 @@ class PaperBreakingListenerTest {
         dispatch(fixture.breakingListener, event, fixture.plugin)
         assertTrue(event.isCancelled)
         assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-        assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
             DamageAction(fixture.context(fixture.stranger), fixture.position, 100.0)
         ))
         assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))

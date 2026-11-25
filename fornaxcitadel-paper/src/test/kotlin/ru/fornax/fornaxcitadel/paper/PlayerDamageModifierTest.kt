@@ -131,7 +131,7 @@ class PlayerDamageModifierTest {
 
             val damage = fixture.playerDamage.getDamage(target, fixture.stranger.player)
             assertEquals(0.33, damage)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(
                 DamageAction(ActionContext.SYSTEM, target.position, damage)))
             assertEquals(38.68, fixture.health(), 1e-12)
         }

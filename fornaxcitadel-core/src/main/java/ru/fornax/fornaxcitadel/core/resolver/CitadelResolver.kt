@@ -1,8 +1,6 @@
 package ru.fornax.fornaxcitadel.core.resolver
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 
 /**
  * Resolves a world position without changing the original action. Implementations are read-only,
@@ -11,18 +9,7 @@ import ru.fornax.fornaxcitadel.core.facade.ComponentManager
  */
 interface CitadelResolver {
     fun getResponsiblePosition(position: CitadelPosition): CitadelPosition
-    fun getReinforcementProtecting(position: CitadelPosition): CitadelHandle?
-}
 
-/** Coordinate-only behavior for platforms that do not provide linked block rules. */
-class DirectCitadelResolver(private val manager: ComponentManager) : CitadelResolver {
-    override fun getResponsiblePosition(position: CitadelPosition): CitadelPosition = position
-
-    override fun getReinforcementProtecting(position: CitadelPosition): CitadelHandle? {
-        if (!CitadelPosition.isSupported(position.x, position.y, position.z)) return null
-        if (!manager.isChunkLoaded(position.world, position.x shr 4, position.z shr 4)) {
-            throw CitadelResolutionUnavailableException(position)
-        }
-        return manager.findCitadel(position.world, position.x, position.y, position.z)
-    }
+    /** Yields positions in lookup order. The facade stops at the first stored citadel. */
+    fun getProtectionCandidates(position: CitadelPosition): Sequence<CitadelPosition>
 }

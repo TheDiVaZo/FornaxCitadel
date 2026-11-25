@@ -14,12 +14,13 @@ class PlaceActionValidator(
     override val actionClass = PlaceAction::class.java
 
     override fun validate(action: PlaceAction): ActionValidator.Result {
-        if (!CitadelPosition.isSupported(action.citadelX, action.citadelY, action.citadelZ) ||
+        val position = action.position
+        if (!CitadelPosition.isSupported(position.x, position.y, position.z) ||
             definitions.find(action.definitionKey) == null) return ActionValidator.Result.Rejected
         return try {
-            val responsible = citadels.getResponsiblePosition(action.position)
-            if (citadels.findProtecting(action.position) != null ||
-                (responsible != action.position && citadels.findProtecting(responsible) != null)) {
+            val responsible = citadels.getResponsiblePosition(position)
+            if (citadels.findProtecting(position) != null ||
+                (responsible != position && citadels.findProtecting(responsible) != null)) {
                 ActionValidator.Result.Rejected
             } else ActionValidator.Result.Neutral
         } catch (_: CitadelResolutionUnavailableException) {

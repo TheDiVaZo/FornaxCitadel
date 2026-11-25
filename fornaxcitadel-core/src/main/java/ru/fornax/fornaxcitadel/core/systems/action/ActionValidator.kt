@@ -5,7 +5,7 @@ package ru.fornax.fornaxcitadel.core.systems.action
  * its resolved target. Authorization runs once before processing, including for posted actions.
  * A validator that only enforces a constraint should return [Result.Neutral] when it passes.
  */
-interface ActionValidator<T : ActionData> {
+interface ActionValidator<T : Action> {
     val actionClass: Class<T>
 
     fun validate(action: T): Result

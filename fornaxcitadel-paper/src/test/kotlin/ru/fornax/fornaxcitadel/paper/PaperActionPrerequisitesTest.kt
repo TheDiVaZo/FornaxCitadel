@@ -5,7 +5,7 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -38,13 +38,13 @@ class PaperActionPrerequisitesTest {
             }
             assertFalse(f.manager.isChunkLoaded(f.worldId, 1, 0))
             f.place()
-            val target = assertNotNull(f.module.citadels.findProtecting(f.position))
+            val target = assertNotNull(f.citadels.findProtecting(f.position))
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelOwner::class.java)
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
             f.manager.saveAll().join()
             val saves = f.backend.saves
             val lookups = f.blockLookups
-            val unrelated = ActionData(Key("test", "unrelated"), f.worldId, Int.MAX_VALUE, Int.MIN_VALUE, 0)
+            val unrelated = Action(Key("test", "unrelated"), f.worldId, Int.MAX_VALUE, Int.MIN_VALUE, 0)
             for (action in KINDS.map { f.action(it) } + unrelated) {
                 assertTrue(actions.isAllowed(action), action.type.toString())
                 actions.registerActionMeta(action.type, ActionMeta(false))
@@ -84,8 +84,8 @@ class PaperActionPrerequisitesTest {
     fun `upgrade requires a registered destination but not a known source definition or kind`() {
         PaperTestFixture(resolveMaterials = false).use { f ->
             f.place()
-            val target = assertNotNull(f.module.citadels.findProtecting(f.position))
-            val validator = UpgradeActionValidator(f.module.citadels, f.module.definitions)
+            val target = assertNotNull(f.citadels.findProtecting(f.position))
+            val validator = UpgradeActionValidator(f.citadels, f.coreAddon.definitions)
             target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "removed") }
             assertSame(Result.Rejected, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, Key("test", "unknown"))))
             assertSame(Result.Neutral, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.REINFORCED)))
@@ -102,47 +102,47 @@ class PaperActionPrerequisitesTest {
             val itemType = if (kind == "upgrade") PaperCitadelTypes.MATURING else PaperCitadelTypes.REINFORCED
             val action = if (kind == "upgrade") UpgradeAction(f.context(f.installer), f.position, itemType) else f.action(kind)
             f.installer.held = f.reinforcementStack(itemType)
-            val completed = mutableListOf<ActionData>()
-            f.module.actions.registerHandler(object : ActionHandler<ActionData> {
-                override val actionClass = ActionData::class.java
-                override fun handle(action: ActionData) {
+            val completed = mutableListOf<Action>()
+            f.actions.registerHandler(object : ActionHandler<Action> {
+                override val actionClass = Action::class.java
+                override fun handle(action: Action) {
                     completed.add(action)
                 }
             })
-            f.module.actions.registerValidator(approval())
-            f.module.actions.post(action)
-            f.manager.removeCitadel(assertNotNull(f.module.citadels.findProtecting(f.position)))
-            assertEquals(1, f.module.actions.drainPosted(), kind)
+            f.actions.registerValidator(approval())
+            f.actions.post(action)
+            f.manager.removeCitadel(assertNotNull(f.citadels.findProtecting(f.position)))
+            assertEquals(1, f.actions.drainPosted(), kind)
             assertTrue(completed.isEmpty(), kind)
 
-            f.module.actions.post(action)
+            f.actions.post(action)
             f.place()
             completed.clear()
             if (kind == "repair") {
-                val target = assertNotNull(f.module.citadels.findProtecting(f.position))
+                val target = assertNotNull(f.citadels.findProtecting(f.position))
                 target.editComponent(Health::class.java) { it.health = 5.0 }
             }
-            assertEquals(1, f.module.actions.drainPosted(), kind)
+            assertEquals(1, f.actions.drainPosted(), kind)
             assertEquals(listOf(action), completed, kind)
         }
     }
 
     private fun PaperTestFixture.actionsWithPrerequisites(approve: Boolean = false) = ActionManager().apply {
         if (approve) registerValidator(approval())
-        registerValidator(ExistingCitadelValidator(RepairAction::class.java, module.citadels))
-        registerValidator(UpgradeActionValidator(module.citadels, module.definitions))
-        registerValidator(ExistingCitadelValidator(DismantleAction::class.java, module.citadels))
+        registerValidator(ExistingCitadelValidator(RepairAction::class.java, citadels))
+        registerValidator(UpgradeActionValidator(citadels, coreAddon.definitions))
+        registerValidator(ExistingCitadelValidator(DismantleAction::class.java, citadels))
     }
 
-    private fun PaperTestFixture.action(kind: String, target: CitadelPosition = position): ActionData = when (kind) {
+    private fun PaperTestFixture.action(kind: String, target: CitadelPosition = position): Action = when (kind) {
         "repair" -> RepairAction(context(installer), target)
         "upgrade" -> UpgradeAction(context(installer), target, PaperCitadelTypes.REINFORCED)
         else -> DismantleAction(context(installer), target)
     }
 
-    private fun approval() = object : ActionValidator<ActionData> {
-        override val actionClass = ActionData::class.java
-        override fun validate(action: ActionData) = Result.Success
+    private fun approval() = object : ActionValidator<Action> {
+        override val actionClass = Action::class.java
+        override fun validate(action: Action) = Result.Success
     }
 
     private companion object {

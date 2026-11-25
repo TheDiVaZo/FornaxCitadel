@@ -6,9 +6,7 @@ import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
-import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.ChunkLoadCheck
@@ -23,16 +21,15 @@ import java.util.Locale
 class MaterialPlacementService(
     private val server: Server,
     private val materials: MaterialRegistry,
-    private val manager: ComponentManager
+    private val isChunkLoaded: ChunkLoadCheck
 ) : CitadelResolver {
-    private val isChunkLoaded: ChunkLoadCheck = manager::isChunkLoaded
     private val rules = mutableMapOf<Key, MaterialPlacementRule>()
-    private val defaultRule = DefaultMaterialPlacementRule(::findExact)
+    private val defaultRule = DefaultMaterialPlacementRule()
 
     init {
-        val doors = DoorMaterialPlacementRule(::findExact, ::findLoadedRelative)
-        val beds = BedMaterialPlacementRule(::findExact, ::findLoadedRelative)
-        val chests = ChestMaterialPlacementRule(::findExact, ::findLoadedRelative)
+        val doors = DoorMaterialPlacementRule(::findLoadedRelative)
+        val beds = BedMaterialPlacementRule(::findLoadedRelative)
+        val chests = ChestMaterialPlacementRule(::findLoadedRelative)
         for (material in Material.entries) {
             if (material.isLegacy) continue
             val rule = when {
@@ -64,19 +61,13 @@ class MaterialPlacementService(
         return resolved
     }
 
-    override fun getReinforcementProtecting(position: CitadelPosition): CitadelHandle? {
+    override fun getProtectionCandidates(position: CitadelPosition): Sequence<CitadelPosition> {
         val block = findLoadedBlock(position)
-        val found = getRule(block).getReinforcementProtecting(block) ?: return null
-        requireAvailable(found.position)
-        check(manager.isCurrent(found)) { "Material rule returned an expired or foreign reinforcement" }
-        return found
-    }
-
-    /** Exact lookup for custom rules; this method never follows material relationships. */
-    fun findExact(block: Block): CitadelHandle? {
-        val position = positionOf(block)
-        requireAvailable(position)
-        return manager.findCitadel(position.world, position.x, position.y, position.z)
+        return getRule(block).getProtectionCandidates(block).map { candidate ->
+            val resolved = positionOf(candidate)
+            requireAvailable(resolved)
+            resolved
+        }
     }
 
     /**

@@ -4,11 +4,11 @@ import org.bukkit.GameMode
 import org.bukkit.block.BlockFace
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
-import org.bukkit.event.block.Action
+import org.bukkit.event.block.Action as BukkitAction
 import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -45,7 +45,7 @@ class PlayerSourceTest {
                 )
                 assertTrue(event.isCancelled)
                 if (gameMode == GameMode.CREATIVE) {
-                    assertNull(fixture.module.citadels.findProtecting(fixture.position))
+                    assertNull(fixture.citadels.findProtecting(fixture.position))
                 } else {
                     assertEquals(99.0, fixture.health())
                 }
@@ -62,7 +62,7 @@ class PlayerSourceTest {
             fixture.installer.held = fixture.reinforcementStack(amount = 2)
             val observed = fixture.captureActions()
             val event = PlayerInteractEvent(
-                fixture.installer.player, Action.RIGHT_CLICK_BLOCK, fixture.installer.held,
+                fixture.installer.player, BukkitAction.RIGHT_CLICK_BLOCK, fixture.installer.held,
                 fixture.block(), BlockFace.UP, EquipmentSlot.HAND
             )
 
@@ -71,7 +71,7 @@ class PlayerSourceTest {
             val action = assertIs<PlaceAction>(observed.single())
             assertPlayerSource(action, fixture.installer, Key("paper", "reinforcement_item"))
             assertEquals(fixture.position, action.position)
-            assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertNotNull(fixture.citadels.findProtecting(fixture.position))
             assertEquals(1, fixture.installer.held.amount)
         }
     }
@@ -83,12 +83,12 @@ class PlayerSourceTest {
             fixture.installer.target = fixture.block()
             val observed = fixture.captureActions()
             val commands = CitadelCommand(
-                fixture.plugin, fixture.module.actions, fixture.module.citadels, fixture.module.coreAddon.health,
+                fixture.plugin, fixture.actionFacade, fixture.citadels, fixture.coreAddon.health,
                 fixture.materials, fixture.citadelTypes
             ) {}
 
             assertTrue(commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "reinforced")))
-            assertNotNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertNotNull(fixture.citadels.findProtecting(fixture.position))
             assertTrue(commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("remove")))
 
             assertEquals(2, observed.size)
@@ -98,15 +98,15 @@ class PlayerSourceTest {
                 assertPlayerSource(action, fixture.installer, Key("fornaxcitadel", "paper_command"))
                 assertEquals(fixture.position, action.position)
             }
-            assertNull(fixture.module.citadels.findProtecting(fixture.position))
+            assertNull(fixture.citadels.findProtecting(fixture.position))
         }
     }
 
-    private fun PaperTestFixture.captureActions(): List<ActionData> {
-        val observed = mutableListOf<ActionData>()
-        module.actions.registerValidator(object : ActionValidator<ActionData> {
-            override val actionClass = ActionData::class.java
-            override fun validate(action: ActionData): ActionValidator.Result {
+    private fun PaperTestFixture.captureActions(): List<ru.fornax.fornaxcitadel.core.systems.action.Action> {
+        val observed = mutableListOf<ru.fornax.fornaxcitadel.core.systems.action.Action>()
+        actions.registerValidator(object : ActionValidator<ru.fornax.fornaxcitadel.core.systems.action.Action> {
+            override val actionClass = Action::class.java
+            override fun validate(action: ru.fornax.fornaxcitadel.core.systems.action.Action): ActionValidator.Result {
                 observed.add(action)
                 return ActionValidator.Result.Neutral
             }
@@ -114,7 +114,7 @@ class PlayerSourceTest {
         return observed
     }
 
-    private fun assertPlayerSource(action: ActionData, player: TestPlayer, key: Key) {
+    private fun assertPlayerSource(action: ru.fornax.fornaxcitadel.core.systems.action.Action, player: TestPlayer, key: Key) {
         val source = assertIs<PlayerSource>(action.context.source)
         assertSame(player.player, source.player)
         assertEquals(player.id, action.context.actorId)

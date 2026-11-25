@@ -1,5 +1,9 @@
 package ru.fornax.fornaxcitadel.modules
 
+import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
@@ -8,13 +12,11 @@ import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
-import ru.fornax.fornaxcitadel.core.resolver.DirectCitadelResolver
-import ru.fornax.fornaxcitadel.core.scheduler.ManualScheduler
 import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
@@ -36,154 +38,131 @@ import kotlin.test.assertTrue
 class CoreActionValidatorsTest {
     @Test
     fun `invalid core actions never reach a processor despite an earlier approval`() {
-        Fixture(approve = true).use { fixture ->
-            fixture.recordSuccessfulActions()
-            for (position in listOf(POSITION.copy(y = -65), POSITION.copy(x = 524288), UNLOADED)) {
-                for (action in targetActions(position) + PlaceAction(ActionContext.SYSTEM, position, TYPE)) {
-                    assertFalse(fixture.module.actions.isAllowed(action))
-                    assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
-                }
+        val fixture = Fixture(approve = true)
+        fixture.recordSuccessfulActions()
+        for (position in listOf(POSITION.copy(y = -65), POSITION.copy(x = 524288), UNLOADED)) {
+            for (action in targetActions(position) + PlaceAction(ActionContext.SYSTEM, position, TYPE)) {
+                assertFalse(fixture.actions.isAllowed(action))
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
             }
-            for (action in targetActions(POSITION)) {
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
-            }
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
-                PlaceAction(ActionContext.SYSTEM, POSITION, Key("test", "unknown"))
-            ))
-            fixture.create()
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
-                PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
-            ))
-            assertTrue(fixture.completed.isEmpty())
         }
+        for (action in targetActions(POSITION)) {
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
+        }
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
+            PlaceAction(ActionContext.SYSTEM, POSITION, Key("test", "unknown"))
+        ))
+        fixture.create()
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(
+            PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
+        ))
+        assertTrue(fixture.completed.isEmpty())
     }
 
     @Test
     fun `placement also requires a loaded and unoccupied responsible position`() {
-        Fixture(approve = true).use { fixture ->
-            fixture.recordSuccessfulActions()
-            fixture.responsible = UNLOADED
-            val action = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
+        val fixture = Fixture(approve = true)
+        fixture.recordSuccessfulActions()
+        fixture.responsible = UNLOADED
+        val action = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
 
-            fixture.responsible = SECOND
-            fixture.create(SECOND)
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
-            assertTrue(fixture.completed.isEmpty())
-        }
+        fixture.responsible = SECOND
+        fixture.create(SECOND)
+        assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
+        assertTrue(fixture.completed.isEmpty())
     }
 
     @Test
     fun `valid prerequisites remain neutral and do not authorize protected actions`() {
-        Fixture().use { fixture ->
-            fixture.create()
-            fixture.recordSuccessfulActions()
-            for (action in targetActions(POSITION)) {
-                assertFalse(fixture.module.actions.isAllowed(action))
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(action))
-            }
-            assertTrue(fixture.completed.isEmpty())
-            val place = PlaceAction(ActionContext.SYSTEM, SECOND, TYPE)
-            assertTrue(fixture.module.actions.isAllowed(place))
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(place))
-            assertEquals(listOf<ActionData>(place), fixture.completed)
-            val unrelated = ActionData(Key("test", "unrelated"), WORLD, Int.MAX_VALUE, Int.MIN_VALUE, 0)
-            val anotherPlace = PlaceAction(ActionContext.SYSTEM, POSITION.copy(x = 3), TYPE)
-            for (intent in targetActions(POSITION) + listOf(anotherPlace, unrelated)) {
-                // A neutral result follows both metadata settings. An explicit approval or rejection cannot.
-                for (allowsNeutral in listOf(false, true)) {
-                    fixture.module.actions.registerActionMeta(intent.type, ActionMeta(allowsNeutral))
-                    assertEquals(allowsNeutral, fixture.module.actions.isAllowed(intent))
-                }
+        val fixture = Fixture()
+        fixture.create()
+        fixture.recordSuccessfulActions()
+        for (action in targetActions(POSITION)) {
+            assertFalse(fixture.actions.isAllowed(action))
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
+        }
+        assertTrue(fixture.completed.isEmpty())
+        val place = PlaceAction(ActionContext.SYSTEM, SECOND, TYPE)
+        assertTrue(fixture.actions.isAllowed(place))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(place))
+        assertEquals(listOf<Action>(place), fixture.completed)
+        val unrelated = Action(Key("test", "unrelated"), WORLD, Int.MAX_VALUE, Int.MIN_VALUE, 0)
+        val anotherPlace = PlaceAction(ActionContext.SYSTEM, POSITION.copy(x = 3), TYPE)
+        for (intent in targetActions(POSITION) + listOf(anotherPlace, unrelated)) {
+            // A neutral result follows both metadata settings. An explicit approval or rejection cannot.
+            for (allowsNeutral in listOf(false, true)) {
+                fixture.actions.registerActionMeta(intent.type, ActionMeta(allowsNeutral))
+                assertEquals(allowsNeutral, fixture.actions.isAllowed(intent))
             }
         }
     }
 
     @Test
     fun `missing health passes validation and is handled by the damage service`() {
-        Fixture().use { fixture ->
-            val target = fixture.create(withHealth = false)
-            var calculations = 0
-            fixture.module.coreAddon.health.registerModifier(DamageModifier { _, _, _ ->
-                calculations++
-                0.0
-            })
+        val fixture = Fixture()
+        val target = fixture.create(withHealth = false)
+        var calculations = 0
+        fixture.addon.health.registerModifier(DamageModifier { _, _, _ ->
+            calculations++
+            0.0
+        })
 
-            val damage = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
-            val destroy = DamageAction(ActionContext.SYSTEM, POSITION, 0.0, DamageAction.Mode.DESTROY)
-            assertFalse(fixture.module.actions.isAllowed(damage))
-            assertFalse(fixture.module.actions.isAllowed(destroy))
-            fixture.approve()
-            assertTrue(fixture.module.actions.isAllowed(damage))
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(damage))
-            assertFalse(target.isCurrent)
-            assertEquals(1, calculations)
-            val replacement = fixture.create(withHealth = false)
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(destroy))
-            assertFalse(replacement.isCurrent)
-            assertEquals(1, calculations)
-        }
+        val damage = DamageAction(ActionContext.SYSTEM, POSITION, 1.0)
+        val destroy = DamageAction(ActionContext.SYSTEM, POSITION, 0.0, DamageAction.Mode.DESTROY)
+        assertFalse(fixture.actions.isAllowed(damage))
+        assertFalse(fixture.actions.isAllowed(destroy))
+        fixture.approve()
+        assertTrue(fixture.actions.isAllowed(damage))
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(damage))
+        assertFalse(target.isCurrent)
+        assertEquals(1, calculations)
+        val replacement = fixture.create(withHealth = false)
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(destroy))
+        assertFalse(replacement.isCurrent)
+        assertEquals(1, calculations)
     }
 
     @Test
     fun `queued actions validate availability when drained instead of when posted`() {
-        Fixture(approve = true).use { fixture ->
-            fixture.create()
-            fixture.recordSuccessfulActions()
-            fixture.module.actions.post(RemoveAction(ActionContext.SYSTEM, POSITION))
-            val chunk = fixture.storage.chunk
-            fixture.storage.chunk = null
+        val fixture = Fixture(approve = true)
+        fixture.create()
+        fixture.recordSuccessfulActions()
+        fixture.actions.post(RemoveAction(ActionContext.SYSTEM, POSITION))
+        val chunk = fixture.storage.chunk
+        fixture.storage.chunk = null
 
-            assertEquals(1, fixture.module.actions.drainPosted())
-            assertTrue(fixture.completed.isEmpty())
+        assertEquals(1, fixture.actions.drainPosted())
+        assertTrue(fixture.completed.isEmpty())
 
-            fixture.storage.chunk = chunk
-            val damage = DamageAction(ActionContext.SYSTEM, SECOND, 1.0)
-            fixture.module.actions.post(damage)
-            fixture.create(SECOND)
+        fixture.storage.chunk = chunk
+        val damage = DamageAction(ActionContext.SYSTEM, SECOND, 1.0)
+        fixture.actions.post(damage)
+        fixture.create(SECOND)
 
-            assertEquals(1, fixture.module.actions.drainPosted())
-            assertEquals(listOf<ActionData>(damage), fixture.completed)
-        }
+        assertEquals(1, fixture.actions.drainPosted())
+        assertEquals(listOf<Action>(damage), fixture.completed)
     }
 
-    @Test
-    fun `disabling the core addon removes its prerequisites and enabling it restores them`() {
-        Fixture(enable = false).use { fixture ->
-            val external = fixture.approve()
-            val action = RemoveAction(ActionContext.SYSTEM, POSITION)
-            assertTrue(fixture.module.actions.isAllowed(action))
-            repeat(2) { fixture.module.coreAddon.onEnable() }
-            assertFalse(fixture.module.actions.isAllowed(action))
-            repeat(2) { fixture.module.coreAddon.onDisable() }
-            assertTrue(fixture.module.actions.isAllowed(action))
-            assertTrue(fixture.module.actions.unregisterValidator(external))
-            assertTrue(fixture.module.actions.isAllowed(action))
-            fixture.module.coreAddon.onEnable()
-            assertFalse(fixture.module.actions.isAllowed(action))
-        }
-    }
-
-    private class Fixture(approve: Boolean = false, enable: Boolean = true) : AutoCloseable {
+    private class Fixture(approve: Boolean = false) {
         val storage = MemoryStorage()
         val manager = ComponentManager(storage, TypeManager())
-        val scheduler = ManualScheduler()
         var responsible = POSITION
-        private val direct = DirectCitadelResolver(manager)
         private val resolver = object : CitadelResolver {
             override fun getResponsiblePosition(position: CitadelPosition) =
                 if (position == POSITION) responsible else position
 
-            override fun getReinforcementProtecting(position: CitadelPosition): CitadelHandle? =
-                direct.getReinforcementProtecting(position)
+            override fun getProtectionCandidates(position: CitadelPosition) = sequenceOf(position)
         }
-        val module = CitadelModule(manager, scheduler, resolver = resolver)
-        val completed = mutableListOf<ActionData>()
+        val actions = ActionManager()
+        val citadels = CitadelFacade(manager, resolver)
+        val addon: CoreAddon
+        val completed = mutableListOf<Action>()
 
         init {
-            module.registerDefinition(CitadelDefinition(TYPE, emptyList()))
             if (approve) approve()
-            if (enable) module.coreAddon.onEnable()
+            addon = CoreAddon(citadels, ActionFacade(actions))
+            addon.registerDefinition(CitadelDefinition(TYPE, emptyList()))
         }
 
         fun create(position: CitadelPosition = POSITION, withHealth: Boolean = true): CitadelHandle {
@@ -195,19 +174,17 @@ class CoreActionValidatorsTest {
             return assertNotNull(manager.findCitadel(position.world, position.x, position.y, position.z))
         }
 
-        fun approve(): ActionValidator<ActionData> = object : ActionValidator<ActionData> {
-            override val actionClass = ActionData::class.java
-            override fun validate(action: ActionData) = Result.Success
-        }.also(module.actions::registerValidator)
+        fun approve(): ActionValidator<Action> = object : ActionValidator<Action> {
+            override val actionClass = Action::class.java
+            override fun validate(action: Action) = Result.Success
+        }.also(actions::registerValidator)
 
         fun recordSuccessfulActions() {
-            module.actions.registerHandler(object : ActionHandler<ActionData> {
-                override val actionClass = ActionData::class.java
-                override fun handle(action: ActionData) { completed.add(action) }
+            actions.registerHandler(object : ActionHandler<Action> {
+                override val actionClass = Action::class.java
+                override fun handle(action: Action) { completed.add(action) }
             })
         }
-
-        override fun close() = module.coreAddon.onDisable()
     }
 
     private class MemoryStorage : CitadelStorage {
@@ -228,7 +205,7 @@ class CoreActionValidatorsTest {
         val UNLOADED = POSITION.copy(x = 16)
         val TYPE = Key("test", "reinforced")
 
-        fun targetActions(position: CitadelPosition): List<ActionData> = listOf(
+        fun targetActions(position: CitadelPosition): List<Action> = listOf(
             DamageAction(ActionContext.SYSTEM, position, 1.0),
             DamageAction(ActionContext.SYSTEM, position, 0.0, DamageAction.Mode.DESTROY),
             AcidDestroyAction(ActionContext.SYSTEM, position, POSITION, 0),

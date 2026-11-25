@@ -6,7 +6,7 @@ import org.bukkit.event.block.BlockBreakEvent
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -33,8 +33,8 @@ class PaperCreativeBreakingTest {
         for (type in listOf(PaperCitadelTypes.REINFORCED, PaperCitadelTypes.MATURING,
             PaperCitadelTypes.INVULNERABLE, protectedHealth)) {
             PaperTestFixture(permissions = true).use { fixture ->
-                fixture.module.coreAddon.health.registerDefinition(protectedHealth, HealthDefinition(100.0))
-                fixture.module.registerDefinition(CitadelDefinition(protectedHealth, listOf(HealthInitializer(fixture.module.coreAddon.health))))
+                fixture.coreAddon.health.registerDefinition(protectedHealth, HealthDefinition(100.0))
+                fixture.coreAddon.registerDefinition(CitadelDefinition(protectedHealth, listOf(HealthInitializer(fixture.coreAddon.health))))
                 fixture.installer.permissions.add("fornaxcitadel.admin")
                 fixture.place(type)
                 val target = assertNotNull(fixture.target())
@@ -46,7 +46,7 @@ class PaperCreativeBreakingTest {
                     error("Creative destruction must not calculate damage")
                 })
                 val completed = mutableListOf<DamageAction>()
-                fixture.module.actions.registerHandler(object : ActionHandler<DamageAction> {
+                fixture.actions.registerHandler(object : ActionHandler<DamageAction> {
                     override val actionClass = DamageAction::class.java
                     override fun handle(action: DamageAction) {
                         assertFalse(target.isCurrent)
@@ -115,7 +115,7 @@ class PaperCreativeBreakingTest {
                 assertEquals(1, modifierCalls)
                 assertNotNull(fixture.target())
                 if (type == PaperCitadelTypes.REINFORCED) assertEquals(97.0, fixture.health())
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.destroyAction()))
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(fixture.destroyAction()))
                 assertNotNull(fixture.target())
                 assertEquals(0, fixture.vanillaBlockChanges)
                 if (type == PaperCitadelTypes.REINFORCED) {
@@ -133,7 +133,7 @@ class PaperCreativeBreakingTest {
     @Test
     fun `damage and base action validators can reject creative destruction while the block is already protected`() {
         assertExternalRejection(DamageAction::class.java)
-        assertExternalRejection(ActionData::class.java)
+        assertExternalRejection(Action::class.java)
     }
 
     @Test
@@ -141,7 +141,7 @@ class PaperCreativeBreakingTest {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.prepareInvulnerable()
             var actionCalls = 0
-            fixture.module.actions.registerValidator(object : ActionValidator<DamageAction> {
+            fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction): ActionValidator.Result {
                     actionCalls++
@@ -178,9 +178,9 @@ class PaperCreativeBreakingTest {
             "permission revoked" to { it.stranger.permissions.remove("fornaxcitadel.damage") }
         )
         for ((reason, change) in revoke) {
-            PaperTestFixture(permissions = true, moduleSchedulerFactory = ::PaperScheduler).use { fixture ->
+            PaperTestFixture(permissions = true, queueSchedulerFactory = ::PaperScheduler).use { fixture ->
                 fixture.prepareInvulnerable()
-                fixture.module.actions.post(fixture.destroyAction())
+                fixture.actions.post(fixture.destroyAction())
                 change(fixture)
 
                 fixture.runScheduledTasks()
@@ -190,7 +190,7 @@ class PaperCreativeBreakingTest {
                 fixture.stranger.online = true
                 fixture.stranger.gameMode = GameMode.CREATIVE
                 fixture.stranger.permissions.add("fornaxcitadel.damage")
-                fixture.module.actions.post(fixture.destroyAction())
+                fixture.actions.post(fixture.destroyAction())
                 fixture.runScheduledTasks()
                 assertNull(fixture.target(), reason)
                 assertEquals(0, fixture.vanillaBlockChanges)
@@ -201,9 +201,9 @@ class PaperCreativeBreakingTest {
     @Test
     fun `queued destruction retains the original player reference when the same UUID reconnects`() {
         for (permissions in listOf(false, true)) {
-            PaperTestFixture(permissions = permissions, moduleSchedulerFactory = ::PaperScheduler).use { fixture ->
+            PaperTestFixture(permissions = permissions, queueSchedulerFactory = ::PaperScheduler).use { fixture ->
                 fixture.prepareInvulnerable()
-                fixture.module.actions.post(fixture.destroyAction())
+                fixture.actions.post(fixture.destroyAction())
                 fixture.stranger.online = false
                 val replacement = fixture.player(fixture.stranger.id, "reconnected").apply {
                     gameMode = GameMode.CREATIVE
@@ -212,7 +212,7 @@ class PaperCreativeBreakingTest {
                 fixture.runScheduledTasks()
 
                 assertNotNull(fixture.target())
-                fixture.module.actions.post(DamageAction(fixture.context(replacement), fixture.position,
+                fixture.actions.post(DamageAction(fixture.context(replacement), fixture.position,
                     0.0, DamageAction.Mode.DESTROY))
                 fixture.runScheduledTasks()
                 assertNull(fixture.target())
@@ -226,31 +226,31 @@ class PaperCreativeBreakingTest {
             fixture.prepareInvulnerable()
             for (mode in listOf(GameMode.SURVIVAL, GameMode.ADVENTURE, GameMode.SPECTATOR)) {
                 fixture.stranger.gameMode = mode
-                assertEquals(ActionResult.DENIED, fixture.module.actions.execute(fixture.destroyAction()), mode.name)
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(fixture.destroyAction()), mode.name)
             }
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(
                 DamageAction(ActionContext.SYSTEM, fixture.position, Double.MAX_VALUE, DamageAction.Mode.DESTROY)
             ))
             fixture.stranger.gameMode = GameMode.CREATIVE
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(
                 DamageAction(ActionContext(fixture.stranger.id, NamedActionSource(Key("test", "untyped"))),
                     fixture.position, 0.0, DamageAction.Mode.DESTROY)
             ))
-            assertEquals(ActionResult.DENIED, fixture.module.actions.execute(
+            assertEquals(ActionResult.DENIED, fixture.actions.execute(
                 DamageAction(fixture.context(fixture.stranger), fixture.position, Double.MAX_VALUE)
             ))
             assertNotNull(fixture.target())
-            assertEquals(ActionResult.SUCCESS, fixture.module.actions.execute(fixture.destroyAction()))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(fixture.destroyAction()))
             assertNull(fixture.target())
         }
     }
 
-    private fun <T : ActionData> assertExternalRejection(acceptedClass: Class<T>) {
+    private fun <T : Action> assertExternalRejection(acceptedClass: Class<T>) {
         PaperTestFixture(permissions = true).use { fixture ->
             fixture.prepareInvulnerable()
             val event = BlockBreakEvent(fixture.block(), fixture.stranger.player)
             var validationCalls = 0
-            fixture.module.actions.registerValidator(object : ActionValidator<T> {
+            fixture.actions.registerValidator(object : ActionValidator<T> {
                 override val actionClass = acceptedClass
                 override fun validate(action: T): ActionValidator.Result {
                     validationCalls++

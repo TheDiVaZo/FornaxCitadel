@@ -1,7 +1,7 @@
 package ru.fornax.fornaxcitadel.paper.modules.permission
 
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -15,15 +15,15 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 /** Checks player permission nodes; other sources are left to other authorizers. */
 class PaperPermissionValidator(
     private val citadelTypes: PaperCitadelTypes
-) : ActionValidator<ActionData> {
-    override val actionClass = ActionData::class.java
+) : ActionValidator<Action> {
+    override val actionClass = Action::class.java
 
     fun canAdminister(context: ActionContext): Boolean {
         val player = (context.source as? PlayerSource)?.player ?: return false
         return player.hasPermission("fornaxcitadel.admin")
     }
 
-    override fun validate(action: ActionData): ActionValidator.Result {
+    override fun validate(action: Action): ActionValidator.Result {
         val player = (action.context.source as? PlayerSource)?.player ?: return ActionValidator.Result.Neutral
         val permission = when (action) {
             is PlaceAction -> "fornaxcitadel.place"

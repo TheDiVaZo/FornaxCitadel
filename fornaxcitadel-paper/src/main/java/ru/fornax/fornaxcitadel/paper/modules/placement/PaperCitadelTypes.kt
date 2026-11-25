@@ -1,14 +1,13 @@
 package ru.fornax.fornaxcitadel.paper.modules.placement
 
+import ru.fornax.fornaxcitadel.addon.CoreAddon
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
-import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.health.MaturationDefinition
 import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import java.time.Duration
@@ -39,14 +38,15 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
     fun isInvulnerable(key: Key): Boolean = damagePolicy(key) == CitadelDamagePolicy.DENY
     fun requiresAdmin(key: Key): Boolean = isInvulnerable(key)
 
-    fun register(definitions: CitadelDefinitionRegistry, health: HealthService) {
+    fun register(coreAddon: CoreAddon) {
+        val health = coreAddon.health
         for ((name, settings) in configured) {
             val key = byName.getValue(name)
             val initializers = buildList<CitadelInitializer> {
                 add(HealthInitializer(health))
                 add(MaturingInitializer())
             }
-            definitions.register(CitadelDefinition(key, initializers))
+            coreAddon.registerDefinition(CitadelDefinition(key, initializers))
             settings.health?.let { health.registerDefinition(key, HealthDefinition(it.max)) }
             health.maturation.registerDefinition(key, MaturationDefinition(
                 Duration.ofSeconds(settings.maturing?.durationSeconds ?: 0),

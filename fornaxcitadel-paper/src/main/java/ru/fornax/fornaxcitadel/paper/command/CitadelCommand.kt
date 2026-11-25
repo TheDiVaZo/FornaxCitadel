@@ -9,7 +9,7 @@ import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
@@ -31,7 +31,7 @@ import java.util.logging.Level
 
 class CitadelCommand(
     private val plugin: Plugin,
-    private val actions: ActionManager,
+    private val actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val health: HealthService,
     private val materials: MaterialRegistry,
@@ -42,7 +42,7 @@ class CitadelCommand(
 ) : CommandExecutor, TabCompleter {
     constructor(
         plugin: Plugin,
-        actions: ActionManager,
+        actions: ActionFacade,
         citadels: CitadelFacade,
         health: HealthService,
         materials: MaterialRegistry,

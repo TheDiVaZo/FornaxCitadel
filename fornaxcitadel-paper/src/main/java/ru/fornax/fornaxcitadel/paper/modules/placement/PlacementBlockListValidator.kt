@@ -4,7 +4,7 @@ import org.bukkit.Server
 import org.bukkit.block.Block
 import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
@@ -17,11 +17,11 @@ class PlacementBlockListValidator @JvmOverloads constructor(
     val listType: BlockListType,
     blocks: Set<Key>,
     private val citadels: ReadableCitadelFacade? = null
-) : ActionValidator<ActionData> {
+) : ActionValidator<Action> {
     private val blocks = blocks.toSet()
-    override val actionClass = ActionData::class.java
+    override val actionClass = Action::class.java
 
-    override fun validate(action: ActionData): ActionValidator.Result {
+    override fun validate(action: Action): ActionValidator.Result {
         if (action !is PlaceAction && action !is UpgradeAction) return ActionValidator.Result.Neutral
         val block = server.findLoadedPlacementBlock(action, citadels) ?: return ActionValidator.Result.Rejected
         if (!isAllowed(block)) return ActionValidator.Result.Rejected

@@ -49,19 +49,19 @@ class MaterialPlacementRulesTest {
         PaperTestFixture().use { fixture ->
             val ordinary = fixture.block(8, 64, 8)
             assertEquals(ordinary.testPosition(), fixture.materialPlacement.getResponsiblePosition(ordinary.testPosition()))
-            assertNull(fixture.materialPlacement.getReinforcementProtecting(ordinary.testPosition()))
+            assertNull(fixture.citadels.findProtecting(ordinary.testPosition()))
 
             val (lower, upper) = fixture.door()
             fixture.placeExact(lower)
             fixture.blockData(doorData(Bisected.Half.TOP, BlockFace.SOUTH), upper.testPosition())
             assertEquals(upper.testPosition(), fixture.materialPlacement.getResponsiblePosition(upper.testPosition()))
-            assertNull(fixture.materialPlacement.getReinforcementProtecting(upper.testPosition()))
+            assertNull(fixture.citadels.findProtecting(upper.testPosition()))
 
             val (foot, head) = fixture.bed()
             fixture.placeExact(head)
             fixture.material(Material.BLUE_BED, head.testPosition())
             assertEquals(foot.testPosition(), fixture.materialPlacement.getResponsiblePosition(foot.testPosition()))
-            assertNull(fixture.materialPlacement.getReinforcementProtecting(foot.testPosition()))
+            assertNull(fixture.citadels.findProtecting(foot.testPosition()))
         }
     }
 
@@ -71,23 +71,37 @@ class MaterialPlacementRulesTest {
             val source = fixture.block()
             val target = fixture.block(3, 64, 2)
             val key = Key("thirdparty", "linked_stone")
-            val rule = object : DefaultMaterialPlacementRule({ block ->
-                fixture.manager.findCitadel(fixture.worldId, block.x, block.y, block.z)
-            }) {
+            val rule = object : DefaultMaterialPlacementRule() {
                 override fun getResponsibleBlock(block: Block): Block = target
-                override fun getRelatedBlock(block: Block): Block = target
+                override fun getProtectionCandidates(block: Block): Sequence<Block> = sequenceOf(target, block)
             }
-            assertTrue(fixture.materialPlacement.register(key, rule))
-            assertFalse(fixture.materialPlacement.register(key, rule))
+            assertTrue(fixture.materialFacade.registerPlacementRule(key, rule))
+            assertFalse(fixture.materialFacade.registerPlacementRule(key, DefaultMaterialPlacementRule()))
             assertSame(rule, fixture.materialPlacement.getRule(key))
             assertEquals(source.testPosition(), fixture.materialPlacement.getResponsiblePosition(source.testPosition()))
 
             val adapter = TestMaterialAdapter(key, taggedBlock = source)
-            assertTrue(fixture.materials.register("thirdparty", TestMaterialRegistry(adapter)))
+            assertTrue(fixture.materialFacade.registerMaterial("thirdparty", TestMaterialRegistry(adapter)))
             assertEquals(target.testPosition(), fixture.materialPlacement.getResponsiblePosition(source.testPosition()))
+            val local = fixture.placeExact(source)
+            assertEquals(local.runtimeId,
+                assertNotNull(fixture.citadels.findProtecting(source.testPosition())).runtimeId)
             val placed = fixture.placeExact(target)
             assertEquals(placed.runtimeId,
-                assertNotNull(fixture.materialPlacement.getReinforcementProtecting(source.testPosition())).runtimeId)
+                assertNotNull(fixture.citadels.findProtecting(source.testPosition())).runtimeId)
+        }
+    }
+
+    @Test
+    fun `local bed reinforcement wins while the partner chunk is unavailable`() {
+        PaperTestFixture().use { fixture ->
+            val (foot, _) = fixture.bed(x = 15)
+            val local = fixture.placeExact(foot)
+
+            assertEquals(local.runtimeId,
+                assertNotNull(fixture.citadels.findProtecting(foot.testPosition())).runtimeId)
+            assertFalse(1 to 0 in fixture.loadedWorldChunks)
+            assertFalse(fixture.manager.isChunkLoaded(fixture.worldId, 1, 0))
         }
     }
 
@@ -96,7 +110,7 @@ class MaterialPlacementRulesTest {
         PaperTestFixture().use { fixture ->
             val (foot, head) = fixture.bed(x = 15)
             assertFailsWith<CitadelResolutionUnavailableException> {
-                fixture.materialPlacement.getReinforcementProtecting(foot.testPosition())
+                fixture.citadels.findProtecting(foot.testPosition())
             }
             assertFalse(fixture.manager.isChunkLoaded(fixture.worldId, 1, 0))
 
@@ -106,7 +120,7 @@ class MaterialPlacementRulesTest {
             }
             fixture.loadChunk(1, 0)
             assertEquals(head.testPosition(), fixture.materialPlacement.getResponsiblePosition(foot.testPosition()))
-            assertNull(fixture.materialPlacement.getReinforcementProtecting(foot.testPosition()))
+            assertNull(fixture.citadels.findProtecting(foot.testPosition()))
         }
     }
 

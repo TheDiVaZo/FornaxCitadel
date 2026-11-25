@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.core.facade
 
-import ru.fornax.fornaxcitadel.core.systems.action.ActionData
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
@@ -55,7 +55,7 @@ class ActionManagerTest {
                 "validator" -> fixture.validate { checkNestedCalls(); Result.Success }
                 "processor" -> fixture.process = { checkNestedCalls(); ActionResult.SUCCESS }
                 "handler" -> fixture.actions.registerHandler(
-                    handler(ActionData::class.java) { checkNestedCalls() })
+                    handler(Action::class.java) { checkNestedCalls() })
             }
             when (stage) {
                 "prepare", "commit" -> assertEquals(ActionResult.SUCCESS, fixture.actions.executeBatch(listOf(action), {
@@ -74,8 +74,8 @@ class ActionManagerTest {
     fun `batch commit failure preserves changes but suppresses notifications and releases the guard`() {
         val fixture = Fixture()
         var committed = false
-        val notifications = mutableListOf<ActionData>()
-        fixture.actions.registerHandler(handler(ActionData::class.java, notifications::add))
+        val notifications = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java, notifications::add))
         assertFailsWith<IllegalStateException> {
             fixture.actions.executeBatch(listOf(fixture.action()), { true }, {
                 committed = true
@@ -95,8 +95,8 @@ class ActionManagerTest {
         val first = fixture.action()
         val second = fixture.action(OTHER_KEY)
         var committed = false
-        val notifications = mutableListOf<ActionData>()
-        fixture.actions.registerHandler(handler(ActionData::class.java) {
+        val notifications = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java) {
             assertTrue(committed)
             notifications.add(it)
             assertFailsWith<IllegalStateException> { fixture.actions.execute(first) }
@@ -132,7 +132,7 @@ class ActionManagerTest {
     fun `preparation failure releases the execution guard without notifications`() {
         val fixture = Fixture()
         var notifications = 0
-        fixture.actions.registerHandler(handler(ActionData::class.java) { notifications++ })
+        fixture.actions.registerHandler(handler(Action::class.java) { notifications++ })
         assertFailsWith<IllegalArgumentException> {
             fixture.actions.executeBatch(listOf(fixture.action()), { throw IllegalArgumentException("preparation") }, { error("commit") })
         }
@@ -257,8 +257,8 @@ class ActionManagerTest {
         val fixture = Fixture()
         val first = fixture.action()
         val later = fixture.action(OTHER_KEY)
-        val notifications = mutableListOf<ActionData>()
-        fixture.actions.registerHandler(handler(ActionData::class.java) {
+        val notifications = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java) {
             notifications.add(it)
             if (it === first) fixture.actions.post(later)
         })
@@ -277,11 +277,11 @@ class ActionManagerTest {
     fun `handlers receive the completed action in registration order including base class handlers`() {
         val fixture = Fixture()
         val calls = mutableListOf<String>()
-        val received = mutableListOf<ActionData>()
+        val received = mutableListOf<Action>()
         val action = SpecialAction()
         fixture.validate { calls.add("validate"); Result.Success }
         fixture.process = { calls.add("process"); ActionResult.SUCCESS }
-        fixture.actions.registerHandler(handler(ActionData::class.java) {
+        fixture.actions.registerHandler(handler(Action::class.java) {
             calls.add("base")
             received.add(it)
         })
@@ -301,7 +301,7 @@ class ActionManagerTest {
 
     @Test
     fun `denied actions do not invoke handlers regardless of where execution stops`() {
-        val cases: List<(Fixture) -> ActionData> = listOf(
+        val cases: List<(Fixture) -> Action> = listOf(
             { it.validate { Result.Rejected }; it.action() },
             { it.actions.registerActionMeta(PROBE_KEY, ActionMeta(false)); it.action() },
             { it.action(Key("test", "missing_processor")) },
@@ -309,8 +309,8 @@ class ActionManagerTest {
         )
         for (configure in cases) {
             val fixture = Fixture()
-            val received = mutableListOf<ActionData>()
-            fixture.actions.registerHandler(handler(ActionData::class.java, received::add))
+            val received = mutableListOf<Action>()
+            fixture.actions.registerHandler(handler(Action::class.java, received::add))
             val action = configure(fixture)
 
             assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
@@ -332,8 +332,8 @@ class ActionManagerTest {
                 if (fail && !failInValidator) throw failure
                 ActionResult.SUCCESS
             }
-            val received = mutableListOf<ActionData>()
-            fixture.actions.registerHandler(handler(ActionData::class.java, received::add))
+            val received = mutableListOf<Action>()
+            fixture.actions.registerHandler(handler(Action::class.java, received::add))
 
             assertSame(failure, assertFailsWith<IllegalStateException> { fixture.actions.execute(fixture.action()) })
             assertTrue(received.isEmpty())
@@ -349,12 +349,12 @@ class ActionManagerTest {
     fun `handler exceptions preserve success and do not skip later handlers or subsequent actions`() {
         val fixture = Fixture()
         var failures = 0
-        val received = mutableListOf<ActionData>()
-        fixture.actions.registerHandler(handler(ActionData::class.java) {
+        val received = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java) {
             failures++
             error("Broken handler")
         })
-        fixture.actions.registerHandler(handler(ActionData::class.java, received::add))
+        fixture.actions.registerHandler(handler(Action::class.java, received::add))
         val first = fixture.action()
         val second = fixture.action()
 
@@ -393,10 +393,10 @@ class ActionManagerTest {
         val fixture = Fixture()
         val actions = fixture.actions
         val calls = mutableListOf<String>()
-        val later = handler(ActionData::class.java) { calls.add("later") }
-        val added = handler(ActionData::class.java) { calls.add("added") }
-        lateinit var first: ActionHandler<ActionData>
-        first = handler(ActionData::class.java) {
+        val later = handler(Action::class.java) { calls.add("later") }
+        val added = handler(Action::class.java) { calls.add("added") }
+        lateinit var first: ActionHandler<Action>
+        first = handler(Action::class.java) {
             calls.add("first")
             actions.unregisterHandler(first)
             actions.unregisterHandler(later)
@@ -418,15 +418,15 @@ class ActionManagerTest {
         val first = fixture.action()
         val posted = fixture.action(OTHER_KEY)
         val blocked = mutableListOf<Boolean>()
-        val received = mutableListOf<ActionData>()
-        fixture.actions.registerHandler(handler(ActionData::class.java) {
+        val received = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java) {
             if (it === first) {
                 blocked.add(runCatching { fixture.actions.execute(posted) }.exceptionOrNull() is IllegalStateException)
                 blocked.add(runCatching { fixture.actions.drainPosted() }.exceptionOrNull() is IllegalStateException)
                 fixture.actions.post(posted)
             }
         })
-        fixture.actions.registerHandler(handler(ActionData::class.java, received::add))
+        fixture.actions.registerHandler(handler(Action::class.java, received::add))
 
         assertEquals(ActionResult.SUCCESS, fixture.actions.execute(first))
         assertEquals(listOf(true, true), blocked)
@@ -442,14 +442,14 @@ class ActionManagerTest {
     @Test
     fun `calling processors directly does not dispatch action handlers`() {
         val fixture = Fixture()
-        val received = mutableListOf<ActionData>()
-        fixture.actions.registerHandler(handler(ActionData::class.java, received::add))
+        val received = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java, received::add))
         val action = fixture.action(Key("test", "direct"))
 
-        val processor = object : ActionProcessor<ActionData>() {
-            override val actionClass = ActionData::class.java
+        val processor = object : ActionProcessor<Action>() {
+            override val actionClass = Action::class.java
             override val actionKey = action.type
-            override fun execute(action: ActionData): ActionResult {
+            override fun execute(action: Action): ActionResult {
                 fixture.executed.add(action)
                 return ActionResult.SUCCESS
             }
@@ -466,15 +466,15 @@ class ActionManagerTest {
         val notification = fixture.action()
         val posted = fixture.action(OTHER_KEY)
         val blocked = mutableListOf<Boolean>()
-        val received = mutableListOf<ActionData>()
-        fixture.actions.registerHandler(handler(ActionData::class.java) {
+        val received = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java) {
             if (it === notification) {
                 blocked.add(runCatching { fixture.actions.execute(posted) }.exceptionOrNull() is IllegalStateException)
                 blocked.add(runCatching { fixture.actions.drainPosted() }.exceptionOrNull() is IllegalStateException)
                 fixture.actions.post(posted)
             }
         })
-        fixture.actions.registerHandler(handler(ActionData::class.java, received::add))
+        fixture.actions.registerHandler(handler(Action::class.java, received::add))
 
         assertEquals(ActionResult.SUCCESS, fixture.actions.executeBatch(listOf(notification), { true }, {}))
 
@@ -488,34 +488,171 @@ class ActionManagerTest {
         assertEquals(0, fixture.actions.drainPosted())
     }
 
-    private fun <T : ActionData> handler(actionClass: Class<T>, callback: (T) -> Unit): ActionHandler<T> =
+    @Test
+    fun `single publication completes immediately and defers a publication from its handler`() {
+        val fixture = Fixture()
+        val facade = ActionFacade(fixture.actions)
+        val first = fixture.action()
+        val followUp = fixture.action()
+        val notifications = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java) {
+            notifications.add(it)
+            if (it === first) facade.publish(followUp)
+        })
+
+        facade.publish(first)
+        assertEquals(listOf(first), fixture.executed)
+        assertEquals(listOf(first), notifications)
+        assertEquals(1, fixture.actions.drainPosted())
+        assertEquals(listOf(first, followUp), fixture.executed)
+        assertEquals(fixture.executed, notifications)
+    }
+
+    @Test
+    fun `single publication waits behind an older batch`() {
+        val fixture = Fixture()
+        val facade = ActionFacade(fixture.actions)
+        val batchAction = fixture.action()
+        val single = fixture.action()
+        val notifications = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java, notifications::add))
+
+        facade.publish(listOf(batchAction), { true }, {})
+        facade.publish(single)
+        assertTrue(notifications.isEmpty())
+        assertEquals(1, fixture.actions.drainPosted(1))
+        assertEquals(listOf(batchAction), notifications)
+        assertTrue(fixture.executed.isEmpty())
+        assertEquals(1, fixture.actions.drainPosted())
+        assertEquals(listOf(batchAction, single), notifications)
+        assertEquals(listOf(single), fixture.executed)
+    }
+
+    @Test
+    fun `immediate denial and processor failure do not queue a retry`() {
+        val fixture = Fixture()
+        val facade = ActionFacade(fixture.actions)
+        val denied = fixture.action()
+        val failing = fixture.action()
+        val failure = IllegalStateException("Could not finish action")
+
+        fixture.process = { ActionResult.DENIED }
+        facade.publish(denied)
+        assertEquals(listOf(denied), fixture.executed)
+        assertEquals(0, fixture.actions.drainPosted())
+
+        fixture.process = { throw failure }
+        assertSame(failure, assertFailsWith<IllegalStateException> { facade.publish(failing) })
+        assertEquals(listOf(denied, failing), fixture.executed)
+        assertEquals(0, fixture.actions.drainPosted())
+    }
+
+    @Test
+    fun `handler publishes a batch snapshot as one FIFO queue entry`() {
+        val fixture = Fixture()
+        val facade = ActionFacade(fixture.actions)
+        val trigger = fixture.action()
+        val before = fixture.action()
+        val first = fixture.action()
+        val second = fixture.action()
+        val after = fixture.action()
+        val batch = mutableListOf(first, second)
+        val notifications = mutableListOf<Action>()
+        val stages = mutableListOf<String>()
+        fixture.actions.registerHandler(handler(Action::class.java) { action ->
+            notifications.add(action)
+            if (action === trigger) {
+                facade.publish(batch, { stages.add("prepare"); true }, { stages.add("commit") })
+            }
+            if (action === first) stages.add("first")
+            if (action === second) stages.add("second")
+        })
+
+        fixture.actions.post(before)
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(trigger))
+        batch.clear()
+        fixture.actions.post(after)
+        assertEquals(listOf(trigger), notifications)
+        assertTrue(stages.isEmpty())
+
+        assertEquals(1, fixture.actions.drainPosted(1))
+        assertEquals(listOf(trigger, before), notifications)
+        assertTrue(stages.isEmpty())
+        assertEquals(1, fixture.actions.drainPosted(1))
+        assertEquals(listOf("prepare", "commit", "first", "second"), stages)
+        assertEquals(listOf(trigger, before, first, second), notifications)
+        assertEquals(1, fixture.actions.drainPosted())
+        assertEquals(listOf(trigger, before, first, second, after), notifications)
+        assertEquals(listOf(trigger, before, after), fixture.executed)
+    }
+
+    @Test
+    fun `published batch uses current authorization before and after preparation`() {
+        for (rejectBeforePrepare in listOf(true, false)) {
+            val fixture = Fixture()
+            val facade = ActionFacade(fixture.actions)
+            val stages = mutableListOf<String>()
+            var allowed = true
+            fixture.validate {
+                stages.add("validate")
+                if (allowed) Result.Success else Result.Rejected
+            }
+            fixture.actions.registerHandler(handler(Action::class.java) { stages.add("notify") })
+            facade.publish(listOf(fixture.action()), {
+                stages.add("prepare")
+                allowed = false
+                true
+            }, { stages.add("commit") })
+            assertTrue(stages.isEmpty())
+
+            allowed = !rejectBeforePrepare
+            assertEquals(1, fixture.actions.drainPosted())
+            val expected = if (rejectBeforePrepare) listOf("validate") else listOf("validate", "prepare", "validate")
+            assertEquals(expected, stages)
+        }
+    }
+
+    @Test
+    fun `clearing pending work drops published batches and empty batches fail at submission`() {
+        val manager = ActionManager()
+        val facade = ActionFacade(manager)
+        assertFailsWith<IllegalArgumentException> {
+            facade.publish(emptyList(), { error("Unexpected preparation") }, { error("Unexpected commit") })
+        }
+        assertEquals(0, manager.drainPosted())
+        facade.publish(listOf(SpecialAction()), { error("Unexpected preparation") }, { error("Unexpected commit") })
+        manager.clearPosted()
+        assertEquals(0, manager.drainPosted())
+    }
+
+    private fun <T : Action> handler(actionClass: Class<T>, callback: (T) -> Unit): ActionHandler<T> =
         object : ActionHandler<T> {
             override val actionClass = actionClass
             override fun handle(action: T) = callback(action)
         }
 
-    private class SpecialAction : ActionData(PROBE_KEY, UUID(0, 1), 0, 0, 0)
-    private class OtherAction : ActionData(PROBE_KEY, UUID(0, 1), 0, 0, 0)
+    private class SpecialAction : Action(PROBE_KEY, UUID(0, 1), 0, 0, 0)
+    private class OtherAction : Action(PROBE_KEY, UUID(0, 1), 0, 0, 0)
 
-    private class EqualHandler : ActionHandler<ActionData> {
-        override val actionClass = ActionData::class.java
+    private class EqualHandler : ActionHandler<Action> {
+        override val actionClass = Action::class.java
         var calls = 0
-        override fun handle(action: ActionData) { calls++ }
+        override fun handle(action: Action) { calls++ }
         override fun equals(other: Any?) = other is EqualHandler
         override fun hashCode() = 0
     }
 
     private class Fixture {
         val actions = ActionManager()
-        val executed = mutableListOf<ActionData>()
-        var process: (ActionData) -> ActionResult = { ActionResult.SUCCESS }
+        val executed = mutableListOf<Action>()
+        var process: (Action) -> ActionResult = { ActionResult.SUCCESS }
 
         init {
             for (key in listOf(PROBE_KEY, OTHER_KEY)) {
-                actions.registerProcessor(object : ActionProcessor<ActionData>() {
-                    override val actionClass = ActionData::class.java
+                actions.registerProcessor(object : ActionProcessor<Action>() {
+                    override val actionClass = Action::class.java
                     override val actionKey = key
-                    override fun execute(action: ActionData): ActionResult {
+                    override fun execute(action: Action): ActionResult {
                         executed.add(action)
                         return process(action)
                     }
@@ -523,12 +660,12 @@ class ActionManagerTest {
             }
         }
 
-        fun action(key: Key = PROBE_KEY) = ActionData(key, UUID(0, 1), 0, 0, 0)
+        fun action(key: Key = PROBE_KEY) = Action(key, UUID(0, 1), 0, 0, 0)
 
         fun validate(validation: () -> Result) {
-            actions.registerValidator(object : ActionValidator<ActionData> {
-                override val actionClass = ActionData::class.java
-                override fun validate(action: ActionData) = validation()
+            actions.registerValidator(object : ActionValidator<Action> {
+                override val actionClass = Action::class.java
+                override fun validate(action: Action) = validation()
             })
         }
     }
