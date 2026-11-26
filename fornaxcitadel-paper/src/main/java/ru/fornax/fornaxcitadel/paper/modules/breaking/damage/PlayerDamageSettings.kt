@@ -1,6 +1,5 @@
 package ru.fornax.fornaxcitadel.paper.modules.breaking.damage
 
-import org.bukkit.configuration.ConfigurationSection
 import java.time.Duration
 
 /** Creative destruction and optional damage modifiers; ordinary hits start at one damage. */
@@ -17,16 +16,5 @@ data class PlayerDamageSettings(
         require(newcomerPlayTimeTicks > 0) {
             "player-damage.newcomers.play-time-hours must be positive"
         }
-    }
-
-    companion object {
-        fun read(config: ConfigurationSection): PlayerDamageSettings = PlayerDamageSettings(
-            creativeModeEnabled = config.getBoolean("player-damage.creative-mode", true),
-            newcomersEnabled = config.getBoolean("player-damage.newcomers.enabled", false),
-            newcomerFirstJoin = Duration.ofHours(config.getLong("player-damage.newcomers.first-join-hours", 48)),
-            newcomerPlayTimeTicks = Math.multiplyExact(
-                config.getLong("player-damage.newcomers.play-time-hours", 12), 20L * 60 * 60
-            )
-        )
     }
 }

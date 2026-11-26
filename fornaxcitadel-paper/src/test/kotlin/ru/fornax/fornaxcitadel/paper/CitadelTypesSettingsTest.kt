@@ -3,6 +3,7 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.configuration.file.YamlConfiguration
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.material.BukkitMaterialRegistry
+import ru.fornax.fornaxcitadel.paper.config.CitadelTypesSettingsReader
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
@@ -21,7 +22,7 @@ class CitadelTypesSettingsTest {
             set("health.reinforced", 123.0)
             set("health.dev", -1.0)
         }
-        val types = CitadelTypesSettings.read(config).types
+        val types = CitadelTypesSettingsReader.read(config).types
 
         assertEquals(linkedMapOf(
             "reinforced_light" to CitadelTypeSettings(
@@ -54,7 +55,7 @@ class CitadelTypesSettingsTest {
         val bundled = requireNotNull(javaClass.getResourceAsStream("/config.yml")).bufferedReader().use {
             YamlConfiguration.loadConfiguration(it)
         }
-        assertEquals(types, CitadelTypesSettings.read(bundled).types)
+        assertEquals(types, CitadelTypesSettingsReader.read(bundled).types)
     }
 
     @Test
@@ -72,14 +73,14 @@ class CitadelTypesSettingsTest {
                     config.options().copyDefaults(true)
                 }
                 val exception = assertFailsWith<IllegalArgumentException>("lvl=$value, defaults=$withDefaults") {
-                    CitadelTypesSettings.read(config)
+                    CitadelTypesSettingsReader.read(config)
                 }
                 assertTrue(exception.message.orEmpty().contains("citadel-types.reinforced.lvl"), exception.message)
             }
         }
         for (lvl in listOf(1, 999, Int.MAX_VALUE)) {
             val config = yaml("citadel-types: {custom: {item: nether_star, lvl: $lvl, damage-policy: deny}}")
-            assertEquals(lvl, CitadelTypesSettings.read(config).types.getValue("custom").lvl)
+            assertEquals(lvl, CitadelTypesSettingsReader.read(config).types.getValue("custom").lvl)
         }
         for (lvl in listOf(0, -1)) {
             assertFailsWith<IllegalArgumentException> {
@@ -112,7 +113,7 @@ class CitadelTypesSettingsTest {
                 lvl: 1
                 damage-policy: deny
         """)
-        val types = CitadelTypesSettings.read(config).types
+        val types = CitadelTypesSettingsReader.read(config).types
 
         assertEquals(setOf("copper_wall", "growing-wall", "protected_wall", "protected_marker"), types.keys)
         assertEquals(
@@ -156,19 +157,19 @@ class CitadelTypesSettingsTest {
             options().copyDefaults(true)
         }
         assertEquals(mapOf("reinforced" to CitadelTypeSettings(Key("minecraft", "diamond"), 3, HealthDefinition(null, invulnerable = true))),
-            CitadelTypesSettings.read(custom).types)
+            CitadelTypesSettingsReader.read(custom).types)
 
         val empty = yaml("citadel-types: {}").apply {
             setDefaults(bundled)
             options().copyDefaults(true)
         }
-        assertTrue(CitadelTypesSettings.read(empty).types.isEmpty())
+        assertTrue(CitadelTypesSettingsReader.read(empty).types.isEmpty())
         assertEquals(
             CitadelTypesSettings.DEFAULT_TYPES,
-            CitadelTypesSettings.read(YamlConfiguration().apply { setDefaults(bundled) }).types)
+            CitadelTypesSettingsReader.read(YamlConfiguration().apply { setDefaults(bundled) }).types)
 
         custom.set("citadel-types.reinforced.damage-policy", "allow")
-        val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(custom) }
+        val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettingsReader.read(custom) }
         assertTrue(exception.message.orEmpty().contains("citadel-types.reinforced.health"))
     }
 
@@ -183,7 +184,7 @@ class CitadelTypesSettingsTest {
             setDefaults(yaml("citadel-types: {reinforced: {item: iron_ingot, lvl: 2, health: {max: 20}}}"))
             options().copyDefaults(true)
         }
-        val types = CitadelTypesSettings.read(config).types
+        val types = CitadelTypesSettingsReader.read(config).types
         assertEquals(CitadelTypeSettings(health = HealthDefinition(20.0)), types.getValue("reinforced"))
         assertNull(types.getValue("heavy").item)
         assertEquals(1, types.getValue("heavy").lvl)
@@ -193,7 +194,7 @@ class CitadelTypesSettingsTest {
 
     @Test
     fun `health invulnerability accepts optional HP and agrees with legacy damage policy`() {
-        val types = CitadelTypesSettings.read(yaml("""
+        val types = CitadelTypesSettingsReader.read(yaml("""
             citadel-types:
               modern: {health: {invulnerable: true}}
               legacy: {damage-policy: deny}
@@ -230,7 +231,7 @@ class CitadelTypesSettingsTest {
                     config.options().copyDefaults(true)
                 }
                 val exception = assertFailsWith<IllegalArgumentException>("item=$item, defaults=$withDefaults") {
-                    CitadelTypesSettings.read(config)
+                    CitadelTypesSettingsReader.read(config)
                 }
                 assertTrue(exception.message.orEmpty().contains("citadel-types.reinforced.item"), exception.message)
             }
@@ -250,7 +251,7 @@ class CitadelTypesSettingsTest {
                 lvl: 3
                 damage-policy: deny
         """)
-        val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(config) }
+        val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettingsReader.read(config) }
         assertTrue(exception.message.orEmpty().contains("citadel-types.first.item"), exception.message)
         assertTrue(exception.message.orEmpty().contains("citadel-types.second.item"), exception.message)
         assertTrue(exception.message.orEmpty().contains("minecraft:diamond"), exception.message)
@@ -288,7 +289,7 @@ class CitadelTypesSettingsTest {
             "citadel-types: {bad: {lvl: 1, item: diamond, damage-policy: deny, maturing: {duration-seconds: 10, initial-damage-multiplier: 2}}}" to "citadel-types.bad.maturing"
         )
         for ((source, path) in invalid) {
-            val exception = assertFailsWith<IllegalArgumentException>(source) { CitadelTypesSettings.read(yaml(source)) }
+            val exception = assertFailsWith<IllegalArgumentException>(source) { CitadelTypesSettingsReader.read(yaml(source)) }
             assertTrue(exception.message.orEmpty().contains(path), exception.message)
         }
     }
@@ -304,7 +305,7 @@ class CitadelTypesSettingsTest {
                     $field: unbreakable
                     health: {max: 100}
             """)
-            val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(config) }
+            val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettingsReader.read(config) }
             assertTrue(exception.message.orEmpty().contains("citadel-types.protected_wall.$field"), exception.message)
         }
     }
@@ -322,7 +323,7 @@ class CitadelTypesSettingsTest {
         )
         for ((properties, field) in cases) {
             val config = yaml("citadel-types: {bad: {lvl: 1, item: diamond, health: {$properties}}}")
-            val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettings.read(config) }
+            val exception = assertFailsWith<IllegalArgumentException> { CitadelTypesSettingsReader.read(config) }
             assertTrue(exception.message.orEmpty().contains("citadel-types.bad.health.$field"), exception.message)
         }
         val maturingCases = listOf(
@@ -341,12 +342,12 @@ class CitadelTypesSettingsTest {
         for ((field, value) in maturingCases) {
             val config = yaml("citadel-types: {bad: {lvl: 1, item: diamond, health: {max: 4}, maturing: {duration-seconds: 10, initial-damage-multiplier: 2}}}")
             config.set("citadel-types.bad.maturing.$field", value)
-            val exception = assertFailsWith<IllegalArgumentException>("$field=$value") { CitadelTypesSettings.read(config) }
+            val exception = assertFailsWith<IllegalArgumentException>("$field=$value") { CitadelTypesSettingsReader.read(config) }
             assertTrue(exception.message.orEmpty().contains("citadel-types.bad.maturing.$field"), exception.message)
         }
         for (duration in listOf(0L, 1L, Long.MAX_VALUE / 1000 + 1, Long.MAX_VALUE)) {
             val config = yaml("citadel-types: {valid: {lvl: 1, item: diamond, health: {max: 4}, maturing: {duration-seconds: $duration, initial-damage-multiplier: 2}}}")
-            assertEquals(duration, CitadelTypesSettings.read(config).types.getValue("valid").maturing?.durationSeconds)
+            assertEquals(duration, CitadelTypesSettingsReader.read(config).types.getValue("valid").maturing?.durationSeconds)
             assertEquals(duration, MaturingSettings(duration, 1.0).durationSeconds)
         }
     }

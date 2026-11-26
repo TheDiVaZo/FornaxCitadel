@@ -7,6 +7,8 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.config.PaperSettingsReader
+import ru.fornax.fornaxcitadel.paper.config.PlayerDamageSettingsReader
 import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.register
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
@@ -49,10 +51,10 @@ class PaperConfigurationTest {
     @Test
     fun `dismantle refund chance defaults to one half and accepts both probability endpoints`() {
         assertEquals(DismantleSettings(0.5), shippedSettings().dismantle)
-        assertEquals(DismantleSettings(0.5), PaperSettings.read(YamlConfiguration()).dismantle)
+        assertEquals(DismantleSettings(0.5), PaperSettingsReader.read(YamlConfiguration()).dismantle)
         for (chance in listOf(0, 0.25, 1)) {
             val config = YamlConfiguration().apply { set("dismantle.refund-chance", chance) }
-            assertEquals(chance.toDouble(), PaperSettings.read(config).dismantle.refundChance)
+            assertEquals(chance.toDouble(), PaperSettingsReader.read(config).dismantle.refundChance)
         }
     }
 
@@ -61,14 +63,14 @@ class PaperConfigurationTest {
         for (chance in listOf(-0.01, 1.01, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
             assertFailsWith<IllegalArgumentException> { DismantleSettings(chance) }
             val config = YamlConfiguration().apply { set("dismantle.refund-chance", chance) }
-            assertFailsWith<IllegalArgumentException> { PaperSettings.read(config) }
+            assertFailsWith<IllegalArgumentException> { PaperSettingsReader.read(config) }
         }
         for (value in listOf("0.5", true, listOf(0.5))) {
             val config = YamlConfiguration().apply { set("dismantle.refund-chance", value) }
-            assertFailsWith<IllegalArgumentException> { PaperSettings.read(config) }
+            assertFailsWith<IllegalArgumentException> { PaperSettingsReader.read(config) }
         }
         val malformed = YamlConfiguration().apply { set("dismantle", 0.5) }
-        assertFailsWith<IllegalArgumentException> { PaperSettings.read(malformed) }
+        assertFailsWith<IllegalArgumentException> { PaperSettingsReader.read(malformed) }
     }
 
     @Test
@@ -87,7 +89,7 @@ class PaperConfigurationTest {
             set("player-damage.newcomers.play-time-hours", 2)
         }
 
-        val settings = PaperSettings.read(config).playerDamage
+        val settings = PaperSettingsReader.read(config).playerDamage
 
         assertFalse(settings.creativeModeEnabled)
         assertTrue(settings.newcomersEnabled)
@@ -100,10 +102,10 @@ class PaperConfigurationTest {
         for (key in listOf("first-join-hours", "play-time-hours")) {
             for (value in listOf(0L, -1L)) {
                 val config = YamlConfiguration().apply { set("player-damage.newcomers.$key", value) }
-                assertFailsWith<IllegalArgumentException> { PlayerDamageSettings.read(config) }
+                assertFailsWith<IllegalArgumentException> { PlayerDamageSettingsReader.read(config) }
             }
             val overflow = YamlConfiguration().apply { set("player-damage.newcomers.$key", Long.MAX_VALUE) }
-            assertFailsWith<ArithmeticException> { PlayerDamageSettings.read(overflow) }
+            assertFailsWith<ArithmeticException> { PlayerDamageSettingsReader.read(overflow) }
         }
         assertFailsWith<IllegalArgumentException> { PlayerDamageSettings(newcomerFirstJoin = Duration.ofNanos(1)) }
     }
@@ -112,6 +114,6 @@ class PaperConfigurationTest {
         val config = checkNotNull(javaClass.getResourceAsStream("/config.yml")).bufferedReader().use {
             YamlConfiguration.loadConfiguration(it)
         }
-        return PaperSettings.read(config)
+        return PaperSettingsReader.read(config)
     }
 }

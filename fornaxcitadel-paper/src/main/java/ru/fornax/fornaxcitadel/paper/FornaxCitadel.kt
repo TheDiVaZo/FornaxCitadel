@@ -22,7 +22,7 @@ import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
 import ru.fornax.fornaxcitadel.paper.command.CitadelCommandRegistration
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
-import ru.fornax.fornaxcitadel.paper.config.PaperSettings
+import ru.fornax.fornaxcitadel.paper.config.PaperSettingsReader
 import ru.fornax.fornaxcitadel.paper.material.CombineMaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.MaterialFacade
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
@@ -54,7 +54,7 @@ class FornaxCitadel : JavaPlugin() {
                 "Previous citadel storage shutdown has not completed"
             }
             saveDefaultConfig()
-            val settings = PaperSettings.read(config)
+            val settings = PaperSettingsReader.read(config)
             settings.acidConfigurationError?.let { logger.severe("Acid is disabled because its configuration is invalid: $it") }
             val messages = PaperMessages.load(this)
             val scheduler = PaperScheduler(this).also { schedulerAdapter = it }

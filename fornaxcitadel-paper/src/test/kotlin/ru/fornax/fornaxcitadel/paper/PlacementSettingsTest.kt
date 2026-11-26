@@ -2,6 +2,7 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.configuration.file.YamlConfiguration
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.paper.config.PlacementSettingsReader
 import ru.fornax.fornaxcitadel.paper.modules.placement.BlockListType
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
 import kotlin.test.Test
@@ -21,7 +22,7 @@ class PlacementSettingsTest {
             """.trimIndent())
         }
 
-        val settings = PlacementSettings.read(config)
+        val settings = PlacementSettingsReader.read(config)
 
         assertEquals(BlockListType.BLACKLIST, settings.listType)
         assertEquals(setOf(Key("minecraft", "stone"), Key("customblocks", "reinforced_stone")), settings.blocks)
@@ -29,7 +30,7 @@ class PlacementSettingsTest {
 
     @Test
     fun `missing lists preserve defaults while explicit empty lists keep their meaning`() {
-        val defaults = PlacementSettings.read(YamlConfiguration())
+        val defaults = PlacementSettingsReader.read(YamlConfiguration())
         assertEquals(BlockListType.WHITELIST, defaults.listType)
         assertEquals(18, defaults.blocks.size)
         assertTrue(Key("minecraft", "stone") in defaults.blocks)
@@ -39,11 +40,11 @@ class PlacementSettingsTest {
             val config = YamlConfiguration().apply {
                 set("placement.block-list.type", type.name)
             }
-            val implied = PlacementSettings.read(config)
+            val implied = PlacementSettingsReader.read(config)
             assertEquals(if (type == BlockListType.BLACKLIST) emptySet() else defaults.blocks, implied.blocks)
 
             config.set("placement.block-list.blocks", emptyList<String>())
-            val explicit = PlacementSettings.read(config)
+            val explicit = PlacementSettingsReader.read(config)
             assertEquals(type, explicit.listType)
             assertTrue(explicit.blocks.isEmpty())
         }
@@ -60,7 +61,7 @@ class PlacementSettingsTest {
             setDefaults(bundled)
             options().copyDefaults(true)
         }
-        assertEquals(PlacementSettings(BlockListType.BLACKLIST, emptySet()), PlacementSettings.read(explicit))
+        assertEquals(PlacementSettings(BlockListType.BLACKLIST, emptySet()), PlacementSettingsReader.read(explicit))
     }
 
     @Test
@@ -83,7 +84,7 @@ class PlacementSettingsTest {
         )
         for ((path, value) in invalidValues) {
             val config = YamlConfiguration().apply { set(path, value) }
-            assertFailsWith<IllegalArgumentException>("$path=$value") { PlacementSettings.read(config) }
+            assertFailsWith<IllegalArgumentException>("$path=$value") { PlacementSettingsReader.read(config) }
         }
         assertFailsWith<IllegalArgumentException> { PlacementSettings(blocks = setOf(Key("", "stone"))) }
         assertFailsWith<IllegalArgumentException> { PlacementSettings(blocks = setOf(Key("custom", ""))) }

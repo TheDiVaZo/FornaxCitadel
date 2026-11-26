@@ -10,7 +10,8 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.paper.config.PaperSettings
+import ru.fornax.fornaxcitadel.paper.config.ExplosionPowerSettingsReader
+import ru.fornax.fornaxcitadel.paper.config.PaperSettingsReader
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
@@ -63,7 +64,7 @@ class ExplosionDamageModelTest {
         val shipped = checkNotNull(javaClass.getResourceAsStream("/config.yml")).bufferedReader().use {
             YamlConfiguration.loadConfiguration(it)
         }
-        assertEquals(ExplosionPowerSettings(), PaperSettings.read(shipped).explosionPowers)
+        assertEquals(ExplosionPowerSettings(), PaperSettingsReader.read(shipped).explosionPowers)
         val config = YamlConfiguration().apply {
             loadFromString("""
                 placement:
@@ -79,7 +80,7 @@ class ExplosionDamageModelTest {
             """.trimIndent())
         }
 
-        val settings = PaperSettings.read(config).explosionPowers
+        val settings = PaperSettingsReader.read(config).explosionPowers
 
         assertEquals(2.5f, settings.defaultEntityPower)
         assertEquals(3.0f, settings.getBlockPower(Material.COBBLESTONE))
@@ -96,13 +97,13 @@ class ExplosionDamageModelTest {
         for (path in paths) {
             for (value in listOf("strong", -1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.MAX_VALUE)) {
                 val config = YamlConfiguration().apply { set(path, value) }
-                assertFailsWith<IllegalArgumentException>("$path=$value") { ExplosionPowerSettings.read(config) }
+                assertFailsWith<IllegalArgumentException>("$path=$value") { ExplosionPowerSettingsReader.read(config) }
             }
         }
         val unknown = YamlConfiguration().apply { set("explosions.block-powers.NOT_A_MATERIAL", 5.0) }
-        assertFailsWith<IllegalArgumentException> { ExplosionPowerSettings.read(unknown) }
+        assertFailsWith<IllegalArgumentException> { ExplosionPowerSettingsReader.read(unknown) }
         val wrongShape = YamlConfiguration().apply { set("explosions.block-powers", "STONE") }
-        assertFailsWith<IllegalArgumentException> { ExplosionPowerSettings.read(wrongShape) }
+        assertFailsWith<IllegalArgumentException> { ExplosionPowerSettingsReader.read(wrongShape) }
         assertFailsWith<IllegalArgumentException> { ExplosionPowerSettings(defaultEntityPower = Float.NaN) }
         assertFailsWith<IllegalArgumentException> { ExplosionPowerSettings(defaultBlockPower = -1.0f) }
         assertFailsWith<IllegalArgumentException> {

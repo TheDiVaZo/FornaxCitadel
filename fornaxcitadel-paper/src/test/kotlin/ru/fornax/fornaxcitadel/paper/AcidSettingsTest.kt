@@ -2,7 +2,8 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.Material
 import org.bukkit.configuration.file.YamlConfiguration
-import ru.fornax.fornaxcitadel.paper.config.PaperSettings
+import ru.fornax.fornaxcitadel.paper.config.AcidSettingsReader
+import ru.fornax.fornaxcitadel.paper.config.PaperSettingsReader
 import ru.fornax.fornaxcitadel.paper.modules.acid.*
 import kotlin.test.*
 
@@ -11,7 +12,7 @@ class AcidSettingsTest {
     fun `bundled defaults match settings and an empty catalog stays empty`() {
         val bundled = YamlConfiguration()
         javaClass.getResourceAsStream("/config.yml")!!.reader().use { bundled.load(it) }
-        assertEquals(AcidSettings(), AcidSettings.read(bundled))
+        assertEquals(AcidSettings(), AcidSettingsReader.read(bundled))
         assertEquals(emptyList(), read("acid:\n  types: {}").types)
         assertEquals(AcidSettings(), read(""))
     }
@@ -53,8 +54,8 @@ class AcidSettingsTest {
             "acid:\n  enabled: 'false'")
         for (text in invalid) {
             val config = YamlConfiguration().apply { loadFromString(text) }
-            assertFailsWith<IllegalArgumentException>(text) { AcidSettings.read(config) }
-            val plugin = PaperSettings.read(config)
+            assertFailsWith<IllegalArgumentException>(text) { AcidSettingsReader.read(config) }
+            val plugin = PaperSettingsReader.read(config)
             assertFalse(plugin.acid.enabled, text)
             assertNotNull(plugin.acidConfigurationError, text)
             assertTrue(plugin.citadelTypes.types.isNotEmpty())
@@ -65,9 +66,9 @@ class AcidSettingsTest {
     fun `removed drop settings are rejected as unknown fields`() {
         for (drops in listOf("{}", "false", "\n    target-block: true\n    target-reinforcement: false\n    acid-block: false\n    acid-reinforcement: true")) {
             val config = YamlConfiguration().apply { loadFromString("acid:\n  drops: $drops") }
-            val failure = assertFailsWith<IllegalArgumentException> { AcidSettings.read(config) }
+            val failure = assertFailsWith<IllegalArgumentException> { AcidSettingsReader.read(config) }
             assertEquals("Unknown field in acid: [drops]", failure.message)
-            val plugin = PaperSettings.read(config)
+            val plugin = PaperSettingsReader.read(config)
             assertFalse(plugin.acid.enabled)
             assertNotNull(plugin.acidConfigurationError)
             assertTrue(plugin.citadelTypes.types.isNotEmpty())
@@ -93,7 +94,7 @@ class AcidSettingsTest {
                 ))
             ))
         }
-        val settings = AcidSettings.read(config)
+        val settings = AcidSettingsReader.read(config)
         assertEquals(5, settings.maxDistance)
         assertEquals(2, settings.types.single().maxTargets)
 
@@ -105,9 +106,9 @@ class AcidSettingsTest {
             Double.NaN to "$path must be an integer fitting in Int"
         )) {
             val invalid = YamlConfiguration().apply { set(path, value) }
-            val failure = assertFailsWith<IllegalArgumentException> { AcidSettings.read(invalid) }
+            val failure = assertFailsWith<IllegalArgumentException> { AcidSettingsReader.read(invalid) }
             assertEquals(message, failure.message)
-            val plugin = PaperSettings.read(invalid)
+            val plugin = PaperSettingsReader.read(invalid)
             assertFalse(plugin.acid.enabled)
             assertEquals(message, plugin.acidConfigurationError)
         }
@@ -123,9 +124,9 @@ class AcidSettingsTest {
             setDefaults(defaults)
             options().copyDefaults(true)
         }
-        val failure = assertFailsWith<IllegalArgumentException> { AcidSettings.read(configured) }
+        val failure = assertFailsWith<IllegalArgumentException> { AcidSettingsReader.read(configured) }
         assertEquals("acid.types.gold.max-targets must be an integer", failure.message)
     }
 
-    private fun read(text: String) = AcidSettings.read(YamlConfiguration().apply { loadFromString(text) })
+    private fun read(text: String) = AcidSettingsReader.read(YamlConfiguration().apply { loadFromString(text) })
 }

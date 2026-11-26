@@ -1,6 +1,5 @@
 package ru.fornax.fornaxcitadel.paper.config
 
-import org.bukkit.configuration.ConfigurationSection
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidSettings
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
@@ -24,24 +23,5 @@ data class PaperSettings(
     init {
         require(postedActionLimit > 0) { "actions.max-per-tick must be positive" }
         require(saveIntervalTicks > 0) { "storage.save-interval-ticks must be positive" }
-    }
-
-    companion object {
-        fun read(config: ConfigurationSection): PaperSettings {
-            val acid = try { Result.success(AcidSettings.read(config)) }
-                catch (failure: IllegalArgumentException) { Result.failure(failure) }
-            return PaperSettings(
-                postedActionLimit = config.getInt("actions.max-per-tick", 1024),
-                saveIntervalTicks = config.getLong("storage.save-interval-ticks", 1200),
-                playerDamage = PlayerDamageSettings.read(config),
-                explosionPowers = ExplosionPowerSettings.read(config),
-                citadelTypes = CitadelTypesSettings.read(config),
-                placement = PlacementSettings.read(config),
-                observation = PaperObservationSettings.read(config),
-                dismantle = DismantleSettings.read(config),
-                acid = acid.getOrElse { AcidSettings(enabled = false, types = emptyList()) },
-                acidConfigurationError = acid.exceptionOrNull()?.message
-            )
-        }
     }
 }

@@ -20,9 +20,9 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
-import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.config.PaperSettingsReader
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
@@ -240,7 +240,7 @@ class ConfiguredCitadelTypesTest {
                       max: 37.0
             """.trimIndent())
         }
-        val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
+        val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettingsReader.read(config).citadelTypes)
         val definition = Key("fornaxcitadel", "diamond_wall")
         assertEquals(Key("minecraft", "diamond"), fixture.citadelTypes.itemKey(definition))
         fixture.installer.held = TestItemStack(Material.AMETHYST_SHARD, 2)
@@ -269,7 +269,7 @@ class ConfiguredCitadelTypesTest {
                       max: 29.0
             """.trimIndent())
         }
-        val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
+        val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettingsReader.read(config).citadelTypes)
         val definition = Key("fornaxcitadel", "steel_guard")
         val itemKey = Key("thirdparty", "steel_plate")
         val material = TestMaterialAdapter(itemKey)
@@ -340,7 +340,7 @@ class ConfiguredCitadelTypesTest {
                     health: {max: 29.0}
             """.trimIndent())
         }
-        val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
+        val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettingsReader.read(config).citadelTypes)
         fixture.installer.permissions.add("fornaxcitadel.admin")
         val commands = fixture.command()
         val args = arrayOf("give", "steel_guard", "stranger", "3")
