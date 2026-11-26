@@ -24,6 +24,7 @@ import ru.fornax.fornaxcitadel.core.storage.DBStorage
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
@@ -174,6 +175,7 @@ class PlacementMetadataTest {
         Fixture().use { fixture ->
             assertEquals(ActionResult.SUCCESS, fixture.place())
             var executed = 0
+            fixture.actions.registerActionMeta(DismantleAction.KEY, ActionMeta.REQUIRE_APPROVAL)
             fixture.actions.registerProcessor(object : ActionProcessor<DismantleAction>() {
                 override val actionClass = DismantleAction::class.java
                 override val actionKey = DismantleAction.KEY

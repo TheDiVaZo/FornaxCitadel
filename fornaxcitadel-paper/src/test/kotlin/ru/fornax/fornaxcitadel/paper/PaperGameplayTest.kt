@@ -5,12 +5,18 @@ import org.bukkit.event.Listener
 import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
+import ru.fornax.fornaxcitadel.core.systems.action.Action
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
+import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingListener
@@ -30,6 +36,27 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PaperGameplayTest {
+    @Test
+    fun `neutral validation requires approval for all five protected action keys`() = platform().use { paper ->
+        val runtime = Runtime(paper)
+        runtime.construct()
+
+        for (key in listOf(RemoveAction.KEY, DamageAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY)) {
+            assertFalse(runtime.actions.isAllowed(Action(key, paper.position)), key.toString())
+        }
+        assertTrue(runtime.actions.isAllowed(Action(PlaceAction.KEY, paper.position)))
+        assertTrue(runtime.actions.isAllowed(Action(Key("addon", "example"), paper.position)))
+    }
+
+    @Test
+    fun `paper defaults preserve explicitly configured action policies`() = platform().use { paper ->
+        val runtime = Runtime(paper)
+        runtime.actions.registerActionMeta(RepairAction.KEY, ActionMeta(true))
+        runtime.construct()
+
+        assertTrue(runtime.actions.isAllowed(Action(RepairAction.KEY, paper.position)))
+    }
+
     @Test
     fun `configured definitions exist before gameplay construction and survive restarts`() = platform().use { paper ->
         val runtime = Runtime(paper)

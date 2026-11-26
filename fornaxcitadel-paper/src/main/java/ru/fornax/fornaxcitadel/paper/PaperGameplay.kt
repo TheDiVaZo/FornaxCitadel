@@ -7,7 +7,13 @@ import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.HealthFacade
 import ru.fornax.fornaxcitadel.core.facade.MaturationFacade
+import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
+import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
+import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
+import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
@@ -43,6 +49,7 @@ class PaperGameplay(
     private val observation: ObservationService<Player>
 ) {
     init {
+        registerProtectedActionDefaults(actions)
         actions.registerValidator(PaperActionStateValidator(plugin.server))
         actions.registerValidator(PaperPermissionValidator(health))
         actions.registerValidator(PaperDamageValidator(citadels, health, settings.playerDamage.creativeModeEnabled))
@@ -132,5 +139,14 @@ class PaperGameplay(
         stop { placement.disable() }
         state = State.STOPPED
         return failure
+    }
+
+    companion object {
+        internal fun registerProtectedActionDefaults(actions: ActionFacade) {
+            val protectedKeys = listOf(
+                RemoveAction.KEY, DamageAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY
+            )
+            for (key in protectedKeys) actions.registerDefaultActionMeta(key, ActionMeta.REQUIRE_APPROVAL)
+        }
     }
 }

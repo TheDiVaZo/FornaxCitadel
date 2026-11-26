@@ -289,6 +289,7 @@ internal class PaperTestFixture(
     val actionQueue = ActionQueueService(actionFacade, queueScheduler, maxActionsPerTick)
     val pluginQueue = PluginActionQueue(actionQueue, actions)
     init {
+        PaperGameplay.registerProtectedActionDefaults(actionFacade)
         actionFacade.registerValidator(PaperActionStateValidator(server))
         if (permissions) actionFacade.registerValidator(PaperPermissionValidator(coreGameplay.healthFacade))
         actionFacade.registerValidator(PaperDamageValidator(citadels, coreGameplay.healthFacade, creativeModeEnabled))

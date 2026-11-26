@@ -6,6 +6,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.function.BooleanSupplier
 
 class ActionFacade(
@@ -46,6 +47,9 @@ class ActionFacade(
 
     /** Registers a processor without changing the key's execution policy. */
     fun registerAction(processor: ActionProcessor<*>) = actionManager.registerProcessor(processor)
+
+    /** Sets the policy for neutral validation unless the host already configured this key. */
+    fun registerDefaultActionMeta(key: Key, meta: ActionMeta) = actionManager.registerActionMetaIfAbsent(key, meta)
 
     fun <T : Action> registerAction(processor: ActionProcessor<T>, meta: ActionMeta) {
         registerAction(processor)

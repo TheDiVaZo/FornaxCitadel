@@ -48,10 +48,12 @@ class CoreGameplay(
 
         health.registerFirstModifier(maturationModifier)
 
-        actionFacade.registerAction(RemoveProcessor(remove), ActionMeta.DEFAULT)
+        actionFacade.registerAction(RemoveProcessor(remove))
+        actionFacade.registerDefaultActionMeta(RemoveAction.KEY, ActionMeta.REQUIRE_APPROVAL)
         actionFacade.registerValidator(ExistingCitadelValidator(RemoveAction::class.java, citadelFacade))
 
-        actionFacade.registerAction(DamageProcessor(health), ActionMeta.DEFAULT)
+        actionFacade.registerAction(DamageProcessor(health))
+        actionFacade.registerDefaultActionMeta(DamageAction.KEY, ActionMeta.REQUIRE_APPROVAL)
         actionFacade.registerValidator(ExistingCitadelValidator(DamageAction::class.java, citadelFacade))
 
         actionFacade.registerAction(PlaceProcessor(place), ActionMeta.DEFAULT)

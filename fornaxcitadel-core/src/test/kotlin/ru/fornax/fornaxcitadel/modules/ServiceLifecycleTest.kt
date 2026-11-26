@@ -23,7 +23,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamageModifier
 import ru.fornax.fornaxcitadel.modules.health.Health
@@ -34,8 +33,6 @@ import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
-import ru.fornax.fornaxcitadel.modules.repair.RepairAction
-import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -171,14 +168,11 @@ class ServiceLifecycleTest {
     fun `core authorization defaults preserve the policies of external registrations`() {
         val actions = ActionManager()
         val citadels = CitadelFacade(ComponentManager(MemoryStorage(), TypeManager()), ExactPositionResolver)
-        actions.registerActionMeta(RepairAction.KEY, ActionMeta(true))
-        actions.registerActionMeta(UpgradeAction.KEY, ActionMeta(false))
+        actions.registerActionMeta(DamageAction.KEY, ActionMeta(true))
         CoreGameplay(citadels, ActionFacade(actions))
 
-        val protectedKeys = listOf(RemoveAction.KEY, DamageAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY)
-        for (key in protectedKeys) {
-            assertEquals(key == RepairAction.KEY, actions.isAllowed(Action(key, POSITION)), key.toString())
-        }
+        assertTrue(actions.isAllowed(Action(DamageAction.KEY, POSITION)))
+        assertFalse(actions.isAllowed(Action(RemoveAction.KEY, POSITION)))
     }
 
     @Test

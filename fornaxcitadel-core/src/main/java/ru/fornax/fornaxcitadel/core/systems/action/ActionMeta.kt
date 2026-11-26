@@ -7,5 +7,8 @@ data class ActionMeta(
     companion object {
         @JvmStatic
         val DEFAULT = ActionMeta(true)
+
+        @JvmStatic
+        val REQUIRE_APPROVAL = ActionMeta(false)
     }
 }
