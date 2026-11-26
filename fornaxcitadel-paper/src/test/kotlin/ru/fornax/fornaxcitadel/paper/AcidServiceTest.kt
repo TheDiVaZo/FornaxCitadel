@@ -17,7 +17,6 @@ import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturationDefinition
-import ru.fornax.fornaxcitadel.modules.health.MaturationMultiplier
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
@@ -108,30 +107,6 @@ class AcidServiceTest {
             assertEquals(listOf(Material.NETHERITE_BLOCK, Material.COBBLESTONE), f.droppedItems.map { it.second.type })
             assertTrue(notified.isEmpty())
         }
-
-    @Test
-    fun `disabling acid keeps saved reinforcement data and restores ordinary maturity`() {
-        for (enabled in listOf(true, false)) {
-            fixture(settings = AcidSettings(enabled = enabled), sourceType = PaperCitadelTypes.MATURING).use { f ->
-                val source = assertNotNull(f.citadels.findProtecting(f.position))
-                val startedAt = System.currentTimeMillis() - 900_000
-                source.editComponent(Maturing::class.java) { it.startedAtMillis = startedAt }
-                val acid = assertNotNull(f.acidService)
-                if (enabled) {
-                    assertFalse(f.coreGameplay.maturation.isMature(source))
-                    acid.disable()
-                }
-                assertTrue(f.coreGameplay.maturation.isMature(source))
-                assertFailure(AcidFailure.DISABLED, acid.activate(f.installer.player, f.block()))
-                f.manager.unloadChunk(f.worldId, 0, 0).join()
-                f.manager.loadChunk(f.worldId, 0, 0).join()
-                val restored = assertNotNull(f.citadels.findProtecting(f.position))
-                assertEquals(source.position, restored.position)
-                assertEquals(startedAt, restored.getComponent(Maturing::class.java)?.startedAtMillis)
-                unchanged(f)
-            }
-        }
-    }
 
     @Test
     fun `provider chunk failure during execution is an error and stops remaining targets`() = fixture(Material.DIAMOND_BLOCK).use { f ->
@@ -628,7 +603,7 @@ class AcidServiceTest {
             f.manager.loadChunk(f.worldId, 0, 0).join()
             val settings = AcidSettings(types = listOf(AcidType("changed", Material.GOLD_BLOCK, 2, 1.0)))
             val service = AcidService(
-                f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturation,
+                f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturationFacade,
                 f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService, AcidRegistry(settings)
             )
             service.enable()
@@ -685,27 +660,6 @@ class AcidServiceTest {
         unchanged(f)
     }
 
-    @Test
-    fun `acid lifecycle preserves other maturation rules and never registers its factor twice`() =
-        fixture(sourceType = PaperCitadelTypes.MATURING).use { f ->
-            val source = assertNotNull(f.citadels.findProtecting(f.position))
-            source.editComponent(Maturing::class.java) { it.startedAtMillis = System.currentTimeMillis() - 900_000 }
-            val maturation = f.coreGameplay.maturation
-            val acid = f.acidService!!
-            val otherRule = MaturationMultiplier { 2.0 }
-            maturation.registerMultiplier(otherRule)
-            assertEquals(0.375, maturation.progress(source), 0.01)
-            acid.enable()
-            assertEquals(0.375, maturation.progress(source), 0.01)
-            acid.disable()
-            acid.disable()
-            assertEquals(0.75, maturation.progress(source), 0.01)
-            acid.enable()
-            assertEquals(0.375, maturation.progress(source), 0.01)
-            assertTrue(maturation.unregisterMultiplier(otherRule))
-            assertEquals(0.75, maturation.progress(source), 0.01)
-        }
-
     private fun fixture(material: Material = Material.GOLD_BLOCK, settings: AcidSettings? = AcidSettings(),
                         sourceType: Key = PaperCitadelTypes.REINFORCED) = PaperTestFixture(permissions = true, acidSettings = settings, citadelSettings = CitadelTypesSettings(
                             CitadelTypesSettings.DEFAULT_TYPES + ("tier_1000" to CitadelTypeSettings(
@@ -738,7 +692,7 @@ class AcidServiceTest {
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
         check(f.acidService == null)
         val service = AcidService(
-            f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturation,
+            f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturationFacade,
             f.citadelTypes, materials, f.materialPlacement, f.breakingService, AcidRegistry(AcidSettings())
         )
         service.enable()

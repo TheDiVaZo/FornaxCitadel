@@ -20,6 +20,7 @@ import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
+import ru.fornax.fornaxcitadel.paper.modules.placement.register
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -30,14 +31,14 @@ import kotlin.test.assertTrue
 
 class PaperGameplayTest {
     @Test
-    fun `configured definitions exist before chunk load and survive gameplay restarts`() = platform().use { paper ->
+    fun `configured definitions exist before gameplay construction and survive restarts`() = platform().use { paper ->
         val runtime = Runtime(paper)
         val type = Key("fornaxcitadel", "test_wall")
-        val addon = runtime.construct()
         val definition = assertNotNull(runtime.core.definitions.find(type))
-        val health = runtime.core.health
+        val health = runtime.core.healthFacade
         assertEquals(65.0, assertNotNull(health.findDefinition(type)).maxHealth)
         assertNotNull(runtime.core.maturationFacade.findDefinition(type))
+        val addon = runtime.construct()
         assertFalse(paper.citadels.isChunkLoaded(paper.worldId, 0, 0))
         assertTrue(paper.listenerRegistrations.isEmpty())
 
@@ -116,9 +117,13 @@ class PaperGameplayTest {
             "test_wall" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), 1, health = HealthDefinition(65.0))
         )))
 
+        init {
+            settings.citadelTypes.register(core)
+        }
+
         fun construct() =
             PaperGameplay(paper.plugin, settings, PaperMessages.defaults(), facade, paper.citadels,
-                core, paper.materials, paper.materialPlacement, ObservationService<Player>(paper.manager, ManualScheduler()),
-                save = {})
+                core.definitions, core.healthFacade, core.maturationFacade, paper.materials, paper.materialPlacement,
+                ObservationService<Player>(paper.manager, ManualScheduler()))
     }
 }

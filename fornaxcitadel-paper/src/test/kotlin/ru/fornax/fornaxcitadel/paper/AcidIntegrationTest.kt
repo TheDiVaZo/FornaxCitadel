@@ -540,7 +540,7 @@ class AcidIntegrationTest {
     }
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
         val service = AcidService(
-            f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturation,
+            f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturationFacade,
             f.citadelTypes, materials, f.materialPlacement, f.breakingService, AcidRegistry(AcidSettings())
         )
         service.enable()

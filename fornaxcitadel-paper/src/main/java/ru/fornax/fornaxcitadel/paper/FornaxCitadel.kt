@@ -20,6 +20,7 @@ import ru.fornax.fornaxcitadel.core.storage.CitadelStorage
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
 import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
+import ru.fornax.fornaxcitadel.paper.command.CitadelCommand
 import ru.fornax.fornaxcitadel.paper.command.CitadelCommandRegistration
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.config.PaperSettingsReader
@@ -28,6 +29,7 @@ import ru.fornax.fornaxcitadel.paper.material.MaterialFacade
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.modules.observation.Full3DObservation
 import ru.fornax.fornaxcitadel.paper.modules.observation.PaperObservationService
+import ru.fornax.fornaxcitadel.paper.modules.placement.register
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.scheduler.PaperScheduler
 import ru.fornax.fornaxcitadel.paper.storage.PersistContainerChunkStorage
@@ -74,6 +76,7 @@ class FornaxCitadel : JavaPlugin() {
             val actions = ActionFacade(actionManager)
             val citadels = CitadelFacade(manager, materialPlacement)
             val coreGameplay = CoreGameplay(citadels, actions)
+            settings.citadelTypes.register(coreGameplay)
             val actionSettings = ActionSettings(maxActionsPerTick = settings.postedActionLimit) { failure ->
                 logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
             }
@@ -84,13 +87,18 @@ class FornaxCitadel : JavaPlugin() {
                 logger.log(Level.SEVERE, "Citadel observation failed", failure)
             }
             paperGameplay = PaperGameplay(
-                this, settings, messages, actions, citadels, coreGameplay,
-                materials, materialPlacement, observation, chunks::saveAll
+                this, settings, messages, actions, citadels,
+                coreGameplay.definitions, coreGameplay.healthFacade, coreGameplay.maturationFacade,
+                materials, materialPlacement, observation
             )
             val observationSource = Full3DObservation(this, actions, citadels, chunks,
                 settings.observation.full3D)
             val observers = PaperObservationService(this, observation, observationSource).also { observationService = it }
-            val commands = CitadelCommandRegistration(::getCommand, paperGameplay.commands, messages)
+            val command = CitadelCommand(
+                this, actions, citadels, coreGameplay.healthFacade, materials, coreGameplay.definitions,
+                messages, paperGameplay.acid, chunks::saveAll
+            )
+            val commands = CitadelCommandRegistration(::getCommand, command, messages)
                 .also { commandRegistration = it }
 
             chunks.enableWithAddons(server.pluginManager.plugins, citadels, coreGameplay)

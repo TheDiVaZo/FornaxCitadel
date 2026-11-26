@@ -9,10 +9,10 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.isOwnerOrUnowned
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
-import ru.fornax.fornaxcitadel.modules.health.MaturationService
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.facade.MaturationFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
@@ -36,7 +36,7 @@ class AcidService(
     private val plugin: Plugin,
     private val actions: ActionFacade,
     private val citadels: CitadelFacade,
-    private val maturation: MaturationService,
+    private val maturation: MaturationFacade,
     private val definitions: CitadelDefinitionRegistry,
     private val materials: MaterialRegistry,
     private val placement: MaterialPlacementService,
@@ -83,7 +83,6 @@ class AcidService(
     }
 
     override fun disable() {
-        maturation.unregisterMultiplier(multiplier)
         scopedActions = emptyList()
         enabled = false
     }

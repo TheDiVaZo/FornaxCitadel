@@ -333,7 +333,7 @@ internal class PaperTestFixture(
     )
     val acidService = acidSettings?.let {
         AcidService(
-            plugin, actionFacade, citadels, coreGameplay.maturation,
+            plugin, actionFacade, citadels, coreGameplay.maturationFacade,
             citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it)
         )
     }

@@ -2,11 +2,12 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
-import ru.fornax.fornaxcitadel.addon.CoreGameplay
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
+import ru.fornax.fornaxcitadel.core.facade.MaturationFacade
 import ru.fornax.fornaxcitadel.core.systems.observation.ObservationService
-import ru.fornax.fornaxcitadel.paper.command.CitadelCommand
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
@@ -21,45 +22,41 @@ import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
 import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
-import ru.fornax.fornaxcitadel.paper.modules.placement.register
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.upgrade.PaperUpgradeService
 import ru.fornax.fornaxcitadel.paper.modules.validation.PaperActionStateValidator
 
-/** Registers the catalog and actions at construction and owns Paper gameplay during plugin activation. */
+/** Registers gameplay actions at construction and manages the Paper services' lifecycle. */
 class PaperGameplay(
     plugin: Plugin,
     settings: PaperSettings,
     messages: PaperMessages,
     actions: ActionFacade,
     citadels: CitadelFacade,
-    coreGameplay: CoreGameplay,
+    definitions: CitadelDefinitionRegistry,
+    health: HealthFacade,
+    maturation: MaturationFacade,
     materials: MaterialRegistry,
     materialPlacement: MaterialPlacementService,
-    private val observation: ObservationService<Player>,
-    save: () -> Unit
+    private val observation: ObservationService<Player>
 ) {
-    private val definitions = coreGameplay.definitions
-
     init {
-        settings.citadelTypes.register(coreGameplay)
         actions.registerValidator(PaperActionStateValidator(plugin.server))
-        actions.registerValidator(PaperPermissionValidator(coreGameplay.healthFacade))
-        actions.registerValidator(PaperDamageValidator(citadels, coreGameplay.healthFacade, settings.playerDamage.creativeModeEnabled))
+        actions.registerValidator(PaperPermissionValidator(health))
+        actions.registerValidator(PaperDamageValidator(citadels, health, settings.playerDamage.creativeModeEnabled))
     }
 
     val placement = PaperPlacementService(
-        plugin, actions, citadels, coreGameplay.healthFacade, definitions, materials, settings.placement, messages
+        plugin, actions, citadels, health, definitions, materials, settings.placement, messages
     )
     val dismantle = PaperDismantleService(
-        plugin, actions, citadels, coreGameplay.healthFacade, definitions, materials, settings.dismantle
+        plugin, actions, citadels, health, definitions, materials, settings.dismantle
     )
-    val repair = PaperRepairService(actions, citadels, coreGameplay.healthFacade, definitions, materials)
+    val repair = PaperRepairService(actions, citadels, health, definitions, materials)
     val upgrade = PaperUpgradeService(
-        plugin, actions, citadels, coreGameplay.definitions, coreGameplay.healthFacade,
-        materials, settings.dismantle
+        plugin, actions, citadels, definitions, health, materials, settings.dismantle
     )
     /** Register modifiers for ordinary player damage on the main thread. */
     val playerDamage = PlayerDamageModifierService()
@@ -67,15 +64,12 @@ class PaperGameplay(
         plugin, actions, citadels, playerDamage, messages, settings.playerDamage.creativeModeEnabled
     )
     val acid = AcidService(
-        plugin, actions, citadels, coreGameplay.maturation, definitions, materials,
+        plugin, actions, citadels, maturation, definitions, materials,
         materialPlacement, breaking, AcidRegistry(settings.acid)
     )
     private val explosion = PaperExplosionService(plugin, actions, citadels, settings.explosionPowers)
     private val environment = PaperEnvironmentService(plugin, citadels)
-    private val display = CrackHealthObservationSystem(plugin, coreGameplay.healthFacade)
-    internal val commands = CitadelCommand(
-        plugin, actions, citadels, coreGameplay.healthFacade, materials, definitions, messages, acid, save
-    )
+    private val display = CrackHealthObservationSystem(plugin, health)
 
     init {
         if (settings.playerDamage.newcomersEnabled) {

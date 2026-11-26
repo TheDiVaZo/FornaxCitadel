@@ -68,6 +68,7 @@ class MaterialPlacementRulesTest {
     @Test
     fun `custom key resolves providers registered later and occupied rule keys cannot be replaced`() {
         PaperTestFixture().use { fixture ->
+            val materials = fixture.materialFacade
             val source = fixture.block()
             val target = fixture.block(3, 64, 2)
             val key = Key("thirdparty", "linked_stone")
@@ -75,14 +76,18 @@ class MaterialPlacementRulesTest {
                 override fun getResponsibleBlock(block: Block): Block = target
                 override fun getProtectionCandidates(block: Block): Sequence<Block> = sequenceOf(target, block)
             }
-            assertTrue(fixture.materialFacade.registerPlacementRule(key, rule))
-            assertFalse(fixture.materialFacade.registerPlacementRule(key, DefaultMaterialPlacementRule()))
-            assertSame(rule, fixture.materialPlacement.getRule(key))
-            assertEquals(source.testPosition(), fixture.materialPlacement.getResponsiblePosition(source.testPosition()))
+            assertTrue(materials.registerPlacementRule(key, rule))
+            assertFalse(materials.registerPlacementRule(key, DefaultMaterialPlacementRule()))
+            assertSame(rule, materials.getRule(key))
+            assertSame(materials.getRule(Key("minecraft", "stone")), materials.getRule(source))
+            assertEquals(source.testPosition(), materials.getResponsiblePosition(source.testPosition()))
 
             val adapter = TestMaterialAdapter(key, taggedBlock = source)
-            assertTrue(fixture.materialFacade.registerMaterial("thirdparty", TestMaterialRegistry(adapter)))
-            assertEquals(target.testPosition(), fixture.materialPlacement.getResponsiblePosition(source.testPosition()))
+            assertTrue(materials.registerMaterial("thirdparty", TestMaterialRegistry(adapter)))
+            assertSame(rule, materials.getRule(source))
+            assertEquals(target.testPosition(), materials.getResponsiblePosition(source.testPosition()))
+            assertEquals(listOf(target.testPosition(), source.testPosition()),
+                materials.getProtectionCandidates(source.testPosition()).toList())
             val local = fixture.placeExact(source)
             assertEquals(local.runtimeId,
                 assertNotNull(fixture.citadels.findProtecting(source.testPosition())).runtimeId)
@@ -98,6 +103,9 @@ class MaterialPlacementRulesTest {
             val (foot, _) = fixture.bed(x = 15)
             val local = fixture.placeExact(foot)
 
+            val candidates = fixture.materialFacade.getProtectionCandidates(foot.testPosition()).iterator()
+            assertEquals(foot.testPosition(), candidates.next())
+            assertFailsWith<CitadelResolutionUnavailableException> { candidates.hasNext() }
             assertEquals(local.runtimeId,
                 assertNotNull(fixture.citadels.findProtecting(foot.testPosition())).runtimeId)
             assertFalse(1 to 0 in fixture.loadedWorldChunks)
@@ -116,10 +124,13 @@ class MaterialPlacementRulesTest {
 
             fixture.loadedWorldChunks.add(1 to 0)
             assertFailsWith<CitadelResolutionUnavailableException> {
-                fixture.materialPlacement.getResponsiblePosition(foot.testPosition())
+                fixture.materialFacade.getRule(head)
+            }
+            assertFailsWith<CitadelResolutionUnavailableException> {
+                fixture.materialFacade.getResponsiblePosition(foot.testPosition())
             }
             fixture.loadChunk(1, 0)
-            assertEquals(head.testPosition(), fixture.materialPlacement.getResponsiblePosition(foot.testPosition()))
+            assertEquals(head.testPosition(), fixture.materialFacade.getResponsiblePosition(foot.testPosition()))
             assertNull(fixture.citadels.findProtecting(foot.testPosition()))
         }
     }
