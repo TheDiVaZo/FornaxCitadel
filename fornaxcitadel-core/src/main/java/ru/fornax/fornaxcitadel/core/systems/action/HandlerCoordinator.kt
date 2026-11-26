@@ -11,9 +11,6 @@ import java.util.logging.Logger
 class HandlerCoordinator {
     private val handlers = DeferredRegistrationList<ActionHandler<*>>()
 
-    @get:JvmSynthetic
-    internal val isHandling: Boolean get() = handlers.isIterating
-
     /** Multiple handlers can share an action class. Registering the same instance is a no-op. */
     fun registerHandler(handler: ActionHandler<*>) {
         handlers.register(handler)
@@ -25,7 +22,7 @@ class HandlerCoordinator {
     /**
      * Notifies handlers whose action class accepts [action], including handlers for base classes.
      * This is a manual notification: it neither executes the action nor verifies its result.
-     * ActionManager calls it only after a processor returns [ActionResult.SUCCESS].
+     * ActionManager delivers completed actions here after a successful root execution.
      * Handlers must observe citadel state as described by [ActionHandler]; changing citadels here
      * has undefined behavior and is not checked at runtime. Post actions for subsequent changes.
      * Handler exceptions are logged without skipping later handlers. Registration changes are

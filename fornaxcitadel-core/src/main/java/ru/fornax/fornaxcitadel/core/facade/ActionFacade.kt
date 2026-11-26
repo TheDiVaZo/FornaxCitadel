@@ -11,6 +11,7 @@ import java.util.function.BooleanSupplier
 class ActionFacade(
     private val actionManager: ActionManager
 ) {
+    /** Executes synchronously, including from a processor. Handlers run after the outermost action succeeds. */
     fun execute(action: Action): ActionResult = actionManager.execute(action)
 
     /** Runs a trusted batch synchronously. See [ActionManager.executeBatch] for the commit contract. */

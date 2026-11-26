@@ -4,8 +4,7 @@ package ru.fornax.fornaxcitadel.core.util
 internal class DeferredRegistrationList<T : Any> {
     private val active = ArrayList<T>()
     private val pending = ArrayList<Change<T>>()
-    var isIterating: Boolean = false
-        private set
+    private var isIterating = false
 
     fun register(value: T) {
         if (containsEffective(value)) return

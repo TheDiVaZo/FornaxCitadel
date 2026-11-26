@@ -17,10 +17,9 @@ import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.ActionExecutionScope
+import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.core.systems.action.CompositeActionProcessor
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.acid.AcidAction
 import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
@@ -29,8 +28,6 @@ import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.ChunkLoadCheck
 import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
-import java.util.Collections
-import java.util.IdentityHashMap
 import java.util.UUID
 import java.util.logging.Level
 
@@ -45,13 +42,13 @@ class AcidService(
     private val placement: MaterialPlacementService,
     private val breaking: PaperBreakingService,
     val registry: AcidRegistry
-) : CompositeActionProcessor<AcidAction>(), LifecycleService {
+) : ActionProcessor<AcidAction>(), LifecycleService {
     override val actionClass = AcidAction::class.java
     override val actionKey = AcidAction.KEY
     private var enabled = false
     private var busy = false
     internal val activationEnabled get() = enabled && registry.settings.enabled
-    private val scopedActions = Collections.newSetFromMap(IdentityHashMap<AcidDestroyAction, Boolean>())
+    private var scopedActions: List<AcidDestroyAction> = emptyList()
     private val isChunkLoaded: ChunkLoadCheck = citadels::isChunkLoaded
     private val multiplier = AcidMaturationMultiplier(registry, plugin.server, isChunkLoaded)
 
@@ -70,7 +67,7 @@ class AcidService(
         actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
             override val actionClass = AcidDestroyAction::class.java
             override fun validate(action: AcidDestroyAction): ActionValidator.Result =
-                if (enabled && busy && action in scopedActions) ActionValidator.Result.Success else ActionValidator.Result.Rejected
+                if (enabled && scopedActions.any { it === action }) ActionValidator.Result.Success else ActionValidator.Result.Rejected
         })
     }
 
@@ -87,13 +84,13 @@ class AcidService(
 
     override fun disable() {
         maturation.unregisterMultiplier(multiplier)
-        scopedActions.clear()
+        scopedActions = emptyList()
         enabled = false
     }
 
     fun inspect(player: Player, block: Block?): AcidResult = operation({ it }) {
         val acid = resolve(block?.let(::position))
-        val candidates = candidates(acidPlayerContext(player), acid, actions::isAllowed)
+        val candidates = candidates(acidPlayerContext(player), acid)
         AcidResult.Information(acid.type, acid.citadel, acid.owner, acid.tier,
             maturation.isMature(acid.citadel), candidates.size,
             minOf(candidates.size, acid.type.maxTargets))
@@ -109,36 +106,42 @@ class AcidService(
         return request.result
     }
 
-    override fun execute(action: AcidAction, scope: ActionExecutionScope): ActionResult {
-        val outcome = operation({ it }) { activate(action, scope) }
+    override fun execute(action: AcidAction): ActionResult {
+        val outcome = operation({ it }) { activate(action) }
         (action as? AcidActivationRequest)?.result = outcome
         return if (outcome is AcidResult.Activated) ActionResult.SUCCESS else ActionResult.DENIED
     }
 
-    private fun activate(action: AcidAction, scope: ActionExecutionScope): AcidResult.Activated {
+    private fun activate(action: AcidAction): AcidResult.Activated {
         val acid = activationSource(action)
         val context = action.context
-        val selected = candidates(context, acid, scope::isAllowed).take(acid.type.maxTargets)
+        val selected = candidates(context, acid).take(acid.type.maxTargets)
         if (breaking.destructionParts(acid.block, placement).mapNotNull {
             citadels.findProtecting(position(it))
         }.any { !same(it, acid.citadel) }) fail(AcidFailure.DENIED)
         val sourceAction = destroyAction(context, acid, acid.block, consuming = true)
-        scopedActions.add(sourceAction)
-        if (breaking.destroy(acid.block, listOf(acid.citadel), listOf(sourceAction), materials, placement,
-                scope::executeBatch, validate = { sourceIsCurrent(context, acid) }) != ActionResult.SUCCESS) {
+        val source = Target(acid.block, listOf(acid.citadel), listOf(sourceAction))
+        if (destroy(source) { sourceIsCurrent(context, acid) } != ActionResult.SUCCESS) {
             fail(AcidFailure.DENIED)
         }
         var destroyed = 0
         for (target in selected) {
-            val result = breaking.destroy(target.block, target.reinforcements, target.actions, materials, placement, scope::executeBatch,
-                validate = {
-                    enabled && target.reinforcements.all {
-                        canDissolve(acid.tier, definitions.level(it))
-                    }
-                })
+            val result = destroy(target) {
+                enabled && target.reinforcements.all { canDissolve(acid.tier, definitions.level(it)) }
+            }
             if (result == ActionResult.SUCCESS) destroyed++
         }
         return AcidResult.Activated(destroyed)
+    }
+
+    private fun destroy(target: Target, validate: () -> Boolean): ActionResult = withDestructionActions(target.actions) {
+        breaking.destroy(target.block, target.reinforcements, target.actions, materials, placement, validate)
+    }
+
+    /** Only these exact child actions may pass validation during this preview or batch. */
+    private inline fun <T> withDestructionActions(children: List<AcidDestroyAction>, body: () -> T): T {
+        scopedActions = children
+        return try { body() } finally { scopedActions = emptyList() }
     }
 
     private fun activationSource(action: AcidAction): AcidBlock {
@@ -176,7 +179,7 @@ class AcidService(
         return AcidBlock(anchor, citadel, type, citadel.getComponent(CitadelOwner::class.java)?.playerId, tier)
     }
 
-    private fun candidates(context: ActionContext, acid: AcidBlock, isAllowed: (AcidDestroyAction) -> Boolean): List<Target> {
+    private fun candidates(context: ActionContext, acid: AcidBlock): List<Target> {
         val targets = mutableListOf<Target>()
         val seen = mutableSetOf<Pair<CitadelPosition, Int>>()
         for (face in FACES) {
@@ -190,8 +193,8 @@ class AcidService(
             if (protected.any { same(it.second, acid.citadel) }) continue
             if (protected.any { !canDissolve(acid.tier, definitions.level(it.second)) }) continue
             val destructionActions = protected.map { destroyAction(context, acid, it.first) }
-            scopedActions.addAll(destructionActions)
-            if (!destructionActions.all(isAllowed)) continue
+            val allowed = withDestructionActions(destructionActions) { destructionActions.all(actions::isAllowed) }
+            if (!allowed) continue
             seen.addAll(protected.map { it.second.position to it.second.runtimeId })
             targets.add(Target(block, protected.map { it.second }, destructionActions))
         }
@@ -213,7 +216,7 @@ class AcidService(
         catch (failure: Exception) {
             plugin.logger.log(Level.SEVERE, "Could not complete acid operation", failure)
             onFailure(AcidResult.Failed(AcidFailure.ERROR))
-        } finally { scopedActions.clear(); busy = false }
+        } finally { busy = false }
     }
 
     private fun fail(reason: AcidFailure): Nothing = throw Refused(reason)

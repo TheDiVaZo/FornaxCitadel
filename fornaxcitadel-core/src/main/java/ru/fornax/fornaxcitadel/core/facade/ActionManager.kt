@@ -1,7 +1,6 @@
 package ru.fornax.fornaxcitadel.core.facade
 
 import ru.fornax.fornaxcitadel.core.systems.action.Action
-import ru.fornax.fornaxcitadel.core.systems.action.ActionExecutionScope
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
@@ -15,18 +14,21 @@ import ru.fornax.fornaxcitadel.core.util.Key
 import java.util.ArrayDeque
 
 /**
- * Validates and executes actions synchronously on the owning game thread.
+ * Validates and executes actions synchronously. Call from the owning game thread.
  */
 class ActionManager {
+    private enum class Phase { IDLE, PROCESSING, DISPATCHING }
+
     private val processorCoordinator = ProcessorCoordinator()
     private val validatorCoordinator = ValidatorCoordinator()
     private val handlerCoordinator = HandlerCoordinator()
     private val actionMetaRegistry = ActionMetaRegistry(ActionMeta.DEFAULT)
-    private var executing = false
+    private var phase = Phase.IDLE
+    private val completed = ArrayList<Action>()
     private val posted = ArrayDeque<() -> Unit>()
 
     @get:JvmSynthetic
-    internal val canStartExecution: Boolean get() = !executing && !handlerCoordinator.isHandling
+    internal val canStartExecution: Boolean get() = phase == Phase.IDLE
 
     @get:JvmSynthetic
     internal val hasPostedActions: Boolean get() = posted.isNotEmpty()
@@ -56,7 +58,7 @@ class ActionManager {
         actionMetaRegistry.unregister(key, meta)
 
     /** Read-only authorization using the same metadata as execute. Does not notify handlers. */
-    fun isAllowed(action: Action): Boolean = runRoot { validate(action) }
+    fun isAllowed(action: Action): Boolean = dispatch { validate(action) }
 
     private fun validate(action: Action): Boolean = when (validatorCoordinator.validate(action)) {
         ActionValidator.Result.Rejected -> false
@@ -70,18 +72,15 @@ class ActionManager {
      * prepare does not commit the requested changes, but may dispatch events whose listeners change
      * gameplay state; intents are validated again afterward. commit performs no further cancelable validation.
      * This is not a world transaction: unexpected commit failures propagate without simulated rollback.
-     * Notifications run only after the entire commit succeeds, under the normal reentrancy guard.
+     * A successful commit records its actions in batch order for notification when the root succeeds.
      */
-    fun executeBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult =
-        runRoot { runBatch(actions, prepare, commit) }
-
-    private fun runBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult {
+    fun executeBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult = dispatch {
         require(actions.isNotEmpty()) { "A batch must contain an action" }
         val snapshot = actions.toList()
-        if (!snapshot.all(::validate) || !prepare() || !snapshot.all(::validate)) return ActionResult.DENIED
+        if (!snapshot.all(::validate) || !prepare() || !snapshot.all(::validate)) return@dispatch ActionResult.DENIED
         commit()
-        snapshot.forEach(handlerCoordinator::handle)
-        return ActionResult.SUCCESS
+        completed.addAll(snapshot)
+        ActionResult.SUCCESS
     }
 
     /**
@@ -89,52 +88,46 @@ class ActionManager {
      * A Success authorizes execution. An aggregate Neutral uses the action's configured metadata.
      * Allowed execution returns the processor's result (or DENIED if none is registered).
      * Validators must leave gameplay state unchanged. Validator and processor exceptions propagate.
-     * On SUCCESS, handlers are notified after the processor finishes.
+     * A processor can synchronously execute children and decide its own result. After the root
+     * succeeds, handlers receive successful descendants before their parent. A denied or failed
+     * branch discards its notifications. Changes already committed by that branch remain.
      * Matching handlers run in registration order; registration changes apply afterward.
      * Handler exceptions are logged without changing the result or skipping later handlers.
      * Handlers observe completed actions; modifying citadels from a handler has undefined behavior
      * and is not checked at runtime. Use [post] to request subsequent changes.
-     * Nested execution is rejected through the last handler.
+     * Validators, batch callbacks and handlers can publish follow-ups for later execution.
      */
-    fun execute(action: Action): ActionResult = runRoot {
-        if (!validate(action)) return@runRoot ActionResult.DENIED
-        val result = processorCoordinator.execute(action, ::withExecutionScope)
-        if (result == ActionResult.SUCCESS) handlerCoordinator.handle(action)
+    fun execute(action: Action): ActionResult = dispatch {
+        if (!validate(action)) return@dispatch ActionResult.DENIED
+        val branchStart = completed.size
+        var result = ActionResult.DENIED
+        phase = Phase.PROCESSING
+        try {
+            result = processorCoordinator.execute(action)
+        } finally {
+            phase = Phase.DISPATCHING
+            if (result != ActionResult.SUCCESS && completed.size > branchStart) {
+                completed.subList(branchStart, completed.size).clear()
+            }
+        }
+        if (result == ActionResult.SUCCESS) completed.add(action)
         result
     }
 
-    private fun withExecutionScope(process: (ActionExecutionScope) -> ActionResult): ActionResult {
-        val scope = ProcessorScope()
-        return try { process(scope) } finally { scope.close() }
-    }
-
-    private inner class ProcessorScope : ActionExecutionScope {
-        private val owner = Thread.currentThread()
-        private var available = true
-
-        fun close() { available = false }
-
-        override fun isAllowed(action: Action): Boolean = useScope { validate(action) }
-
-        override fun executeBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult =
-            useScope { runBatch(actions, prepare, commit) }
-
-        private inline fun <T> useScope(operation: () -> T): T {
-            check(Thread.currentThread() === owner && available) { "Action execution scope is unavailable" }
-            available = false
-            return try { operation() } finally { available = true }
+    private inline fun <T> dispatch(operation: () -> T): T {
+        val previous = phase
+        check(previous != Phase.DISPATCHING) {
+            "Only action processors can execute nested actions; post the action instead"
         }
-    }
-
-    private inline fun <T> runRoot(operation: () -> T): T {
-        check(canStartExecution) {
-            "Nested action execution is not allowed; post the action instead"
-        }
-        executing = true
-        return try {
-            operation()
+        val root = previous == Phase.IDLE
+        phase = Phase.DISPATCHING
+        try {
+            val result = operation()
+            if (root) completed.forEach(handlerCoordinator::handle)
+            return result
         } finally {
-            executing = false
+            if (root) completed.clear()
+            phase = previous
         }
     }
 

@@ -1,18 +1,15 @@
 package ru.fornax.fornaxcitadel.core.facade
 
 import ru.fornax.fornaxcitadel.core.systems.action.Action
-import ru.fornax.fornaxcitadel.core.systems.action.ActionExecutionScope
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator.Result
-import ru.fornax.fornaxcitadel.core.systems.action.CompositeActionProcessor
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.lang.reflect.Modifier
 import java.util.UUID
-import java.util.concurrent.CompletableFuture
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -22,85 +19,128 @@ import kotlin.test.assertTrue
 
 class ActionManagerTest {
     @Test
-    fun `composite processor performs guarded child validation and batches before notifying its handlers`() {
+    fun `processors execute children synchronously and defer notifications until the root succeeds`() {
         val fixture = Fixture()
         val facade = ActionFacade(fixture.actions)
-        val parent = fixture.action(Key("test", "composite"))
-        val child = fixture.action()
-        val stages = mutableListOf<String>()
-        lateinit var active: ActionExecutionScope
-
-        fun checkScopeBlocked() {
-            assertFailsWith<IllegalStateException> { active.isAllowed(child) }
-            assertFailsWith<IllegalStateException> { active.executeBatch(listOf(child), { true }, {}) }
-        }
+        val parent = fixture.action()
+        val child = fixture.action(OTHER_KEY)
+        val vetoed = fixture.action()
+        val first = fixture.action()
+        val second = fixture.action()
+        val published = fixture.action()
+        val notifications = mutableListOf<Action>()
+        var batchCommitted = false
+        var parentFinished = false
         facade.registerValidator(object : ActionValidator<Action> {
             override val actionClass = Action::class.java
-            override fun validate(action: Action): Result {
-                if (action === child) {
-                    stages.add("validate")
-                    checkScopeBlocked()
-                }
-                return Result.Success
-            }
+            override fun validate(action: Action) = if (action === vetoed) Result.Rejected else Result.Neutral
         })
         facade.registerHandler(handler(Action::class.java) { action ->
-            stages.add(if (action === parent) "parent handler" else "child handler")
-            checkScopeBlocked()
-            assertFailsWith<IllegalStateException> { facade.execute(child) }
+            assertTrue(parentFinished)
+            notifications.add(action)
         })
-        facade.registerAction(composite(parent.type) { scope ->
-            active = scope
-            assertFailsWith<IllegalStateException> { facade.isAllowed(child) }
-            CompletableFuture.runAsync { checkScopeBlocked() }.join()
-            assertTrue(scope.isAllowed(child))
-            scope.executeBatch(listOf(child), {
-                stages.add("prepare")
-                checkScopeBlocked()
-                true
-            }, {
-                stages.add("commit")
-                checkScopeBlocked()
-            })
-        })
+        fixture.process = { action ->
+            when (action) {
+                parent -> {
+                    assertTrue(facade.isAllowed(child))
+                    facade.publish(published)
+                    assertEquals(ActionResult.SUCCESS, facade.execute(child))
+                    assertFalse(facade.isAllowed(vetoed))
+                    assertEquals(ActionResult.DENIED, facade.execute(vetoed))
+                    assertTrue(batchCommitted)
+                    assertTrue(notifications.isEmpty())
+                    assertFailsWith<IllegalStateException> { fixture.actions.drainPosted() }
+                    parentFinished = true
+                }
+                child -> assertEquals(ActionResult.SUCCESS, facade.executeBatch(listOf(first, second), { true }, {
+                    batchCommitted = true
+                }))
+            }
+            ActionResult.SUCCESS
+        }
+        fixture.actions.post(parent)
 
-        assertEquals(ActionResult.SUCCESS, facade.execute(parent))
-        assertEquals(listOf("validate", "validate", "prepare", "validate", "commit", "child handler", "parent handler"), stages)
-        checkScopeBlocked()
+        assertEquals(1, fixture.actions.drainPosted(1))
+        assertEquals(listOf(parent, child), fixture.executed)
+        assertEquals(listOf(first, second, child, parent), notifications)
+        assertEquals(1, fixture.actions.drainPosted(1))
+        assertEquals(listOf(first, second, child, parent, published), notifications)
     }
 
     @Test
-    fun `child rejection skips commit and expired scope cannot be reused after processor failure`() {
-        val fixture = Fixture()
-        val parent = fixture.action(Key("test", "composite"))
-        val child = fixture.action()
-        var allowChild = true
-        val notifications = mutableListOf<Action>()
-        fixture.actions.registerHandler(handler(Action::class.java, notifications::add))
-        fixture.validate { if (allowChild) Result.Success else Result.Rejected }
-        lateinit var saved: ActionExecutionScope
-        val failure = IllegalArgumentException("abort processor")
-        fixture.actions.registerProcessor(composite(parent.type) { scope ->
-            saved = scope
-            val result = scope.executeBatch(listOf(child), { allowChild = false; true }, { error("unexpected commit") })
-            assertEquals(ActionResult.DENIED, result)
-            assertFalse(scope.isAllowed(child))
-            throw failure
-        })
+    fun `a parent can succeed after a child denies or throws and only successful branches notify`() {
+        for (throws in listOf(false, true)) {
+            val fixture = Fixture()
+            val parent = fixture.action()
+            val before = fixture.action()
+            val rejectedBranch = fixture.action()
+            val grandchild = fixture.action()
+            val after = fixture.action()
+            val committed = mutableListOf<Action>()
+            val notifications = mutableListOf<Action>()
+            fixture.actions.registerHandler(handler(Action::class.java, notifications::add))
+            fixture.process = { action ->
+                when (action) {
+                    parent -> {
+                        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(before))
+                        if (throws) {
+                            assertFailsWith<IllegalArgumentException> { fixture.actions.execute(rejectedBranch) }
+                        } else {
+                            assertEquals(ActionResult.DENIED, fixture.actions.execute(rejectedBranch))
+                        }
+                        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(after))
+                        assertTrue(notifications.isEmpty())
+                        ActionResult.SUCCESS
+                    }
+                    rejectedBranch -> {
+                        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(grandchild))
+                        if (throws) throw IllegalArgumentException("child failed after the grandchild committed")
+                        ActionResult.DENIED
+                    }
+                    else -> {
+                        committed.add(action)
+                        ActionResult.SUCCESS
+                    }
+                }
+            }
 
-        assertSame(failure, assertFailsWith<IllegalArgumentException> { fixture.actions.execute(parent) })
-        assertFailsWith<IllegalStateException> { saved.isAllowed(child) }
-        assertTrue(notifications.isEmpty())
-        allowChild = true
-        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(child))
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(parent))
+            assertEquals(listOf(before, grandchild, after), committed)
+            assertEquals(listOf(before, after, parent), notifications)
+        }
     }
 
-    private fun composite(key: Key, process: (ActionExecutionScope) -> ActionResult) =
-        object : CompositeActionProcessor<Action>() {
-            override val actionClass = Action::class.java
-            override val actionKey = key
-            override fun execute(action: Action, scope: ActionExecutionScope) = process(scope)
+    @Test
+    fun `root denial or failure suppresses descendant notifications and keeps committed changes`() {
+        for (throws in listOf(false, true)) {
+            val fixture = Fixture()
+            val parent = fixture.action()
+            val child = fixture.action()
+            var committed = 0
+            val notifications = mutableListOf<Action>()
+            fixture.actions.registerHandler(handler(Action::class.java, notifications::add))
+            fixture.process = { action ->
+                if (action === parent) {
+                    assertEquals(ActionResult.SUCCESS, fixture.actions.execute(child))
+                    if (throws) throw IllegalArgumentException("root failed after the child committed")
+                    ActionResult.DENIED
+                } else {
+                    committed++
+                    ActionResult.SUCCESS
+                }
+            }
+
+            if (throws) {
+                assertFailsWith<IllegalArgumentException> { fixture.actions.execute(parent) }
+            } else {
+                assertEquals(ActionResult.DENIED, fixture.actions.execute(parent))
+            }
+            assertEquals(1, committed)
+            assertTrue(notifications.isEmpty())
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(child))
+            assertEquals(listOf(child), notifications)
         }
+    }
 
     @Test
     fun `public action API hides its collaborators and exposes no citadel operations`() {
@@ -120,10 +160,11 @@ class ActionManagerTest {
     }
 
     @Test
-    fun `nested execution authorization and draining are forbidden throughout dispatch`() {
-        for (stage in listOf("validator", "processor", "handler", "prepare", "commit")) {
+    fun `validators handlers and batch callbacks cannot dispatch child actions`() {
+        for (stage in listOf("validator", "handler", "prepare", "commit")) {
             val fixture = Fixture()
-            val action = fixture.action()
+            val parent = fixture.action()
+            val child = fixture.action()
             val nested = fixture.action(OTHER_KEY)
             var checks = 0
             fun checkNestedCalls() {
@@ -135,22 +176,33 @@ class ActionManagerTest {
                 }
                 checks++
             }
-            when (stage) {
-                "validator" -> fixture.validate { checkNestedCalls(); Result.Success }
-                "processor" -> fixture.process = { checkNestedCalls(); ActionResult.SUCCESS }
-                "handler" -> fixture.actions.registerHandler(
-                    handler(Action::class.java) { checkNestedCalls() })
+            fixture.actions.registerValidator(object : ActionValidator<Action> {
+                override val actionClass = Action::class.java
+                override fun validate(action: Action): Result {
+                    if (action === child && stage == "validator") checkNestedCalls()
+                    return Result.Success
+                }
+            })
+            fixture.actions.registerHandler(handler(Action::class.java) { action ->
+                if (action === child && stage == "handler") checkNestedCalls()
+            })
+            fixture.process = { action ->
+                if (action === parent) {
+                    when (stage) {
+                        "prepare", "commit" -> assertEquals(ActionResult.SUCCESS, fixture.actions.executeBatch(listOf(child), {
+                            if (stage == "prepare") checkNestedCalls()
+                            true
+                        }, { if (stage == "commit") checkNestedCalls() }))
+                        else -> assertEquals(ActionResult.SUCCESS, fixture.actions.execute(child))
+                    }
+                }
+                ActionResult.SUCCESS
             }
-            when (stage) {
-                "prepare", "commit" -> assertEquals(ActionResult.SUCCESS, fixture.actions.executeBatch(listOf(action), {
-                    if (stage == "prepare") checkNestedCalls()
-                    true
-                }, { if (stage == "commit") checkNestedCalls() }))
-                else -> assertEquals(ActionResult.SUCCESS, fixture.actions.execute(action))
-            }
+
+            assertEquals(ActionResult.SUCCESS, fixture.actions.execute(parent))
             assertEquals(1, checks, stage)
             assertFalse(nested in fixture.executed, stage)
-            assertTrue(fixture.actions.isAllowed(action), stage)
+            assertTrue(fixture.actions.isAllowed(parent), stage)
         }
     }
 

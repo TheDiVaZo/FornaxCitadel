@@ -5,8 +5,9 @@ import ru.fornax.fornaxcitadel.core.util.Key
 
 /**
  * Performs an authorized action. Finish checks before committing state.
- * Previously committed changes survive unexpected failures. Use [ActionFacade.publish] to queue
- * a subsequent action. Use [CompositeActionProcessor] for a synchronous batch of child actions.
+ * Use [ActionFacade.execute] or [ActionFacade.executeBatch] for synchronous child operations.
+ * The processor decides how each child result affects its own result. Committed changes survive
+ * a later denial or exception. Use [ActionFacade.publish] to queue a subsequent action.
  */
 abstract class ActionProcessor<T: Action> {
     abstract val actionClass: Class<T>

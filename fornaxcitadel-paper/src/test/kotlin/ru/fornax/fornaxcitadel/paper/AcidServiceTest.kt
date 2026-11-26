@@ -7,10 +7,12 @@ import org.bukkit.block.BlockFace
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
+import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.acid.AcidAction
 import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Maturing
@@ -94,6 +96,8 @@ class AcidServiceTest {
                 override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean = error("Provider failed")
             }
             f.materials.register("broken", TestMaterialRegistry(adapter))
+            val notified = mutableListOf<Action>()
+            f.observeActions { notified.add(it) }
             assertFailure(AcidFailure.ERROR, activate(f))
             assertFalse(first.isCurrent)
             assertFalse(target.isCurrent)
@@ -102,6 +106,7 @@ class AcidServiceTest {
             consumed(f)
             assertEquals(listOf(f.block(), f.block().getRelative(BlockFace.UP)), f.naturalBreaks.map { it.first })
             assertEquals(listOf(Material.NETHERITE_BLOCK, Material.COBBLESTONE), f.droppedItems.map { it.second.type })
+            assertTrue(notified.isEmpty())
         }
 
     @Test
@@ -394,6 +399,8 @@ class AcidServiceTest {
             val extra = reinforce(f, f.block().getRelative(BlockFace.NORTH))
             var consumedSource = false
             f.afterNaturalBreak = { if (it === f.block()) consumedSource = true }
+            val notified = mutableListOf<Action>()
+            f.observeActions { notified.add(it) }
             f.vetoAcid { action ->
                 if (action.consumingSource) mask and 1 != 0
                 else consumedSource && ((action.position == first.position && mask and 2 != 0) ||
@@ -404,6 +411,7 @@ class AcidServiceTest {
                 assertTrue(first.isCurrent && second.isCurrent)
                 unchanged(f)
                 assertTrue(f.droppedItems.isEmpty())
+                assertTrue(notified.isEmpty())
             } else {
                 val count = 2 - (if (mask and 2 != 0) 1 else 0) - (if (mask and 4 != 0) 1 else 0)
                 assertEquals(AcidResult.Activated(count), activate(f))
@@ -412,6 +420,10 @@ class AcidServiceTest {
                 consumed(f)
                 assertEquals(count + 1, f.naturalBreaks.size)
                 assertEquals(count, f.droppedItems.count { it.second.type == Material.COBBLESTONE })
+                val destroyed = listOf(first, second).filterNot { it.isCurrent }
+                assertEquals(listOf(f.position) + destroyed.map { it.position },
+                    notified.dropLast(1).map { assertIs<AcidDestroyAction>(it).position })
+                assertIs<AcidAction>(notified.last())
             }
             assertTrue(extra.isCurrent)
         }
@@ -556,28 +568,26 @@ class AcidServiceTest {
     }
 
     @Test
-    fun `damage notifications observe each completed construction starting with source consumption`() = fixture(Material.DIAMOND_BLOCK).use { f ->
-        val targets = listOf(reinforce(f, f.block().getRelative(BlockFace.UP)), reinforce(f, f.block().getRelative(BlockFace.DOWN)))
-        val notified = mutableListOf<AcidDestroyAction>()
+    fun `source target and activation notifications see the final reinforcement and block state`() = fixture(Material.DIAMOND_BLOCK).use { f ->
+        val blocks = listOf(f.block(), f.block().getRelative(BlockFace.UP), f.block().getRelative(BlockFace.DOWN))
+        val source = assertNotNull(f.citadels.findProtecting(f.position))
+        val handles = listOf(source) + blocks.drop(1).map { reinforce(f, it) }
+        val notified = mutableListOf<Action>()
         val remaining = mutableListOf<List<Boolean>>()
-        val physical = mutableListOf<Boolean>()
-        f.actions.registerHandler(object : ActionHandler<DamageAction> {
-            override val actionClass = DamageAction::class.java
-            override fun handle(action: DamageAction) {
-                if (action is AcidDestroyAction) {
-                    notified.add(action)
-                    remaining.add(targets.map { it.isCurrent })
-                    val position = action.position
-                    physical.add(f.block(position.x, position.y, position.z).isEmpty)
-                }
-            }
-        })
+        val empty = mutableListOf<List<Boolean>>()
+        f.observeActions { action ->
+            notified.add(action)
+            remaining.add(handles.map { it.isCurrent })
+            empty.add(blocks.map { it.isEmpty })
+        }
         assertEquals(AcidResult.Activated(2), activate(f))
-        assertEquals(3, notified.size)
-        assertEquals(1, notified.count { it.consumingSource })
-        assertTrue(notified.first().consumingSource)
-        assertEquals(listOf(listOf(true, true), listOf(false, true), listOf(false, false)), remaining)
-        assertEquals(listOf(true, true, true), physical)
+        assertEquals(4, notified.size)
+        val children = notified.dropLast(1).map { assertIs<AcidDestroyAction>(it) }
+        assertEquals(handles.map { it.position }, children.map { it.position })
+        assertEquals(listOf(true, false, false), children.map { it.consumingSource })
+        assertIs<AcidAction>(notified.last())
+        assertEquals(List(4) { listOf(false, false, false) }, remaining)
+        assertEquals(List(4) { listOf(true, true, true) }, empty)
     }
 
     @Test
@@ -715,6 +725,13 @@ class AcidServiceTest {
             override val actionClass = AcidDestroyAction::class.java
             override fun validate(action: AcidDestroyAction) = if (predicate(action))
                 ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
+        })
+    }
+
+    private fun PaperTestFixture.observeActions(record: (Action) -> Unit) {
+        actionFacade.registerHandler(object : ActionHandler<Action> {
+            override val actionClass = Action::class.java
+            override fun handle(action: Action) = record(action)
         })
     }
 
