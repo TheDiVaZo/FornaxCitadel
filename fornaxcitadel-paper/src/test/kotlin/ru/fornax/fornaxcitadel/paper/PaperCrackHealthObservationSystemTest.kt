@@ -378,7 +378,7 @@ class PaperCrackHealthObservationSystemTest {
         private val scheduler = PaperScheduler(paper.plugin)
         val failures = mutableListOf<Exception>()
         val observations = ObservationService<Player>(paper.manager, scheduler, failureHandler = failures::add)
-        val system = CrackHealthObservationSystem(paper.plugin, paper.coreGameplay.health)
+        val system = CrackHealthObservationSystem(paper.plugin, paper.coreGameplay.healthFacade)
         val target: CitadelHandle
 
         init {

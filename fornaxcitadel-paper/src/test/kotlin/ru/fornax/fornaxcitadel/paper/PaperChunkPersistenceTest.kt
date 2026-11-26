@@ -378,7 +378,7 @@ class PaperChunkPersistenceTest {
                 CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreGameplay.healthFacade)))
             )
             actions.registerValidator(
-                PaperDamageValidator(citadels, coreGameplay.health, true))
+                PaperDamageValidator(citadels, coreGameplay.healthFacade, true))
         }
     }
 }

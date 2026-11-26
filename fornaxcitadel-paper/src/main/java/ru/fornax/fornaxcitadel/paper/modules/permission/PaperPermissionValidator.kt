@@ -1,11 +1,11 @@
 package ru.fornax.fornaxcitadel.paper.modules.permission
 
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
@@ -14,7 +14,7 @@ import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 
 /** Checks player permission nodes; other sources are left to other authorizers. */
 class PaperPermissionValidator(
-    private val health: HealthService
+    private val health: HealthFacade
 ) : ActionValidator<Action> {
     override val actionClass = Action::class.java
 

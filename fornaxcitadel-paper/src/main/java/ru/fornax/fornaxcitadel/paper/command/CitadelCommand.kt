@@ -13,12 +13,12 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
@@ -38,7 +38,7 @@ class CitadelCommand(
     private val plugin: Plugin,
     private val actions: ActionFacade,
     private val citadels: CitadelFacade,
-    private val health: HealthService,
+    private val health: HealthFacade,
     private val materials: MaterialRegistry,
     private val definitions: CitadelDefinitionRegistry,
     private val messages: PaperMessages,
@@ -49,7 +49,7 @@ class CitadelCommand(
         plugin: Plugin,
         actions: ActionFacade,
         citadels: CitadelFacade,
-        health: HealthService,
+        health: HealthFacade,
         materials: MaterialRegistry,
         definitions: CitadelDefinitionRegistry,
         save: () -> Unit

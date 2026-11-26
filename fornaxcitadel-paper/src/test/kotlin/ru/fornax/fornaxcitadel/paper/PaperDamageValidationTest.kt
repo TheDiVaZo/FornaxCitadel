@@ -215,7 +215,7 @@ class PaperDamageValidationTest {
     @Test
     fun `damage validation rejects missing and unloaded targets without loading chunks`() {
         PaperTestFixture(load = false).use { fixture ->
-            val validator = PaperDamageValidator(fixture.citadels, fixture.coreGameplay.health, true)
+            val validator = PaperDamageValidator(fixture.citadels, fixture.coreGameplay.healthFacade, true)
             val action = DamageAction(fixture.context(fixture.stranger), fixture.position, 10.0)
             assertSame(ActionValidator.Result.Rejected, validator.validate(action))
             assertFalse(fixture.manager.isChunkLoaded(fixture.worldId, 0, 0))

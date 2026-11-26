@@ -324,7 +324,7 @@ class PaperExplosionListenerTest {
         val target = fixture.position.copy(x = 3)
         val removal = RemoveAction(context, fixture.position)
         val placement = PlaceAction(context, target, PaperCitadelTypes.REINFORCED)
-        val validator = PaperPermissionValidator(fixture.coreGameplay.health)
+        val validator = PaperPermissionValidator(fixture.coreGameplay.healthFacade)
 
         assertEquals(ActionValidator.Result.Neutral, validator.validate(removal))
         assertEquals(ActionValidator.Result.Neutral, validator.validate(placement))

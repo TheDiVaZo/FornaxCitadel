@@ -33,7 +33,7 @@ class CoreGameplay(
 
     val place = PlaceService(definitions, citadelFacade)
     val remove = RemoveService(citadelFacade)
-    val health = HealthService(remove, citadelFacade)
+    val health = HealthService(citadelFacade)
     val maturation = MaturationService()
     val healthFacade = HealthFacade(health)
     val maturationFacade = MaturationFacade(maturation)

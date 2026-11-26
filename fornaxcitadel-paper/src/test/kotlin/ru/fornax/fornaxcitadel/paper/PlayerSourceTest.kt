@@ -83,7 +83,7 @@ class PlayerSourceTest {
             fixture.installer.target = fixture.block()
             val observed = fixture.captureActions()
             val commands = CitadelCommand(
-                fixture.plugin, fixture.actionFacade, fixture.citadels, fixture.coreGameplay.health,
+                fixture.plugin, fixture.actionFacade, fixture.citadels, fixture.coreGameplay.healthFacade,
                 fixture.materials, fixture.citadelTypes
             ) {}
 

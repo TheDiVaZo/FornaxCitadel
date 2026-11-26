@@ -9,7 +9,6 @@ import org.bukkit.block.data.type.Door
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import org.bukkit.plugin.Plugin
@@ -32,7 +31,6 @@ class PaperBreakingService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val actions: ActionFacade,
     private val citadels: CitadelFacade,
-    private val remove: RemoveService,
     private val damageModifiers: PlayerDamageModifierService = PlayerDamageModifierService(),
     private val messages: PaperMessages = PaperMessages.defaults(),
     private val creativeModeEnabled: Boolean = true
@@ -63,7 +61,7 @@ class PaperBreakingService @JvmOverloads constructor(
                 executingDestruction = true
                 val material = materials.getTypeOrNull(block)
                 reinforcements.forEach {
-                    check(remove.remove(it) == ActionResult.SUCCESS) { "Destruction target expired" }
+                    check(citadels.removeCitadel(it)) { "Destruction target expired" }
                 }
                 material?.breakNaturallyBlock(block, triggerEffect = true)
             })

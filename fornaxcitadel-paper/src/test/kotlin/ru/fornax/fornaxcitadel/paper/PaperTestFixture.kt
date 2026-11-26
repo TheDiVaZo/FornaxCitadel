@@ -290,12 +290,12 @@ internal class PaperTestFixture(
     val pluginQueue = PluginActionQueue(actionQueue, actions)
     init {
         actionFacade.registerValidator(PaperActionStateValidator(server))
-        if (permissions) actionFacade.registerValidator(PaperPermissionValidator(coreGameplay.health))
-        actionFacade.registerValidator(PaperDamageValidator(citadels, coreGameplay.health, creativeModeEnabled))
+        if (permissions) actionFacade.registerValidator(PaperPermissionValidator(coreGameplay.healthFacade))
+        actionFacade.registerValidator(PaperDamageValidator(citadels, coreGameplay.healthFacade, creativeModeEnabled))
     }
 
     val placementService = PaperPlacementService(
-        plugin, actionFacade, citadels, coreGameplay.health,
+        plugin, actionFacade, citadels, coreGameplay.healthFacade,
         citadelTypes, materials, placementSettings, messages
     )
     val materialFacade = MaterialFacade(materials, materialPlacement, placementService)
@@ -318,18 +318,18 @@ internal class PaperTestFixture(
         }
     }
     val dismantleService = PaperDismantleService(
-        plugin, actionFacade, citadels, coreGameplay.health, coreGameplay.remove,
+        plugin, actionFacade, citadels, coreGameplay.healthFacade,
         citadelTypes, serviceMaterials(dismantleMaterials), dismantleSettings, dismantleRandom
     )
     val repairService = PaperRepairService(
-        actionFacade, citadels, coreGameplay.health, citadelTypes, serviceMaterials(materials)
+        actionFacade, citadels, coreGameplay.healthFacade, citadelTypes, serviceMaterials(materials)
     )
     val upgradeService = PaperUpgradeService(
-        plugin, actionFacade, citadels, coreGameplay.definitions, coreGameplay.health,
+        plugin, actionFacade, citadels, coreGameplay.definitions, coreGameplay.healthFacade,
         serviceMaterials(dismantleMaterials), dismantleSettings, dismantleRandom
     )
     val breakingService = PaperBreakingService(
-        plugin, actionFacade, citadels, coreGameplay.remove, playerDamage, messages, creativeModeEnabled
+        plugin, actionFacade, citadels, playerDamage, messages, creativeModeEnabled
     )
     val acidService = acidSettings?.let {
         AcidService(
@@ -338,7 +338,7 @@ internal class PaperTestFixture(
         )
     }
     val explosionService = PaperExplosionService(
-        plugin, actionFacade, citadels, coreGameplay.remove, explosionPowers
+        plugin, actionFacade, citadels, explosionPowers
     )
     val environmentService = PaperEnvironmentService(plugin, citadels)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
@@ -369,7 +369,7 @@ internal class PaperTestFixture(
         messages: PaperMessages = PaperMessages.defaults(),
         acid: AcidService? = null,
         save: () -> Unit = {}
-    ) = CitadelCommand(plugin, actionFacade, citadels, coreGameplay.health,
+    ) = CitadelCommand(plugin, actionFacade, citadels, coreGameplay.healthFacade,
         materials, citadelTypes, messages, acid, save)
 
     fun player(id: UUID, name: String): TestPlayer = TestPlayer(id, name, world).also { player ->

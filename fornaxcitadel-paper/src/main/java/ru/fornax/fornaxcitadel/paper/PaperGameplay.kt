@@ -46,37 +46,35 @@ class PaperGameplay(
     init {
         settings.citadelTypes.register(coreGameplay)
         actions.registerValidator(PaperActionStateValidator(plugin.server))
-        actions.registerValidator(PaperPermissionValidator(coreGameplay.health))
-        actions.registerValidator(PaperDamageValidator(citadels, coreGameplay.health, settings.playerDamage.creativeModeEnabled))
+        actions.registerValidator(PaperPermissionValidator(coreGameplay.healthFacade))
+        actions.registerValidator(PaperDamageValidator(citadels, coreGameplay.healthFacade, settings.playerDamage.creativeModeEnabled))
     }
 
     val placement = PaperPlacementService(
-        plugin, actions, citadels, coreGameplay.health, definitions, materials, settings.placement, messages
+        plugin, actions, citadels, coreGameplay.healthFacade, definitions, materials, settings.placement, messages
     )
     val dismantle = PaperDismantleService(
-        plugin, actions, citadels, coreGameplay.health, coreGameplay.remove,
-        definitions, materials, settings.dismantle
+        plugin, actions, citadels, coreGameplay.healthFacade, definitions, materials, settings.dismantle
     )
-    val repair = PaperRepairService(actions, citadels, coreGameplay.health, definitions, materials)
+    val repair = PaperRepairService(actions, citadels, coreGameplay.healthFacade, definitions, materials)
     val upgrade = PaperUpgradeService(
-        plugin, actions, citadels, coreGameplay.definitions, coreGameplay.health,
+        plugin, actions, citadels, coreGameplay.definitions, coreGameplay.healthFacade,
         materials, settings.dismantle
     )
     /** Register modifiers for ordinary player damage on the main thread. */
     val playerDamage = PlayerDamageModifierService()
     private val breaking = PaperBreakingService(
-        plugin, actions, citadels, coreGameplay.remove, playerDamage, messages,
-        settings.playerDamage.creativeModeEnabled
+        plugin, actions, citadels, playerDamage, messages, settings.playerDamage.creativeModeEnabled
     )
     val acid = AcidService(
         plugin, actions, citadels, coreGameplay.maturation, definitions, materials,
         materialPlacement, breaking, AcidRegistry(settings.acid)
     )
-    private val explosion = PaperExplosionService(plugin, actions, citadels, coreGameplay.remove, settings.explosionPowers)
+    private val explosion = PaperExplosionService(plugin, actions, citadels, settings.explosionPowers)
     private val environment = PaperEnvironmentService(plugin, citadels)
-    private val display = CrackHealthObservationSystem(plugin, coreGameplay.health)
+    private val display = CrackHealthObservationSystem(plugin, coreGameplay.healthFacade)
     internal val commands = CitadelCommand(
-        plugin, actions, citadels, coreGameplay.health, materials, definitions, messages, acid, save
+        plugin, actions, citadels, coreGameplay.healthFacade, materials, definitions, messages, acid, save
     )
 
     init {

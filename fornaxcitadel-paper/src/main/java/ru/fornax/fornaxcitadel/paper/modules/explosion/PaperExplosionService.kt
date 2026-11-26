@@ -18,7 +18,6 @@ import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.UUID
 import java.util.logging.Level
@@ -29,7 +28,6 @@ class PaperExplosionService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val actions: ActionFacade,
     private val citadels: CitadelFacade,
-    private val remove: RemoveService,
     powers: ExplosionPowerSettings = ExplosionPowerSettings()
 ) : LifecycleService {
     private val powers = powers.copy(blockPowers = powers.blockPowers.toMap())
@@ -173,7 +171,7 @@ class PaperExplosionService @JvmOverloads constructor(
         val world = location.world?.uid ?: return
         val position = CitadelPosition(world, location.blockX, location.blockY, location.blockZ)
         val citadel = citadels.findExact(position) ?: return
-        remove.remove(citadel)
+        citadels.removeCitadel(citadel)
     }
 
     private class ExplosionTarget(val citadel: ReadableHandle, val originalPosition: CitadelPosition) {

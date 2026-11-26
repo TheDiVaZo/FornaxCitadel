@@ -5,14 +5,13 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.HealthService
-import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import java.util.logging.Level
@@ -23,8 +22,7 @@ class PaperDismantleService @JvmOverloads constructor(
     private val plugin: Plugin,
     actions: ActionFacade,
     private val citadels: CitadelFacade,
-    private val health: HealthService,
-    private val remove: RemoveService,
+    private val health: HealthFacade,
     private val definitions: CitadelDefinitionRegistry,
     materials: MaterialRegistry,
     settings: DismantleSettings = DismantleSettings(),
@@ -77,11 +75,10 @@ class PaperDismantleService @JvmOverloads constructor(
             return ActionResult.DENIED
         }
         val dropLocation = block.location.add(0.5, 0.5, 0.5)
-        val result = remove.remove(citadel)
-        if (result == ActionResult.SUCCESS && refund != null &&
-            refunds.shouldDrop(refundChance)) {
+        if (!citadels.removeCitadel(citadel)) return ActionResult.DENIED
+        if (refund != null && refunds.shouldDrop(refundChance)) {
             world.dropItemNaturally(dropLocation, refund)
         }
-        return result
+        return ActionResult.SUCCESS
     }
 }

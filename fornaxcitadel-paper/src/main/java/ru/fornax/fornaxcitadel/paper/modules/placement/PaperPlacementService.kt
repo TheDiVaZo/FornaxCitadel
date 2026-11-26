@@ -10,13 +10,13 @@ import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
@@ -32,7 +32,7 @@ class PaperPlacementService @JvmOverloads constructor(
     private val plugin: Plugin,
     private val actions: ActionFacade,
     private val citadels: ReadableCitadelFacade,
-    private val health: HealthService,
+    private val health: HealthFacade,
     private val definitions: CitadelDefinitionRegistry,
     private val materials: MaterialRegistry,
     settings: PlacementSettings = PlacementSettings(),

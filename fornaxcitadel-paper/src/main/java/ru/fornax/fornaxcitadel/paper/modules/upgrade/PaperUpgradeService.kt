@@ -7,11 +7,11 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
@@ -29,7 +29,7 @@ class PaperUpgradeService @JvmOverloads constructor(
     actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val definitions: CitadelDefinitionRegistry,
-    private val health: HealthService,
+    private val health: HealthFacade,
     private val materials: MaterialRegistry,
     settings: DismantleSettings = DismantleSettings(),
     random: () -> Double = { Random.nextDouble() }

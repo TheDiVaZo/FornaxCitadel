@@ -16,7 +16,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import ru.fornax.fornaxcitadel.core.facade.HealthFacade
 import java.time.Clock
 import java.time.Duration
@@ -38,7 +37,7 @@ internal class HealthFixture(
     val manager = ComponentManager(storage, types)
     val citadels = CitadelFacade(manager, ExactPositionResolver)
     val maturation = MaturationService(clock)
-    val service = HealthService(RemoveService(citadels), citadels)
+    val service = HealthService(citadels)
     val health = HealthFacade(service)
     val actions = ActionManager()
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)

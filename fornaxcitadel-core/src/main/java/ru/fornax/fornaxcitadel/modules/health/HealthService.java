@@ -11,7 +11,6 @@ import ru.fornax.fornaxcitadel.core.facade.ReadableHandle;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext;
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
 import ru.fornax.fornaxcitadel.core.util.Key;
-import ru.fornax.fornaxcitadel.modules.remove.RemoveService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,13 +24,11 @@ import java.util.Objects;
  */
 public final class HealthService {
     private final CitadelFacade citadels;
-    private final RemoveService removeService;
     private final Map<Key, HealthDefinition> definitions = new HashMap<>();
     private List<DamageModifier> modifiers = List.of();
 
-    public HealthService(@NotNull RemoveService removeService, @NotNull CitadelFacade citadels) {
+    public HealthService(@NotNull CitadelFacade citadels) {
         this.citadels = Objects.requireNonNull(citadels, "citadels");
-        this.removeService = Objects.requireNonNull(removeService, "removeService");
     }
 
     /** Replaces live settings without changing saved HP or marking any chunks dirty. */
@@ -150,14 +147,14 @@ public final class HealthService {
         }
         // An authorized hit also removes a reinforcement with no health or configured maximum.
         if (initialHealth == null || initialHealth == 0.0) {
-            return removeService.remove(citadel);
+            return removeCitadel(citadel);
         }
         if (modifiedDamage == 0.0) return ActionResult.DENIED;
         double damageableHealth = maximum == null ? initialHealth : Math.min(initialHealth, maximum);
         double remainingHealth = Math.max(0.0, damageableHealth - modifiedDamage);
         if (remainingHealth == initialHealth) return ActionResult.DENIED;
         if (component == null) {
-            if (remainingHealth == 0.0) return removeService.remove(citadel);
+            if (remainingHealth == 0.0) return removeCitadel(citadel);
             citadel.putComponent(Health.class, new Health(remainingHealth));
             return ActionResult.SUCCESS;
         }
@@ -167,7 +164,7 @@ public final class HealthService {
         });
         if (!edited) return ActionResult.DENIED;
         if (remainingHealth == 0.0) {
-            return removeService.remove(citadel);
+            return removeCitadel(citadel);
         }
         return ActionResult.SUCCESS;
     }
@@ -178,9 +175,13 @@ public final class HealthService {
         CitadelHandle citadel = Objects.requireNonNull(
                 citadels.findProtecting(action.getPosition()), "Validated damage target is unavailable");
         if (action.getMode() == DamageAction.Mode.DESTROY) {
-            return removeService.remove(citadel);
+            return removeCitadel(citadel);
         }
         return damage(citadel, action.getDamage(), action.getContext());
+    }
+
+    private ActionResult removeCitadel(CitadelHandle citadel) {
+        return citadels.removeCitadel(citadel) ? ActionResult.SUCCESS : ActionResult.DENIED;
     }
 
     @Nullable

@@ -240,7 +240,7 @@ class PaperChunkServiceTest {
             coreGameplay.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
             coreGameplay.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreGameplay.healthFacade))))
             actions.registerValidator(
-                PaperDamageValidator(citadels, coreGameplay.health, true))
+                PaperDamageValidator(citadels, coreGameplay.healthFacade, true))
         }
 
         fun place() {
