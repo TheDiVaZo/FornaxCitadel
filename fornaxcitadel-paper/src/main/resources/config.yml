@@ -86,9 +86,13 @@ explosions:
 # Item keys default to the minecraft namespace when omitted.
 # External providers register their own namespace (e.g. otherplugin:reinforcement).
 # Materials are resolved on use; providers may register after FornaxCitadel enables.
-# Every type requires a positive integer lvl; existing citadels use the current configured level.
-# item applies to placement, repair and reinforcement refunds, including previously placed citadels.
-# damage-policy defaults to allow; deny blocks ordinary damage from every source.
+# lvl is optional. A configured level must be a positive integer and applies to existing citadels.
+# Upgrades require levels on both types and a strictly higher destination level.
+# Acid of any level passes the level check against a target without a level.
+# item is optional and enables placement by item, repair and reinforcement refunds.
+# Types without an item can still be placed by command.
+# health.invulnerable defaults to false. A true value blocks ordinary damage from every source
+# and permits omitting health.max. The legacy damage-policy field also accepts allow or deny.
 # Authorized creative destruction and administrative removal can still remove these types.
 # health.max is read from current settings; only actual HP is stored in a citadel.
 # Reducing max keeps saved HP: saved 80 with max 50 displays 50/50; taking 1 damage saves 49.
@@ -140,7 +144,8 @@ citadel-types:
     item: minecraft:nether_star
     lvl: 999
     # Invulnerable types require administrator permission to install.
-    damage-policy: deny
+    health:
+      invulnerable: true
 
 placement:
   # Solid blocks only; pistons and piston parts are always rejected.

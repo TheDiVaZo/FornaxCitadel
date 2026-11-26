@@ -3,12 +3,14 @@ package ru.fornax.fornaxcitadel.paper
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.Material
+import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import org.bukkit.event.block.Action
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
@@ -20,16 +22,17 @@ import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
+import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.health.DamageModifier
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidFailure
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidSettings
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import kotlin.test.*
 
@@ -202,6 +205,47 @@ class LiveCitadelSettingsTest {
     }
 
     @Test
+    fun `registered level-less types respect acid tier comparisons and invulnerability`() {
+        val ordinary = Key("addon", "ordinary")
+        val protected = Key("addon", "protected")
+        for (sourceType in listOf(ordinary, PaperCitadelTypes.REINFORCED)) {
+            PaperTestFixture(permissions = true, acidSettings = AcidSettings()).use { f ->
+                val health = f.coreGameplay.health
+                for ((key, profile) in mapOf(ordinary to HealthDefinition(10.0), protected to HealthDefinition(null, true))) {
+                    health.registerDefinition(key, profile)
+                    f.coreGameplay.definitions.register(CitadelDefinition(key, listOf(HealthInitializer(health))))
+                }
+                f.material(Material.NETHERITE_BLOCK)
+                f.place(sourceType)
+                fun placeAt(block: Block, key: Key) = f.actions.execute(PlaceAction(f.context(f.installer), block.testPosition(), key))
+                val ordinaryTarget = f.block().getRelative(BlockFace.UP)
+                val protectedTarget = f.block().getRelative(BlockFace.DOWN)
+                val leveledTarget = f.block().getRelative(BlockFace.NORTH)
+                assertEquals(ActionResult.SUCCESS, placeAt(ordinaryTarget, ordinary))
+                assertEquals(ActionResult.SUCCESS, placeAt(leveledTarget, PaperCitadelTypes.REINFORCED))
+                assertEquals(ActionResult.DENIED, placeAt(protectedTarget, protected))
+                f.installer.permissions.add("fornaxcitadel.admin")
+                assertEquals(ActionResult.SUCCESS, placeAt(protectedTarget, protected))
+                f.installer.permissions.remove("fornaxcitadel.admin")
+                assertContains(info(f, protectedTarget), PaperMessages.defaults().plainText("commands.info.invulnerable"))
+
+                val acid = assertNotNull(f.acidService)
+                val inspected = assertIs<AcidResult.Information>(acid.inspect(f.installer.player, f.block()))
+                val sourceHasLevel = sourceType == PaperCitadelTypes.REINFORCED
+                val expectedTargets = if (sourceHasLevel) 2 else 1
+                assertEquals(if (sourceHasLevel) 2 else null, inspected.tier)
+                assertEquals(f.installer.id, inspected.owner)
+                assertEquals(expectedTargets, inspected.selectedTargets)
+                assertEquals(AcidResult.Failed(AcidFailure.NOT_OWNER), acid.activate(f.stranger.player, f.block()))
+                assertEquals(AcidResult.Activated(expectedTargets), acid.activate(f.installer.player, f.block()))
+                assertNull(f.citadels.findProtecting(ordinaryTarget.testPosition()))
+                assertNotNull(f.citadels.findProtecting(protectedTarget.testPosition()))
+                assertEquals(sourceHasLevel, f.citadels.findProtecting(leveledTarget.testPosition()) == null)
+            }
+        }
+    }
+
+    @Test
     fun `unknown acid level only reaches unknown targets while any level reaches unknown targets`() {
         for (sourceKnown in listOf(false, true)) for (targetKnown in listOf(false, true)) {
             PaperTestFixture(permissions = true, acidSettings = AcidSettings()).use { f ->
@@ -224,7 +268,7 @@ class LiveCitadelSettingsTest {
 
     private fun changed(maximum: Double): CitadelTypesSettings = CitadelTypesSettings(original.types - "reinforced_heavy" +
         ("reinforced" to original.types.getValue("reinforced").copy(
-            item = Key("minecraft", "diamond"), lvl = 7, health = HealthSettings(maximum))))
+            item = Key("minecraft", "diamond"), lvl = 7, health = HealthDefinition(maximum))))
 
     private fun saved(neighbor: Boolean = false): ChunkCordSnapshot =
         PaperTestFixture(permissions = true, citadelSettings = original).use { f ->
@@ -238,7 +282,7 @@ class LiveCitadelSettingsTest {
 
     private fun savedWithoutHealth(): ChunkCordSnapshot {
         val prior = CitadelTypesSettings(original.types + ("reinforced" to original.types.getValue("reinforced")
-            .copy(health = null, maturing = null, damagePolicy = CitadelDamagePolicy.DENY)))
+            .copy(health = HealthDefinition(null, invulnerable = true), maturing = null)))
         return PaperTestFixture(permissions = true, citadelSettings = prior).use { f ->
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place()
@@ -260,8 +304,8 @@ class LiveCitadelSettingsTest {
     private fun damage(f: PaperTestFixture, amount: Double) =
         f.actions.execute(DamageAction(f.context(f.stranger), f.position, amount))
 
-    private fun info(f: PaperTestFixture): List<String> {
-        f.installer.target = f.block()
+    private fun info(f: PaperTestFixture, block: Block = f.block()): List<String> {
+        f.installer.target = block
         f.installer.permissions.add("fornaxcitadel.info")
         val commands = f.command()
         commands.onCommand(f.installer.player, TestCommand, "citadel", arrayOf("info"))

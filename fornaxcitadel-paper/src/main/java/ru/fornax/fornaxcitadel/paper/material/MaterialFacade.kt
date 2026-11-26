@@ -19,7 +19,7 @@ class MaterialFacade(
     fun registerPlacementRule(material: Key, rule: MaterialPlacementRule): Boolean =
         materialPlacement.register(material, rule)
 
-    /** Binds an installation item to a citadel type. Rebinding it to a different type throws [IllegalArgumentException]. */
+    /** Adds an alternate installation item for a registered citadel type with a primary item. */
     fun registerPlacementDefinition(materialKey: Key, definitionKey: Key) =
         placement.registerMaterial(materialKey, definitionKey)
 }

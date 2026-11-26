@@ -7,6 +7,7 @@ import org.bukkit.event.HandlerList
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
@@ -32,12 +33,11 @@ class PaperPlacementService @JvmOverloads constructor(
     private val actions: ActionFacade,
     private val citadels: ReadableCitadelFacade,
     private val health: HealthService,
-    private val citadelTypes: PaperCitadelTypes,
+    private val definitions: CitadelDefinitionRegistry,
     private val materials: MaterialRegistry,
     settings: PlacementSettings = PlacementSettings(),
     private val messages: PaperMessages = PaperMessages.defaults()
 ) : LifecycleService {
-    private val definitionsByMaterial = mutableMapOf<Key, Key>()
     private val listener = PaperPlacementListener(this)
     private var enabled = false
 
@@ -69,16 +69,12 @@ class PaperPlacementService @JvmOverloads constructor(
      * Binds an item key to a citadel definition without resolving its adapter.
      * The material provider may register later; item recognition uses the current registry on each interaction.
      */
-    fun registerMaterial(materialKey: Key, definitionKey: Key) {
-        val existing = definitionsByMaterial.putIfAbsent(materialKey, definitionKey)
-        require(existing == null || existing == definitionKey) {
-            "Material $materialKey is already bound to citadel definition $existing"
-        }
-    }
+    fun registerMaterial(materialKey: Key, definitionKey: Key) =
+        definitions.registerItemAlias(materialKey, definitionKey)
 
     fun heldMaterialKey(player: Player, item: ItemStack?): Key? {
         val key = resolveMaterialKey(item) ?: return null
-        if (key !in definitionsByMaterial) return null
+        if (definitions.findByItem(key) == null) return null
         return key.takeIf { resolveMaterialKey(player.inventory.itemInMainHand) == it }
     }
 
@@ -89,6 +85,7 @@ class PaperPlacementService @JvmOverloads constructor(
         val player = event.player
         if (block.type.isInteractable && !player.isSneaking) return
         val materialKey = resolveMaterialKey(event.item) ?: return
+        val destination = definitions.findByItem(materialKey) ?: return
         if (resolveMaterialKey(player.inventory.itemInMainHand) != materialKey) return
         var messageGroup = "placement"
         try {
@@ -96,27 +93,24 @@ class PaperPlacementService @JvmOverloads constructor(
             val citadel = if (block.supportsCitadelData()) citadels.findProtecting(position) else null
             if (citadel != null) {
                 val context = ActionContext(player.uniqueId, PlayerSource(player, ITEM_SOURCE_KEY))
-                val action = if (citadelTypes.itemKey(citadel) == materialKey) {
+                val action = if (definitions.itemKey(citadel) == materialKey) {
                     messageGroup = "repair"
                     val currentHealth = health.currentHealth(citadel)
                     val maximum = health.maxHealth(citadel)
                     if (currentHealth == null || maximum == null || currentHealth >= maximum) return
                     RepairAction(context, position)
                 } else {
-                    val destination = definitionsByMaterial[materialKey] ?: return
                     messageGroup = "upgrade"
-                    UpgradeAction(context, position, destination)
+                    UpgradeAction(context, position, destination.key)
                 }
                 denyUse(event)
                 val result = actions.execute(action)
                 messages.sendGameplay(player, if (result == ActionResult.SUCCESS) "$messageGroup.success" else "$messageGroup.denied")
                 return
             }
-            if (materialKey !in definitionsByMaterial) return
             denyUse(event)
             place(player, block, materialKey)
         } catch (_: CitadelResolutionUnavailableException) {
-            if (materialKey !in definitionsByMaterial) return
             denyUse(event)
             messages.sendGameplay(player, "$messageGroup.denied")
         } catch (exception: Exception) {
@@ -133,7 +127,7 @@ class PaperPlacementService @JvmOverloads constructor(
 
     fun place(player: Player, block: Block, materialKey: Key) {
         if (!enabled) return
-        val definitionKey = definitionsByMaterial[materialKey] ?: return
+        val definitionKey = definitions.findByItem(materialKey)?.key ?: return
         val held = player.inventory.itemInMainHand
         if (resolveMaterialKey(held) != materialKey) return
         if (!block.supportsCitadelData()) {

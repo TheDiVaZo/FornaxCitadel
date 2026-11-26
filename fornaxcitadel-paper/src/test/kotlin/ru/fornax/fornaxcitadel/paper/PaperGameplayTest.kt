@@ -18,7 +18,7 @@ import ru.fornax.fornaxcitadel.paper.modules.environment.PaperEnvironmentListene
 import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionListener
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementListener
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,7 +34,6 @@ class PaperGameplayTest {
         val runtime = Runtime(paper)
         val type = Key("fornaxcitadel", "test_wall")
         val addon = runtime.construct()
-        assertEquals(type, addon.citadelTypes.find("test_wall"))
         val definition = assertNotNull(runtime.core.definitions.find(type))
         val health = runtime.core.health
         assertEquals(65.0, assertNotNull(health.findDefinition(type)).maxHealth)
@@ -114,7 +113,7 @@ class PaperGameplayTest {
         private val facade = ActionFacade(actions)
         val core = CoreGameplay(paper.citadels, facade)
         private val settings = PaperSettings(citadelTypes = CitadelTypesSettings(mapOf(
-            "test_wall" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), 1, health = HealthSettings(65.0))
+            "test_wall" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), 1, health = HealthDefinition(65.0))
         )))
 
         fun construct() =

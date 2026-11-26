@@ -101,7 +101,7 @@ class PlacementValidationTest {
             fixture.material(rejectedMaterial)
             val action = fixture.placeAction()
             // Permissions and physical placement rules are independent validators.
-            assertEquals(ActionValidator.Result.Success, PaperPermissionValidator(fixture.citadelTypes).validate(action))
+            assertEquals(ActionValidator.Result.Success, PaperPermissionValidator(fixture.coreGameplay.health).validate(action))
             assertEquals(ActionResult.DENIED, fixture.actions.execute(action))
 
             fixture.material(Material.STONE)

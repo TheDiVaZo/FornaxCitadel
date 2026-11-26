@@ -297,7 +297,7 @@ class ServiceLifecycleTest {
 
         fun placeAction() = PlaceAction(ActionContext.SYSTEM, POSITION, TYPE)
         fun initializers(): List<CitadelInitializer> = listOf(
-            CitadelInitializer { _, draft -> draft.addComponent(Health::class.java, Health(10.0)) },
+            placementInitializer { draft -> draft.addComponent(Health::class.java, Health(10.0)) },
             MaturingInitializer(Clock.fixed(Instant.ofEpochMilli(1_000L), ZoneOffset.UTC))
         )
 

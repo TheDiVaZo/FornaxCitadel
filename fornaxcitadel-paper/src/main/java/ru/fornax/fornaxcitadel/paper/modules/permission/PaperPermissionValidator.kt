@@ -5,16 +5,16 @@ import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
+import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.modules.repair.RepairAction
 import ru.fornax.fornaxcitadel.modules.upgrade.UpgradeAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 
 /** Checks player permission nodes; other sources are left to other authorizers. */
 class PaperPermissionValidator(
-    private val citadelTypes: PaperCitadelTypes
+    private val health: HealthService
 ) : ActionValidator<Action> {
     override val actionClass = Action::class.java
 
@@ -45,7 +45,7 @@ class PaperPermissionValidator(
             is UpgradeAction -> action.definitionKey
             else -> null
         }
-        if (destination != null && citadelTypes.requiresAdmin(destination) && !canAdminister(action.context)) {
+        if (destination != null && health.isInvulnerable(destination) && !canAdminister(action.context)) {
             return ActionValidator.Result.Rejected
         }
         return if (action is DamageAction || action is DismantleAction || action is RepairAction || action is UpgradeAction) ActionValidator.Result.Neutral

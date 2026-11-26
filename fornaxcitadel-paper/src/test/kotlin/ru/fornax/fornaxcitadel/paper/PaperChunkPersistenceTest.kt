@@ -9,6 +9,7 @@ import ru.fornax.fornaxcitadel.addon.Addon
 import ru.fornax.fornaxcitadel.addon.ComponentRegistration
 import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
@@ -27,6 +28,7 @@ import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
+import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.JavaAddonPlugin.SHIELD_KEY
 import ru.fornax.fornaxcitadel.paper.JavaAddonPlugin.Shield
@@ -69,6 +71,26 @@ class PaperChunkPersistenceTest {
         assertEquals(37.5, handle.getComponent(Shield::class.java)?.health)
         assertEquals(1, shieldDeclarations)
         assertEquals(1, emptyDeclarations)
+        fixture.closeStorage()
+    }
+
+    @Test
+    fun `addon registers a working definition and health profile before chunk load`() {
+        val fixture = Fixture()
+        val type = Key("test", "early")
+        val addon = object : Plugin by fixture.paper.plugin, Addon {
+            override val key = Key("test", "addon")
+            override fun registerDefinitions(definitions: CitadelDefinitionRegistry, health: HealthService) {
+                assertFalse(fixture.manager.isChunkLoaded(fixture.paper.worldId, 0, 0))
+                definitions.register(CitadelDefinition(type, listOf(HealthInitializer(health))))
+                health.registerDefinition(type, HealthDefinition(15.0))
+            }
+        }
+
+        fixture.startWith(addon)
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(
+            fixture.paper.context(fixture.paper.installer), fixture.paper.position, type)))
+        assertEquals(15.0, fixture.citadels.findExact(fixture.paper.position)?.getComponent(Health::class.java)?.health)
         fixture.closeStorage()
     }
 
@@ -332,7 +354,7 @@ class PaperChunkPersistenceTest {
             }
 
         fun startWith(vararg plugins: Plugin) {
-            service.enableWithAddonComponents(plugins, citadels)
+            service.enableWithAddons(plugins, citadels, coreGameplay)
         }
 
         fun closeStorage() {
@@ -348,7 +370,7 @@ class PaperChunkPersistenceTest {
                 CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreGameplay.health)))
             )
             actions.registerValidator(
-                PaperDamageValidator(citadels, paper.citadelTypes, true))
+                PaperDamageValidator(citadels, coreGameplay.health, true))
         }
     }
 }

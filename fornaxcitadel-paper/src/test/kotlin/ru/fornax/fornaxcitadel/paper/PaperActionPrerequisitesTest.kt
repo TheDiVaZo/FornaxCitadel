@@ -81,16 +81,17 @@ class PaperActionPrerequisitesTest {
     }
 
     @Test
-    fun `upgrade requires a registered destination but not a known source definition or kind`() {
+    fun `upgrade requires a registered source and a higher ranked destination`() {
         PaperTestFixture(resolveMaterials = false).use { f ->
             f.place()
             val target = assertNotNull(f.citadels.findProtecting(f.position))
             val validator = UpgradeActionValidator(f.citadels, f.coreGameplay.definitions)
+            assertSame(Result.Neutral, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.MATURING)))
             target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "removed") }
             assertSame(Result.Rejected, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, Key("test", "unknown"))))
-            assertSame(Result.Neutral, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.REINFORCED)))
+            assertSame(Result.Rejected, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.REINFORCED)))
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
-            assertSame(Result.Neutral, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.REINFORCED)))
+            assertSame(Result.Rejected, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.REINFORCED)))
             assertNull(target.getComponent(CitadelKind::class.java))
         }
     }
@@ -136,7 +137,7 @@ class PaperActionPrerequisitesTest {
 
     private fun PaperTestFixture.action(kind: String, target: CitadelPosition = position): Action = when (kind) {
         "repair" -> RepairAction(context(installer), target)
-        "upgrade" -> UpgradeAction(context(installer), target, PaperCitadelTypes.REINFORCED)
+        "upgrade" -> UpgradeAction(context(installer), target, PaperCitadelTypes.MATURING)
         else -> DismantleAction(context(installer), target)
     }
 

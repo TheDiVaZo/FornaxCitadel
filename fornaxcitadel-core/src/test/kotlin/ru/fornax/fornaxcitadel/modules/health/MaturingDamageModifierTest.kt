@@ -23,9 +23,9 @@ class MaturingDamageModifierTest {
         val initializer = MaturingInitializer(clock)
         val draft = fixture.draft()
         fixture.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(40.0))
-        HealthInitializer(fixture.service).initialize(ActionContext.SYSTEM, draft)
+        HealthInitializer(fixture.service).initialize(draft)
 
-        initializer.initialize(ActionContext.SYSTEM, draft)
+        initializer.initialize(draft)
 
         val maturation = assertNotNull(draft.getComponent(Maturing::class.java))
         assertEquals(clock.timeMillis, maturation.startedAtMillis)
@@ -36,7 +36,7 @@ class MaturingDamageModifierTest {
         val older = fixture.publish(draft)
         clock.timeMillis += 5_000L
         val laterDraft = fixture.draft(1)
-        initializer.initialize(ActionContext.SYSTEM, laterDraft)
+        initializer.initialize(laterDraft)
         val newer = fixture.publish(laterDraft)
 
         assertSame(maturation, older.getComponent(Maturing::class.java))
@@ -163,7 +163,7 @@ class MaturingDamageModifierTest {
         val original = Maturing(42L)
         draft.addComponent(Maturing::class.java, original)
 
-        assertFails { MaturingInitializer().initialize(ActionContext.SYSTEM, draft) }
+        assertFails { MaturingInitializer().initialize(draft) }
         assertSame(original, draft.getComponent(Maturing::class.java))
         assertEquals(42L, original.startedAtMillis)
         assertTrue(fixture.chunk.isEmpty)

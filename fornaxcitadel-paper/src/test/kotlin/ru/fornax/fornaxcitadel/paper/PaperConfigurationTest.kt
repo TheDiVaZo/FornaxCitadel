@@ -8,6 +8,7 @@ import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.config.PaperSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.register
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageSettings
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import java.time.Duration
@@ -23,20 +24,19 @@ class PaperConfigurationTest {
     fun `shipped config registers fixed health and independent maturation settings`() {
         val settings = shippedSettings()
         val fixture = PaperTestFixture(load = false, registerTypes = false, citadelSettings = settings.citadelTypes)
-        fixture.citadelTypes.register(fixture.coreGameplay)
+        settings.citadelTypes.register(fixture.coreGameplay)
         fixture.manager.loadChunk(fixture.worldId, 0, 0).join()
 
-        val handles = fixture.citadelTypes.names.mapIndexed { index, name ->
-            val type = assertNotNull(fixture.citadelTypes.find(name))
+        val handles = fixture.citadelTypes.keys.mapIndexed { index, type ->
             val position = CitadelPosition(fixture.worldId, index, 64, 2)
             assertEquals(ActionResult.SUCCESS, fixture.actions.execute(PlaceAction(fixture.context(fixture.installer), position, type)))
-            name to assertNotNull(fixture.manager.findCitadel(position.world, position.x, position.y, position.z))
+            type.key to assertNotNull(fixture.manager.findCitadel(position.world, position.x, position.y, position.z))
         }.toMap()
 
         for ((name, type) in settings.citadelTypes.types) {
             val handle = handles.getValue(name)
-            assertEquals(type.health?.max, handle.getComponent(Health::class.java)?.health)
-            assertEquals(type.health?.max, fixture.coreGameplay.health.maxHealth(handle))
+            assertEquals(type.health.maxHealth, handle.getComponent(Health::class.java)?.health)
+            assertEquals(type.health.maxHealth, fixture.coreGameplay.health.maxHealth(handle))
             assertTrue(assertNotNull(handle.getComponent(Maturing::class.java)).startedAtMillis > 0)
             val key = assertNotNull(handle.getComponent(CitadelKind::class.java)).definitionKey
             val profile = assertNotNull(fixture.coreGameplay.health.maturation.findDefinition(key))

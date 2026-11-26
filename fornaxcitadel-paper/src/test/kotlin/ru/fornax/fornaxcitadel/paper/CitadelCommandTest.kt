@@ -6,8 +6,10 @@ import org.bukkit.Material
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import org.bukkit.configuration.file.YamlConfiguration
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
+import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.modules.dismantle.DismantleSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -51,6 +53,31 @@ class CitadelCommandTest {
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("remove"))
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(0, fixture.vanillaBlockChanges)
+    }
+
+    @Test
+    fun `addon type without item or level is visible to commands and dismantles without a refund`() {
+        PaperTestFixture(permissions = true).use { f ->
+            val messages = PaperMessages.read(YamlConfiguration().apply {
+                set("commands.give.missing-item", "No item for {type}")
+            })
+            val commands = f.command(messages = messages)
+            val key = Key("addon", "reinforced")
+            f.coreGameplay.definitions.register(CitadelDefinition(key, emptyList()))
+            f.installer.permissions.add("fornaxcitadel.admin")
+            f.installer.target = f.block()
+            val sender = f.installer.player
+            assertEquals(listOf(key.asString()), commands.onTabComplete(sender, TestCommand, "citadel", arrayOf("place", "addon:")))
+
+            commands.onCommand(sender, TestCommand, "citadel", arrayOf("give", key.asString()))
+            assertEquals(listOf("No item for addon:reinforced"), f.installer.chatMessages.plainText())
+            assertTrue(f.installer.addedItems.isEmpty())
+            commands.onCommand(sender, TestCommand, "citadel", arrayOf("place", key.asString()))
+            assertEquals(key, f.citadels.findExact(f.position)?.getComponent(CitadelKind::class.java)?.definitionKey)
+            commands.onCommand(sender, TestCommand, "citadel", arrayOf("dismantle"))
+            assertNull(f.citadels.findExact(f.position))
+            assertTrue(f.droppedItems.isEmpty())
+        }
     }
 
     @Test

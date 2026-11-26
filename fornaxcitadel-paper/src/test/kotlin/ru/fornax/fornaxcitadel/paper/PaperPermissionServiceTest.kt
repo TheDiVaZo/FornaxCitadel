@@ -26,7 +26,7 @@ class PaperPermissionServiceTest {
     @Test
     fun `non-player sources are ignored for every action even with actor attribution and an absent world`() {
         PaperTestFixture(initializeSystems = false).use { fixture ->
-            val validator = PaperPermissionValidator(fixture.citadelTypes)
+            val validator = PaperPermissionValidator(fixture.coreGameplay.health)
             val source = ExplosionSource.Block(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0),
                 4.0f, Material.TNT)
             val contexts = listOf(ActionContext.SYSTEM, ActionContext(fixture.installer.id, source),
@@ -53,7 +53,7 @@ class PaperPermissionServiceTest {
     @Test
     fun `player permissions use the captured player instead of actor attribution or UUID lookup`() {
         PaperTestFixture(initializeSystems = false).use { fixture ->
-            val validator = PaperPermissionValidator(fixture.citadelTypes)
+            val validator = PaperPermissionValidator(fixture.coreGameplay.health)
             fixture.installer.permissions.add("fornaxcitadel.admin")
             val context = ActionContext(fixture.stranger.id, PlayerSource(fixture.installer.player))
             val checks: List<Triple<Action, String, ActionValidator.Result>> = listOf(

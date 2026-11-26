@@ -2,6 +2,7 @@ package ru.fornax.fornaxcitadel.paper.modules.placement
 
 import org.bukkit.configuration.ConfigurationSection
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.paper.config.exactInt
 import ru.fornax.fornaxcitadel.paper.config.exactLong
 import ru.fornax.fornaxcitadel.paper.config.readLocalMapping
@@ -12,9 +13,10 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
         val itemOwners = mutableMapOf<Key, String>()
         types.forEach { (id, settings) ->
             requireValidId(id)
-            val previous = itemOwners.putIfAbsent(settings.item, id)
+            val item = settings.item ?: return@forEach
+            val previous = itemOwners.putIfAbsent(item, id)
             require(previous == null) {
-                "citadel-types.$id.item duplicates citadel-types.$previous.item: ${settings.item}"
+                "citadel-types.$id.item duplicates citadel-types.$previous.item: $item"
             }
         }
     }
@@ -22,19 +24,19 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
     companion object {
         val DEFAULT_TYPES: Map<String, CitadelTypeSettings> = linkedMapOf(
             "reinforced_light" to CitadelTypeSettings(Key("minecraft", "copper_ingot"), lvl = 1,
-                health = HealthSettings(10.0)),
+                health = HealthDefinition(10.0)),
             "reinforced" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), lvl = 2,
-                health = HealthSettings(20.0)),
+                health = HealthDefinition(20.0)),
             "reinforced_heavy" to CitadelTypeSettings(Key("minecraft", "diamond"), lvl = 3,
-                health = HealthSettings(30.0)),
+                health = HealthDefinition(30.0)),
             "maturing_fast" to CitadelTypeSettings(Key("minecraft", "amethyst_shard"), lvl = 2,
-                health = HealthSettings(20.0), maturing = MaturingSettings(300, 2.0)),
+                health = HealthDefinition(20.0), maturing = MaturingSettings(300, 2.0)),
             "maturing" to CitadelTypeSettings(Key("minecraft", "emerald"), lvl = 4,
-                health = HealthSettings(40.0), maturing = MaturingSettings(600, 4.0)),
+                health = HealthDefinition(40.0), maturing = MaturingSettings(600, 4.0)),
             "maturing_strong" to CitadelTypeSettings(Key("minecraft", "netherite_ingot"), lvl = 5,
-                health = HealthSettings(80.0), maturing = MaturingSettings(1800, 4.0)),
+                health = HealthDefinition(80.0), maturing = MaturingSettings(1800, 4.0)),
             "invulnerable" to CitadelTypeSettings(Key("minecraft", "nether_star"), lvl = 999,
-                damagePolicy = CitadelDamagePolicy.DENY)
+                health = HealthDefinition(maxHealth = null, invulnerable = true))
         )
         private val ID_PATTERN = Regex("[a-z0-9_-]+")
 
@@ -58,27 +60,24 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
             val values = readLocalMapping(value, path)
             val unknown = values.keys.firstOrNull { it !in setOf("item", "lvl", "damage-policy", "health", "maturing") }
             require(unknown == null) { "Unknown configuration field $path.$unknown" }
-            val item = readItem(values["item"], "$path.item")
-            val lvl = readLevel(values["lvl"], "$path.lvl")
-            val rawPolicy = if (values.containsKey("damage-policy")) values["damage-policy"] else "allow"
-            require(rawPolicy is String) { "$path.damage-policy must be allow or deny" }
-            val policy = when (rawPolicy.lowercase(Locale.ROOT)) {
-                "allow" -> CitadelDamagePolicy.ALLOW
-                "deny" -> CitadelDamagePolicy.DENY
-                else -> throw IllegalArgumentException("Unknown $path.damage-policy: $rawPolicy; expected allow or deny")
-            }
-            val health = if (values.containsKey("health")) readHealth(values["health"], "$path.health") else null
-            require(policy != CitadelDamagePolicy.ALLOW || health != null) {
-                "$path.health is required for damage-policy allow"
-            }
+            val item = values["item"]?.let { readItem(it, "$path.item") }
+            val lvl = values["lvl"]?.let { readLevel(it, "$path.lvl") }
+            val legacyPolicy = if ("damage-policy" in values) {
+                when ((values["damage-policy"] as? String)?.lowercase(Locale.ROOT)) {
+                    "allow" -> false
+                    "deny" -> true
+                    else -> throw IllegalArgumentException("$path.damage-policy must be allow or deny")
+                }
+            } else null
+            val health = readHealth(values["health"], "$path.health", legacyPolicy)
             val maturing = if (values.containsKey("maturing")) readMaturing(values["maturing"], "$path.maturing") else null
-            require(maturing == null || health != null) { "$path.maturing requires $path.health" }
-            return CitadelTypeSettings(item, lvl, policy, health, maturing)
+            require(maturing == null || health.maxHealth != null) { "$path.maturing requires $path.health.max" }
+            return CitadelTypeSettings(item, lvl, health, maturing)
         }
 
         private fun readItem(value: Any?, path: String): Key {
             require(value is String && value.isNotEmpty()) {
-                "$path is required and must be a lowercase item key (item or namespace:item)"
+                "$path must be a lowercase item key (item or namespace:item)"
             }
             val separator = value.indexOf(':')
             val namespace = if (separator < 0) "minecraft" else value.substring(0, separator)
@@ -91,7 +90,7 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
         }
 
         private fun readLevel(value: Any?, path: String): Int {
-            val message = "$path is required and must be a positive whole number fitting in Int"
+            val message = "$path must be a positive whole number fitting in Int"
             require(value is Number) { message }
             val lvl = try {
                 value.exactInt()
@@ -104,11 +103,19 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
             return lvl
         }
 
-        private fun readHealth(value: Any?, path: String): HealthSettings {
-            val values = readLocalMapping(value, path)
-            val unknown = values.keys.firstOrNull { it != "max" }
+        private fun readHealth(value: Any?, path: String, legacyPolicy: Boolean?): HealthDefinition {
+            val values = if (value == null) emptyMap() else readLocalMapping(value, path)
+            val unknown = values.keys.firstOrNull { it != "max" && it != "invulnerable" }
             require(unknown == null) { "Unknown configuration field $path.$unknown" }
-            return HealthSettings(readPositive(values["max"], "$path.max"))
+            val invulnerable = if ("invulnerable" in values) {
+                val configured = values["invulnerable"]
+                require(configured is Boolean) { "$path.invulnerable must be a boolean" }
+                require(legacyPolicy == null || legacyPolicy == configured) { "$path.invulnerable conflicts with damage-policy" }
+                configured
+            } else legacyPolicy ?: false
+            val maximum = values["max"]?.let { readPositive(it, "$path.max") }
+            require(invulnerable || maximum != null) { "$path.max is required for a damageable citadel" }
+            return HealthDefinition(maximum, invulnerable)
         }
 
         private fun readMaturing(value: Any?, path: String): MaturingSettings {
@@ -143,29 +150,17 @@ data class CitadelTypesSettings(val types: Map<String, CitadelTypeSettings> = DE
 }
 
 data class CitadelTypeSettings(
-    val item: Key,
-    val lvl: Int,
-    val damagePolicy: CitadelDamagePolicy = CitadelDamagePolicy.ALLOW,
-    val health: HealthSettings? = null,
+    val item: Key? = null,
+    val lvl: Int? = null,
+    val health: HealthDefinition,
     val maturing: MaturingSettings? = null
 ) {
     init {
-        require(lvl > 0) { "Citadel type lvl must be positive" }
-        require(item.namespace.isNotEmpty() && item.key.isNotEmpty()) {
+        require(lvl == null || lvl > 0) { "Citadel type lvl must be positive" }
+        require(item == null || (item.namespace.isNotEmpty() && item.key.isNotEmpty())) {
             "Citadel type item must contain both namespace and value"
         }
-        require(damagePolicy != CitadelDamagePolicy.ALLOW || health != null) {
-            "Health settings are required for damage-policy allow"
-        }
-        require(maturing == null || health != null) { "Maturing settings require health" }
-    }
-}
-
-enum class CitadelDamagePolicy { ALLOW, DENY }
-
-data class HealthSettings(val max: Double) {
-    init {
-        require(max.isFinite() && max > 0.0) { "health.max must be positive and finite" }
+        require(maturing == null || health.maxHealth != null) { "Maturing settings require health.max" }
     }
 }
 

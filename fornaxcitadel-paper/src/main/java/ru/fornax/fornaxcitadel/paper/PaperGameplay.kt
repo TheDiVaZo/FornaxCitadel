@@ -21,7 +21,7 @@ import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
 import ru.fornax.fornaxcitadel.paper.modules.hpdisplay.CrackHealthObservationSystem
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
+import ru.fornax.fornaxcitadel.paper.modules.placement.register
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
@@ -41,25 +41,26 @@ class PaperGameplay(
     private val observation: ObservationService<Player>,
     save: () -> Unit
 ) {
-    val citadelTypes = PaperCitadelTypes(settings.citadelTypes).apply { register(coreGameplay) }
+    private val definitions = coreGameplay.definitions
 
     init {
+        settings.citadelTypes.register(coreGameplay)
         actions.registerValidator(PaperActionStateValidator(plugin.server))
-        actions.registerValidator(PaperPermissionValidator(citadelTypes))
-        actions.registerValidator(PaperDamageValidator(citadels, citadelTypes, settings.playerDamage.creativeModeEnabled))
+        actions.registerValidator(PaperPermissionValidator(coreGameplay.health))
+        actions.registerValidator(PaperDamageValidator(citadels, coreGameplay.health, settings.playerDamage.creativeModeEnabled))
     }
 
     val placement = PaperPlacementService(
-        plugin, actions, citadels, coreGameplay.health, citadelTypes, materials, settings.placement, messages
+        plugin, actions, citadels, coreGameplay.health, definitions, materials, settings.placement, messages
     )
     val dismantle = PaperDismantleService(
         plugin, actions, citadels, coreGameplay.health, coreGameplay.remove,
-        citadelTypes, materials, settings.dismantle
+        definitions, materials, settings.dismantle
     )
-    val repair = PaperRepairService(actions, citadels, coreGameplay.health, citadelTypes, materials)
+    val repair = PaperRepairService(actions, citadels, coreGameplay.health, definitions, materials)
     val upgrade = PaperUpgradeService(
         plugin, actions, citadels, coreGameplay.definitions, coreGameplay.health,
-        citadelTypes, materials, settings.dismantle
+        materials, settings.dismantle
     )
     /** Register modifiers for ordinary player damage on the main thread. */
     val playerDamage = PlayerDamageModifierService()
@@ -68,20 +69,17 @@ class PaperGameplay(
         settings.playerDamage.creativeModeEnabled
     )
     val acid = AcidService(
-        plugin, actions, citadels, coreGameplay.health.maturation, citadelTypes, materials,
+        plugin, actions, citadels, coreGameplay.health.maturation, definitions, materials,
         materialPlacement, breaking, AcidRegistry(settings.acid)
     )
     private val explosion = PaperExplosionService(plugin, actions, citadels, coreGameplay.remove, settings.explosionPowers)
     private val environment = PaperEnvironmentService(plugin, citadels)
     private val display = CrackHealthObservationSystem(plugin, coreGameplay.health)
     internal val commands = CitadelCommand(
-        plugin, actions, citadels, coreGameplay.health, materials, citadelTypes, messages, acid, save
+        plugin, actions, citadels, coreGameplay.health, materials, definitions, messages, acid, save
     )
 
     init {
-        for (type in citadelTypes.keys) {
-            placement.registerMaterial(requireNotNull(citadelTypes.itemKey(type)), type)
-        }
         if (settings.playerDamage.newcomersEnabled) {
             playerDamage.register(NerfingNewcomersModifier(
                 settings.playerDamage.newcomerFirstJoin, settings.playerDamage.newcomerPlayTimeTicks

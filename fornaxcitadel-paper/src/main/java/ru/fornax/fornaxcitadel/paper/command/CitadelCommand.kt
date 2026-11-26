@@ -7,6 +7,8 @@ import org.bukkit.command.CommandSender
 import org.bukkit.command.TabCompleter
 import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
@@ -24,7 +26,6 @@ import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.Locale
 import java.util.logging.Level
@@ -35,7 +36,7 @@ class CitadelCommand(
     private val citadels: CitadelFacade,
     private val health: HealthService,
     private val materials: MaterialRegistry,
-    private val citadelTypes: PaperCitadelTypes,
+    private val definitions: CitadelDefinitionRegistry,
     private val messages: PaperMessages,
     private val acid: AcidService? = null,
     private val save: () -> Unit
@@ -46,9 +47,9 @@ class CitadelCommand(
         citadels: CitadelFacade,
         health: HealthService,
         materials: MaterialRegistry,
-        citadelTypes: PaperCitadelTypes,
+        definitions: CitadelDefinitionRegistry,
         save: () -> Unit
-    ) : this(plugin, actions, citadels, health, materials, citadelTypes, PaperMessages.defaults(), save = save)
+    ) : this(plugin, actions, citadels, health, materials, definitions, PaperMessages.defaults(), save = save)
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         try {
@@ -60,7 +61,7 @@ class CitadelCommand(
                 if (sender.hasPermission(ADMIN)) {
                     sender.message("commands.help.give")
                     sender.message("commands.help.admin")
-                    sender.message("commands.help.types", "types" to citadelTypes.names.joinToString())
+                    sender.message("commands.help.types", "types" to typeNames().joinToString())
                 }
                 return true
             }
@@ -123,9 +124,9 @@ class CitadelCommand(
     }
 
     private fun give(sender: CommandSender, args: Array<out String>) {
-        val type = args.getOrNull(1)?.let(citadelTypes::find)
+        val type = args.getOrNull(1)?.let(::findType)
         if (type == null || args.size !in 2..4) {
-            usage(sender, "give", "types" to citadelTypes.names.joinToString("|"))
+            usage(sender, "give", "types" to typeNames().joinToString("|"))
             return
         }
         val recipient = args.getOrNull(2)?.let(plugin.server::getPlayerExact) ?: if (args.size == 2) sender as? Player else null
@@ -138,9 +139,9 @@ class CitadelCommand(
             sender.message("commands.give.invalid-amount")
             return
         }
-        val itemKey = citadelTypes.itemKey(type)
+        val itemKey = type.itemKey
         if (itemKey == null) {
-            sender.message("commands.give.missing-item", "type" to (citadelTypes.name(type) ?: type.asString()))
+            sender.message("commands.give.missing-item", "type" to typeName(type.key))
             return
         }
         val material = materials.getType(itemKey)
@@ -179,12 +180,12 @@ class CitadelCommand(
         val context = ActionContext(player.uniqueId, PlayerSource(player, COMMAND_SOURCE_KEY))
         when (operation) {
             "place" -> {
-                val type = citadelTypes.find(args[1])
+                val type = findType(args[1])
                 if (type == null) {
                     sender.message("commands.unknown-type", "type" to args[1])
                     return
                 }
-                val result = actions.execute(PlaceAction(context, position, type))
+                val result = actions.execute(PlaceAction(context, position, type.key))
                 sender.message(if (result == ActionResult.SUCCESS) "commands.place.success" else "commands.place.denied")
             }
             "remove" -> {
@@ -202,8 +203,11 @@ class CitadelCommand(
                     return
                 }
                 val kind = citadel.getComponent(CitadelKind::class.java)?.definitionKey
-                val type = kind?.let(citadelTypes::name) ?: kind?.asString()
-                    ?: messages.plainText("commands.info.unknown-type")
+                val type = when {
+                    kind == null -> messages.plainText("commands.info.unknown-type")
+                    definitions.find(kind) == null -> kind.asString()
+                    else -> typeName(kind)
+                }
                 sender.message("commands.info.type", "type" to type)
                 val currentHealth = health.currentHealth(citadel)
                 if (currentHealth != null) {
@@ -213,7 +217,7 @@ class CitadelCommand(
                         "health" to String.format(Locale.ROOT, "%.1f", displayedHealth),
                         "maximum" to (maximum?.let { String.format(Locale.ROOT, "%.1f", it) } ?: ""))
                 }
-                if (kind != null && citadelTypes.isInvulnerable(kind)) sender.message("commands.info.invulnerable")
+                if (kind != null && health.isInvulnerable(kind)) sender.message("commands.info.invulnerable")
             }
         }
     }
@@ -227,12 +231,24 @@ class CitadelCommand(
             }
             args.size == 2 && args[0].equals("acid", ignoreCase = true) && sender.hasPermission("fornaxcitadel.info") -> listOf("info")
             !sender.hasPermission(ADMIN) -> emptyList()
-            args.size == 2 && args[0].lowercase(Locale.ROOT) in listOf("give", "place") -> citadelTypes.names
+            args.size == 2 && args[0].lowercase(Locale.ROOT) in listOf("give", "place") -> typeNames()
             args.size == 3 && args[0].equals("give", ignoreCase = true) -> plugin.server.onlinePlayers.map { it.name }
             args.size == 4 && args[0].equals("give", ignoreCase = true) -> listOf("1", "16", "64")
             else -> emptyList()
         }
         return candidates.filter { it.startsWith(args.lastOrNull().orEmpty(), ignoreCase = true) }
+    }
+
+    private fun typeNames() = definitions.keys.map(::typeName)
+
+    private fun typeName(key: Key) = if (key.namespace == "fornaxcitadel") key.key else key.asString()
+
+    private fun findType(argument: String): CitadelDefinition? {
+        val name = argument.lowercase(Locale.ROOT)
+        val namespace = name.substringBefore(':', "fornaxcitadel")
+        val value = name.substringAfter(':')
+        if (namespace.isEmpty() || value.isEmpty() || !Key.parseableNamespace(namespace) || !Key.parseableValue(value)) return null
+        return definitions.find(Key(namespace, value))
     }
 
     private fun usage(sender: CommandSender, operation: String, vararg parameters: Pair<String, String>): Boolean {

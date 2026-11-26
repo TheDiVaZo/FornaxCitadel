@@ -53,7 +53,7 @@ class PaperExplosionListenerTest {
                 f.installer.permissions.add("fornaxcitadel.admin")
                 f.place(type)
                 checkNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-                f.coreGameplay.health.unregisterDefinition(type)
+                if (!protected) f.coreGameplay.health.unregisterDefinition(type)
                 val event = f.blockExplosion(f.block())
                 dispatch(f.explosionListener, event, f.plugin)
                 assertEquals(protected, f.citadels.findProtecting(f.position) != null)
@@ -324,7 +324,7 @@ class PaperExplosionListenerTest {
         val target = fixture.position.copy(x = 3)
         val removal = RemoveAction(context, fixture.position)
         val placement = PlaceAction(context, target, PaperCitadelTypes.REINFORCED)
-        val validator = PaperPermissionValidator(fixture.citadelTypes)
+        val validator = PaperPermissionValidator(fixture.coreGameplay.health)
 
         assertEquals(ActionValidator.Result.Neutral, validator.validate(removal))
         assertEquals(ActionValidator.Result.Neutral, validator.validate(placement))

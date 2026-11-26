@@ -23,10 +23,9 @@ import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.config.PaperSettings
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
-import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,7 +41,7 @@ class ConfiguredCitadelTypesTest {
             for (source in listOf("item", "command", "action")) {
                 PaperTestFixture(permissions = true, citadelSettings = CitadelTypesSettings()).use { fixture ->
                     fixture.installer.permissions.add("fornaxcitadel.admin")
-                    val type = assertNotNull(fixture.citadelTypes.find(name))
+                    val type = Key("fornaxcitadel", name)
                     when (source) {
                         "item" -> {
                             fixture.installer.held = fixture.reinforcementStack(type)
@@ -77,7 +76,7 @@ class ConfiguredCitadelTypesTest {
             fixture.loadChunk(0, 0)
             val restored = assertNotNull(fixture.citadels.findProtecting(fixture.position))
             assertEquals(7, fixture.citadelTypes.level(restored))
-            val type = assertNotNull(fixture.citadelTypes.find("reinforced"))
+            val type = Key("fornaxcitadel", "reinforced")
             val positions = listOf(fixture.position.copy(x = 3), fixture.position.copy(x = 4))
             val placed = positions.map { position ->
                 assertEquals(ActionResult.SUCCESS, fixture.actions.execute(
@@ -101,7 +100,7 @@ class ConfiguredCitadelTypesTest {
         PaperTestFixture(permissions = true, citadelSettings = CUSTOM_TYPES).use { fixture ->
             fixture.installer.permissions.add("fornaxcitadel.info")
             fixture.installer.target = fixture.block()
-            fixture.place(assertNotNull(fixture.citadelTypes.find("growing_wall")))
+            fixture.place(Key("fornaxcitadel", "growing_wall"))
             val target = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
             assertTrue(target.editComponent(Health::class.java) { it.health = 24.0 })
             assertTrue(target.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
@@ -124,10 +123,10 @@ class ConfiguredCitadelTypesTest {
     @Test
     fun `custom identifiers register fixed health and optional maturation independently`() {
         val fixture = PaperTestFixture(permissions = true, citadelSettings = CUSTOM_TYPES)
-        assertEquals(CUSTOM_TYPES.types.keys.toList(), fixture.citadelTypes.names)
-        assertNull(fixture.citadelTypes.find("reinforced"))
+        assertEquals(CUSTOM_TYPES.types.keys.toList(), fixture.citadelTypes.keys.map { it.key })
+        assertNull(fixture.citadelTypes.find(Key("fornaxcitadel", "reinforced"))?.key)
         val handles = listOf("clay_guard", "titanium", "growing_wall").mapIndexed { index, name ->
-            val key = assertNotNull(fixture.citadelTypes.find(name))
+            val key = Key("fornaxcitadel", name)
             val position = fixture.position.copy(x = index)
             assertEquals(ActionResult.SUCCESS, fixture.actions.execute(
                 PlaceAction(fixture.context(fixture.installer), position, key)
@@ -161,7 +160,7 @@ class ConfiguredCitadelTypesTest {
         assertNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
         assertEquals(2, fixture.installer.held.amount)
 
-        val key = assertNotNull(fixture.citadelTypes.find("clay_guard"))
+        val key = Key("fornaxcitadel", "clay_guard")
         fixture.installer.held = fixture.reinforcementStack(key)
         assertEquals(Key("minecraft", "clay_ball"), fixture.materials.getTypeOrNull(fixture.installer.held)?.getKey())
 
@@ -186,7 +185,7 @@ class ConfiguredCitadelTypesTest {
 
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("place", "TITANIUM"))
         val placed = assertNotNull(fixture.manager.findCitadel(fixture.worldId, 1, 64, 2))
-        assertEquals(fixture.citadelTypes.find("titanium"), placed.getComponent(CitadelKind::class.java)?.definitionKey)
+        assertEquals(fixture.citadelTypes.find(Key("fornaxcitadel", "titanium"))?.key, placed.getComponent(CitadelKind::class.java)?.definitionKey)
         assertEquals(73.0, fixture.health())
         commands.onCommand(fixture.installer.player, TestCommand, "citadel", arrayOf("info"))
 
@@ -202,9 +201,9 @@ class ConfiguredCitadelTypesTest {
     @Test
     fun `a custom unbreakable identifier requires admin installation and retains its damage policy`() {
         val fixture = PaperTestFixture(permissions = true, citadelSettings = CUSTOM_TYPES)
-        val sanctuary = assertNotNull(fixture.citadelTypes.find("sanctuary"))
-        assertTrue(fixture.citadelTypes.requiresAdmin(sanctuary))
-        assertFalse(fixture.citadelTypes.requiresAdmin(assertNotNull(fixture.citadelTypes.find("clay_guard"))))
+        val sanctuary = Key("fornaxcitadel", "sanctuary")
+        assertTrue(fixture.coreGameplay.health.isInvulnerable(sanctuary))
+        assertFalse(fixture.coreGameplay.health.isInvulnerable(Key("fornaxcitadel", "clay_guard")))
         assertEquals(ActionResult.DENIED, fixture.actions.execute(
             PlaceAction(fixture.context(fixture.installer), fixture.position, sanctuary)
         ))
@@ -242,7 +241,7 @@ class ConfiguredCitadelTypesTest {
             """.trimIndent())
         }
         val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
-        val definition = assertNotNull(fixture.citadelTypes.find("diamond_wall"))
+        val definition = Key("fornaxcitadel", "diamond_wall")
         assertEquals(Key("minecraft", "diamond"), fixture.citadelTypes.itemKey(definition))
         fixture.installer.held = TestItemStack(Material.AMETHYST_SHARD, 2)
 
@@ -271,7 +270,7 @@ class ConfiguredCitadelTypesTest {
             """.trimIndent())
         }
         val fixture = PaperTestFixture(permissions = true, citadelSettings = PaperSettings.read(config).citadelTypes)
-        val definition = assertNotNull(fixture.citadelTypes.find("steel_guard"))
+        val definition = Key("fornaxcitadel", "steel_guard")
         val itemKey = Key("thirdparty", "steel_plate")
         val material = TestMaterialAdapter(itemKey)
         fixture.installer.held = material.createItemStack(2)
@@ -295,7 +294,7 @@ class ConfiguredCitadelTypesTest {
         val settings = CitadelTypesSettings(
             mapOf(
                 "steel_guard" to
-                        CitadelTypeSettings(itemKey, 1, health = HealthSettings(29.0))
+                        CitadelTypeSettings(itemKey, 1, health = HealthDefinition(29.0))
             )
         )
         val fixture = PaperTestFixture(permissions = true, citadelSettings = settings)
@@ -376,17 +375,17 @@ class ConfiguredCitadelTypesTest {
             linkedMapOf(
                 "clay_guard" to CitadelTypeSettings(
                     Key("minecraft", "clay_ball"), 1,
-                    health = HealthSettings(13.0)
+                    health = HealthDefinition(13.0)
                 ),
                 "titanium" to CitadelTypeSettings(
                     Key("minecraft", "iron_ingot"), 2,
-                    health = HealthSettings(73.0)
+                    health = HealthDefinition(73.0)
                 ),
                 "growing_wall" to CitadelTypeSettings(
                     Key("minecraft", "emerald"), 4,
-                    health = HealthSettings(48.0), maturing = MaturingSettings(30, 8.0)
+                    health = HealthDefinition(48.0), maturing = MaturingSettings(30, 8.0)
                 ),
-                "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), 999, CitadelDamagePolicy.DENY)
+                "sanctuary" to CitadelTypeSettings(Key("minecraft", "nether_star"), 999, HealthDefinition(null, invulnerable = true))
             )
         )
     }

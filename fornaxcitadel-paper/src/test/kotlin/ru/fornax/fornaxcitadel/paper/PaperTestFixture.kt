@@ -56,6 +56,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.Health
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
@@ -75,10 +76,9 @@ import ru.fornax.fornaxcitadel.paper.modules.explosion.PaperExplosionService
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPowerSettings
 import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
 import ru.fornax.fornaxcitadel.paper.modules.permission.PaperPermissionValidator
-import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
+import ru.fornax.fornaxcitadel.paper.modules.placement.register
 import ru.fornax.fornaxcitadel.paper.modules.placement.MaturingSettings
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import ru.fornax.fornaxcitadel.paper.modules.repair.PaperRepairService
@@ -112,19 +112,19 @@ internal class PaperTestFixture(
     private val trackListenerLifecycle: Boolean = false,
     explosionPowers: ExplosionPowerSettings = ExplosionPowerSettings(),
     placementSettings: PlacementSettings = PlacementSettings(),
-    citadelSettings: CitadelTypesSettings = CitadelTypesSettings(
+    val citadelSettings: CitadelTypesSettings = CitadelTypesSettings(
         linkedMapOf(
             "reinforced" to CitadelTypeSettings(
                 Key("minecraft", "iron_ingot"), 2,
-                health = HealthSettings(100.0)
+                health = HealthDefinition(100.0)
             ),
             "maturing" to CitadelTypeSettings(
                 Key("minecraft", "emerald"), 4,
-                health = HealthSettings(40.0), maturing = MaturingSettings(600, 4.0)
+                health = HealthDefinition(40.0), maturing = MaturingSettings(600, 4.0)
             ),
             "invulnerable" to CitadelTypeSettings(
                 Key("minecraft", "nether_star"), 999,
-                damagePolicy = CitadelDamagePolicy.DENY
+                health = HealthDefinition(null, invulnerable = true)
             )
         )
     ),
@@ -279,29 +279,25 @@ internal class PaperTestFixture(
     val storage = ChunkBackendLifecycleCoordinator(backend, DirectScheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
     val manager = ComponentManager(storage, types)
     private val queueScheduler = queueSchedulerFactory(plugin)
-    val citadelTypes = PaperCitadelTypes(citadelSettings)
     val materials = CombineMaterialRegistry()
     val materialPlacement = MaterialPlacementService(server, materials, manager::isChunkLoaded)
     val actions = ActionManager()
     val actionFacade = ActionFacade(actions)
     val citadels = CitadelFacade(manager, if (resolveMaterials) materialPlacement else ExactTestCitadelResolver)
     val coreGameplay = CoreGameplay(citadels, actionFacade)
+    val citadelTypes = coreGameplay.definitions
     val actionQueue = ActionQueueService(actionFacade, queueScheduler, maxActionsPerTick)
     val pluginQueue = PluginActionQueue(actionQueue, actions)
     init {
         actionFacade.registerValidator(PaperActionStateValidator(server))
-        if (permissions) actionFacade.registerValidator(PaperPermissionValidator(citadelTypes))
-        actionFacade.registerValidator(PaperDamageValidator(citadels, citadelTypes, creativeModeEnabled))
+        if (permissions) actionFacade.registerValidator(PaperPermissionValidator(coreGameplay.health))
+        actionFacade.registerValidator(PaperDamageValidator(citadels, coreGameplay.health, creativeModeEnabled))
     }
 
     val placementService = PaperPlacementService(
         plugin, actionFacade, citadels, coreGameplay.health,
         citadelTypes, materials, placementSettings, messages
-    ).also { service ->
-        citadelTypes.keys.forEach { definition ->
-            service.registerMaterial(checkNotNull(citadelTypes.itemKey(definition)), definition)
-        }
-    }
+    )
     val materialFacade = MaterialFacade(materials, materialPlacement, placementService)
     val playerDamage = PlayerDamageModifierService()
     // Vanilla item creation normally needs the running server's item factory; use the test stack at that boundary.
@@ -330,7 +326,7 @@ internal class PaperTestFixture(
     )
     val upgradeService = PaperUpgradeService(
         plugin, actionFacade, citadels, coreGameplay.definitions, coreGameplay.health,
-        citadelTypes, serviceMaterials(dismantleMaterials), dismantleSettings, dismantleRandom
+        serviceMaterials(dismantleMaterials), dismantleSettings, dismantleRandom
     )
     val breakingService = PaperBreakingService(
         plugin, actionFacade, citadels, coreGameplay.remove, playerDamage, messages, creativeModeEnabled
@@ -353,7 +349,7 @@ internal class PaperTestFixture(
     val stranger = player(UUID(5L, 6L), "stranger")
 
     init {
-        if (registerTypes) citadelTypes.register(coreGameplay)
+        if (registerTypes) citadelSettings.register(coreGameplay)
         if (startQueue) pluginQueue.enable()
         if (initializeSystems) {
             dismantleService.enable()

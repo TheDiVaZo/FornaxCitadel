@@ -23,7 +23,7 @@ import ru.fornax.fornaxcitadel.paper.modules.acid.*
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
+import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import java.time.Duration
 import kotlin.test.*
 
@@ -696,7 +696,7 @@ class AcidServiceTest {
     private fun fixture(material: Material = Material.GOLD_BLOCK, settings: AcidSettings? = AcidSettings(),
                         sourceType: Key = PaperCitadelTypes.REINFORCED) = PaperTestFixture(permissions = true, acidSettings = settings, citadelSettings = CitadelTypesSettings(
                             CitadelTypesSettings.DEFAULT_TYPES + ("tier_1000" to CitadelTypeSettings(
-                                Key("minecraft", "gold_ingot"), 1000, health = HealthSettings(100.0))))).apply {
+                                Key("minecraft", "gold_ingot"), 1000, health = HealthDefinition(100.0))))).apply {
         material(material)
         place(sourceType)
     }

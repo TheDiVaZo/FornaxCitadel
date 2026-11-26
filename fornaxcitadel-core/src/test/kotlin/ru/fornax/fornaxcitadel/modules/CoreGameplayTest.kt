@@ -123,7 +123,7 @@ class CoreGameplayTest {
     @Test
     fun `initializer failure discards the entire unpublished draft`() {
         val fixture = Fixture()
-        fixture.register(initializers = listOf(CitadelInitializer { _, draft ->
+        fixture.register(initializers = listOf(placementInitializer { draft ->
             draft.addComponent(Maturing::class.java, Maturing(123L))
             error("Initialization failed after preparing a component")
         }))

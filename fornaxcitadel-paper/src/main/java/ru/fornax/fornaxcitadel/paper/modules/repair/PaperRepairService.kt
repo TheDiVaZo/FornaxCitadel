@@ -1,5 +1,6 @@
 package ru.fornax.fornaxcitadel.paper.modules.repair
 
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
@@ -15,14 +16,13 @@ import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.material.consumeOneFromMainHand
 import ru.fornax.fornaxcitadel.paper.material.hasMaterial
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 
 /** Restores an authorized, owned reinforcement to its current maximum health. */
 class PaperRepairService(
     actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val health: HealthService,
-    private val citadelTypes: PaperCitadelTypes,
+    private val definitions: CitadelDefinitionRegistry,
     private val materials: MaterialRegistry
 ) : ActionProcessor<RepairAction>(), LifecycleService {
     private var enabled = false
@@ -57,7 +57,7 @@ class PaperRepairService(
         if (!currentHealth.isFinite() || currentHealth < 0.0) return ActionResult.DENIED
         val maximum = health.maxHealth(citadel) ?: return ActionResult.DENIED
         if (currentHealth >= maximum) return ActionResult.DENIED
-        val itemKey = citadelTypes.itemKey(citadel) ?: return ActionResult.DENIED
+        val itemKey = definitions.itemKey(citadel) ?: return ActionResult.DENIED
         val held = player.inventory.itemInMainHand
         if (!held.hasMaterial() || materials.getTypeOrNull(held)?.getKey() != itemKey) return ActionResult.DENIED
 

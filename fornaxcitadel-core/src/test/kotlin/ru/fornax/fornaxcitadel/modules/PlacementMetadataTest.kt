@@ -46,9 +46,8 @@ class PlacementMetadataTest {
     @Test
     fun `owner and kind are ready before initialization and notification and survive reload`() {
         var initializerCalls = 0
-        Fixture(initializers = listOf(CitadelInitializer { context, draft ->
+        Fixture(initializers = listOf(placementInitializer { draft ->
             initializerCalls++
-            assertEquals(PLAYER, context.actorId)
             assertEquals(PLAYER, draft.getComponent(CitadelOwner::class.java)?.playerId)
             assertEquals(TYPE, draft.getComponent(CitadelKind::class.java)?.definitionKey)
         })).use { fixture ->
@@ -86,7 +85,7 @@ class PlacementMetadataTest {
     @Test
     fun `vetoed and failed placement never publishes owner or kind metadata`() {
         for (initializerFails in listOf(false, true)) {
-            val initializers = if (initializerFails) listOf(CitadelInitializer { _, draft ->
+            val initializers = if (initializerFails) listOf(placementInitializer { draft ->
                 assertEquals(PLAYER, draft.getComponent(CitadelOwner::class.java)?.playerId)
                 assertEquals(TYPE, draft.getComponent(CitadelKind::class.java)?.definitionKey)
                 error("Initialization failed")

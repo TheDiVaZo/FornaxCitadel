@@ -1,5 +1,7 @@
 package ru.fornax.fornaxcitadel.paper
 
+import ru.fornax.fornaxcitadel.paper.modules.placement.register
+
 import org.bukkit.Location
 import org.bukkit.World
 import org.bukkit.event.Event
@@ -480,7 +482,7 @@ class PaperFull3DObservationTest {
         private val subscriptions = mutableListOf<ObservationSubscription>()
 
         init {
-            paper.citadelTypes.register(coreGameplay)
+            paper.citadelSettings.register(coreGameplay)
             manager.loadChunk(paper.worldId, 0, 0).join()
             actions.registerValidator(object : ActionValidator<RemoveAction> {
                 override val actionClass = RemoveAction::class.java

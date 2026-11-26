@@ -7,6 +7,7 @@ import org.bukkit.event.Event
 import org.bukkit.event.block.Action
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -18,6 +19,35 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PaperPlacementListenerTest {
+    @Test
+    fun `definition registered after startup is placeable by its canonical item without a level`() {
+        PaperTestFixture(permissions = true).use { f ->
+            val type = Key("addon", "ward")
+            f.coreGameplay.registerDefinition(CitadelDefinition(type, emptyList(), itemKey = Key("minecraft", "feather")))
+            f.installer.held = TestItemStack(Material.FEATHER, 2)
+            dispatch(f.placementListener, f.interact(), f.plugin)
+            val target = assertNotNull(f.citadels.findProtecting(f.position))
+            assertEquals(type, target.getComponent(CitadelKind::class.java)?.definitionKey)
+            assertEquals(1, f.installer.held.amount)
+        }
+    }
+
+    @Test
+    fun `itemless definitions allow direct placement but reject installation aliases`() {
+        PaperTestFixture(permissions = true).use { f ->
+            val type = Key("addon", "ward")
+            val item = Key("minecraft", "flint")
+            f.coreGameplay.registerDefinition(CitadelDefinition(type, emptyList()))
+            assertFailsWith<IllegalArgumentException> { f.materialFacade.registerPlacementDefinition(item, type) }
+            f.installer.held = TestItemStack(Material.FLINT, 2)
+            dispatch(f.placementListener, f.interact(), f.plugin)
+            assertNull(f.citadels.findProtecting(f.position))
+            assertEquals(2, f.installer.held.amount)
+            f.place(type)
+            assertNotNull(f.citadels.findProtecting(f.position))
+        }
+    }
+
     @Test
     fun `configured main hand placement consumes once and duplicate placement consumes nothing`() {
         val fixture = PaperTestFixture(permissions = true)

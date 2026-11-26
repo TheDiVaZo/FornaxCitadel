@@ -10,16 +10,11 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamageModifier
-import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionPosition
 import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 import ru.fornax.fornaxcitadel.paper.modules.health.PaperDamageValidator
-import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelDamagePolicy
-import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.HealthSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -36,7 +31,7 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-            f.coreGameplay.health.unregisterDefinition(type)
+            if (!protected) f.coreGameplay.health.unregisterDefinition(type)
             f.playerDamage.register { _, _, _ -> 0.0 }
             assertTrue(f.breakingService.breakBlock(f.stranger.player, f.block()))
             assertEquals(protected, f.citadels.findProtecting(f.position) != null)
@@ -74,7 +69,7 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-            f.coreGameplay.health.unregisterDefinition(type)
+            if (reason != "policy") f.coreGameplay.health.unregisterDefinition(type)
             if (reason == "permission") f.stranger.permissions.remove("fornaxcitadel.damage")
             f.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
@@ -116,7 +111,7 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             val target = assertNotNull(f.citadels.findProtecting(f.position))
-            f.coreGameplay.health.registerDefinition(type, HealthDefinition(100.0))
+            f.coreGameplay.health.registerDefinition(type, HealthDefinition(100.0, invulnerable = true))
             f.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Success
@@ -135,8 +130,9 @@ class PaperDamageValidationTest {
     fun `unknown types with saved HP accept player and explosion damage without a maximum`() {
         PaperTestFixture(permissions = true).use { fixture ->
             val type = Key("external", "reinforcement")
-            fixture.coreGameplay.registerDefinition(CitadelDefinition(type, listOf(CitadelInitializer { _, draft -> draft.addComponent(Health::class.java, Health(100.0)) })))
+            fixture.coreGameplay.registerDefinition(CitadelDefinition(type, emptyList()))
             fixture.place(type)
+            assertNotNull(fixture.citadels.findProtecting(fixture.position)).putComponent(Health::class.java, Health(100.0))
             val ordinary = DamageAction(fixture.context(fixture.stranger), fixture.position, 10.0)
             val source = ExplosionSource.Block(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0),
                 4.0f, Material.TNT)
@@ -164,11 +160,11 @@ class PaperDamageValidationTest {
 
     @Test
     fun `configured damage denial vetoes ordinary damage but allows authorized creative destruction even with health`() {
-        val settings = CitadelTypesSettings(mapOf("protected" to CitadelTypeSettings(
-            Key("minecraft", "nether_star"), 999, CitadelDamagePolicy.DENY, HealthSettings(100.0))))
-        PaperTestFixture(permissions = true, citadelSettings = settings).use { fixture ->
+        PaperTestFixture(permissions = true).use { fixture ->
+            val type = Key("fornaxcitadel", "reinforced")
+            fixture.coreGameplay.health.registerDefinition(type, HealthDefinition(100.0, invulnerable = true))
             fixture.installer.permissions.add("fornaxcitadel.admin")
-            fixture.place(Key("fornaxcitadel", "protected"))
+            fixture.place(type)
             fixture.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Success
@@ -219,7 +215,7 @@ class PaperDamageValidationTest {
     @Test
     fun `damage validation rejects missing and unloaded targets without loading chunks`() {
         PaperTestFixture(load = false).use { fixture ->
-            val validator = PaperDamageValidator(fixture.citadels, fixture.citadelTypes, true)
+            val validator = PaperDamageValidator(fixture.citadels, fixture.coreGameplay.health, true)
             val action = DamageAction(fixture.context(fixture.stranger), fixture.position, 10.0)
             assertSame(ActionValidator.Result.Rejected, validator.validate(action))
             assertFalse(fixture.manager.isChunkLoaded(fixture.worldId, 0, 0))

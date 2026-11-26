@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.paper.modules.dismantle
 
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
@@ -14,7 +15,6 @@ import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 import ru.fornax.fornaxcitadel.paper.action.OwnerActionValidator
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import java.util.logging.Level
 import kotlin.random.Random
 
@@ -25,7 +25,7 @@ class PaperDismantleService @JvmOverloads constructor(
     private val citadels: CitadelFacade,
     private val health: HealthService,
     private val remove: RemoveService,
-    private val citadelTypes: PaperCitadelTypes,
+    private val definitions: CitadelDefinitionRegistry,
     materials: MaterialRegistry,
     settings: DismantleSettings = DismantleSettings(),
     random: () -> Double = { Random.nextDouble() }
@@ -69,7 +69,7 @@ class PaperDismantleService @JvmOverloads constructor(
         val healthComponent = citadel.getComponent(Health::class.java)
         val maximum = health.maxHealth(citadel)
         val refundChance = refunds.chance(healthComponent == null || maximum != null && healthComponent.health >= maximum)
-        val itemKey = citadelTypes.itemKey(citadel)
+        val itemKey = definitions.itemKey(citadel)
         val refund = try {
             refunds.create(itemKey, refundChance)
         } catch (failure: Exception) {

@@ -6,7 +6,6 @@ import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDraft
-import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.citadel.MutableCitadelDraft
@@ -26,6 +25,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.placementInitializer
 import ru.fornax.fornaxcitadel.modules.validateDamage
 import ru.fornax.fornaxcitadel.modules.validateRemoval
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -177,7 +177,7 @@ class CitadelFacadeTest {
             val placed = mutableListOf<PlaceAction>()
             fixture.addon.health.registerDefinition(CUSTOM_TYPE, HealthDefinition(100.0))
             fixture.addon.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
-                CitadelInitializer { _, draft -> initialized.add(draft.position) }, HealthInitializer(fixture.addon.health)
+                placementInitializer { draft -> initialized.add(draft.position) }, HealthInitializer(fixture.addon.health)
             )))
             fixture.actions.validateDamage(fixture.citadels, CUSTOM_TYPE)
             fixture.actions.registerHandler(object : ActionHandler<PlaceAction> {
@@ -315,13 +315,13 @@ class CitadelFacadeTest {
 
         fun fill(draft: CitadelDraft) {
             draft.addComponent(CitadelKind::class.java, CitadelKind(TYPE))
-            HealthInitializer(addon.health).initialize(CONTEXT, draft)
+            HealthInitializer(addon.health).initialize(draft)
         }
 
         fun createExact(position: CitadelPosition, type: Key = TYPE): CitadelHandle {
             val draft = MutableCitadelDraft(position)
             draft.addComponent(CitadelKind::class.java, CitadelKind(type))
-            HealthInitializer(addon.health).initialize(CONTEXT, draft)
+            HealthInitializer(addon.health).initialize(draft)
             assertEquals(ActionResult.SUCCESS, manager.createCitadel(draft))
             return assertNotNull(exact(position))
         }

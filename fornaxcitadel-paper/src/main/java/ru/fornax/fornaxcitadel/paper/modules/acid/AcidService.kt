@@ -5,11 +5,11 @@ import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
 import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.isOwnerOrUnowned
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.modules.health.MaturationService
-import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
@@ -37,7 +37,7 @@ class AcidService(
     private val actions: ActionFacade,
     private val citadels: CitadelFacade,
     private val maturation: MaturationService,
-    private val citadelTypes: PaperCitadelTypes,
+    private val definitions: CitadelDefinitionRegistry,
     private val materials: MaterialRegistry,
     private val placement: MaterialPlacementService,
     private val breaking: PaperBreakingService,
@@ -101,7 +101,7 @@ class AcidService(
             val result = breaking.destroy(target.block, target.reinforcements, target.actions, materials, placement,
                 validate = {
                     enabled && target.reinforcements.all {
-                        canDissolve(acid.tier, citadelTypes.level(it))
+                        canDissolve(acid.tier, definitions.level(it))
                     }
                 })
             if (result == ActionResult.SUCCESS) destroyed++
@@ -112,7 +112,7 @@ class AcidService(
     private fun sourceIsCurrent(player: Player, acid: AcidBlock): Boolean {
         checkActor(player, acid)
         return enabled && registry.find(acid.block.type) == acid.type && acid.citadel.isCurrent &&
-            citadelTypes.level(acid.citadel) == acid.tier &&
+            definitions.level(acid.citadel) == acid.tier &&
             maturation.isMature(acid.citadel)
     }
 
@@ -132,7 +132,7 @@ class AcidService(
         }
         val anchor = loadedBlock(citadel.position)
         val type = registry.find(anchor.type) ?: fail(if (registry.isDisabled(anchor.type)) AcidFailure.DISABLED else AcidFailure.NOT_FOUND)
-        val tier = citadelTypes.level(citadel)
+        val tier = definitions.level(citadel)
         return AcidBlock(anchor, citadel, type, citadel.getComponent(CitadelOwner::class.java)?.playerId, tier)
     }
 
@@ -148,7 +148,7 @@ class AcidService(
             val protected = parts.mapNotNull { part -> citadels.findProtecting(position(part))?.let { part to it } }
                 .distinctBy { it.second.position to it.second.runtimeId }
             if (protected.any { same(it.second, acid.citadel) }) continue
-            if (protected.any { !canDissolve(acid.tier, citadelTypes.level(it.second)) }) continue
+            if (protected.any { !canDissolve(acid.tier, definitions.level(it.second)) }) continue
             val destructionActions = protected.map { action(player, acid, it.first) }
             scopedActions.addAll(destructionActions)
             if (!destructionActions.all(actions::isAllowed)) continue

@@ -7,6 +7,7 @@ import org.bukkit.World
 import org.bukkit.block.BlockState
 import org.bukkit.entity.Player
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
+import ru.fornax.fornaxcitadel.core.citadel.CitadelDraft
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
@@ -180,7 +181,7 @@ class PaperCrackHealthObservationSystemTest {
     fun `every health bearing type is displayed with an independent negative source id`() {
         Fixture().use { fixture ->
             val protectedType = Key("test", "protected_health")
-            fixture.paper.coreGameplay.health.registerDefinition(protectedType, HealthDefinition(100.0))
+            fixture.paper.coreGameplay.health.registerDefinition(protectedType, HealthDefinition(100.0, invulnerable = true))
             fixture.paper.coreGameplay.registerDefinition(CitadelDefinition(protectedType, listOf(initialHealth(75.0))))
             val protected = fixture.create(2, type = protectedType)
             val emptyType = Key("test", "without_health")
@@ -428,8 +429,14 @@ class PaperCrackHealthObservationSystemTest {
 
     private companion object {
         val TYPE = Key("test", "crack_health")
-        fun initialHealth(current: Double) = CitadelInitializer { _, draft ->
-            draft.addComponent(Health::class.java, ReplacementHealth(current))
+        fun initialHealth(current: Double) = object : CitadelInitializer {
+            override fun initialize(draft: CitadelDraft) {
+                draft.addComponent(Health::class.java, ReplacementHealth(current))
+            }
+
+            override fun update(handle: CitadelHandle) {
+                handle.putComponent(Health::class.java, ReplacementHealth(current))
+            }
         }
     }
 }

@@ -59,10 +59,19 @@ public final class HealthService {
 
     public boolean unregisterDefinition(@NotNull Key key) { return definitions.remove(key) != null; }
 
+    public boolean isInvulnerable(@NotNull Key key) {
+        HealthDefinition definition = findDefinition(key);
+        return definition != null && definition.getInvulnerable();
+    }
+
+    public boolean isInvulnerable(@NotNull ReadableHandle citadel) {
+        HealthDefinition definition = definitionOf(citadel);
+        return definition != null && definition.getInvulnerable();
+    }
+
     @Nullable
     public Double maxHealth(@NotNull ReadableHandle citadel) {
-        Key key = definitionKey(citadel);
-        HealthDefinition definition = key == null ? null : findDefinition(key);
+        HealthDefinition definition = definitionOf(citadel);
         return definition == null ? null : definition.getMaxHealth();
     }
 
@@ -138,8 +147,10 @@ public final class HealthService {
             throw new IllegalArgumentException("Damage must be finite and non-negative: " + damage);
         }
         if (!citadels.isCurrent(citadel)) return ActionResult.DENIED;
+        HealthDefinition definition = definitionOf(citadel);
+        if (definition != null && definition.getInvulnerable()) return ActionResult.DENIED;
         ReadableHealth component = citadel.getComponent(Health.class);
-        Double maximum = maxHealth(citadel);
+        Double maximum = definition == null ? null : definition.getMaxHealth();
         Double initialHealth = component == null ? maximum : Double.valueOf(component.getHealth());
         if (initialHealth != null) requireValidHealth(initialHealth);
 
@@ -188,9 +199,9 @@ public final class HealthService {
     }
 
     @Nullable
-    private static Key definitionKey(ReadableHandle citadel) {
+    private HealthDefinition definitionOf(ReadableHandle citadel) {
         ReadableCitadelKind kind = citadel.getComponent(CitadelKind.class);
-        return kind == null ? null : kind.getDefinitionKey();
+        return kind == null ? null : findDefinition(kind.getDefinitionKey());
     }
 
     private static void requireValidHealth(double health) {

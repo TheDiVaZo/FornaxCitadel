@@ -362,12 +362,12 @@ class HealthServiceTest {
         val fixture = HealthFixture(createInitial = false)
         val draft = fixture.draft()
         fixture.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(100.0))
-        HealthInitializer(fixture.service).initialize(ActionContext.SYSTEM, draft)
+        HealthInitializer(fixture.service).initialize(draft)
         val health = assertNotNull(draft.getComponent(Health::class.java))
 
         assertEquals(100.0, health.health)
         assertNull(draft.getComponent(Maturing::class.java))
-        assertFails { HealthInitializer(fixture.service).initialize(ActionContext.SYSTEM, draft) }
+        assertFails { HealthInitializer(fixture.service).initialize(draft) }
         assertSame(health, draft.getComponent(Health::class.java))
         assertTrue(fixture.chunk.isEmpty)
         assertFalse(fixture.chunk.isDirty)

@@ -93,7 +93,7 @@ class FornaxCitadel : JavaPlugin() {
             val commands = CitadelCommandRegistration(::getCommand, paperGameplay.commands, messages)
                 .also { commandRegistration = it }
 
-            chunks.enableWithAddonComponents(server.pluginManager.plugins, citadels)
+            chunks.enableWithAddons(server.pluginManager.plugins, citadels, coreGameplay)
             paperGameplay.onEnable()
             queue.enable()
             observers.enable()
@@ -104,7 +104,9 @@ class FornaxCitadel : JavaPlugin() {
                 resolver = materialPlacement,
                 observation = ObservationFacade(observation),
                 materials = MaterialFacade(materials, materialPlacement, paperGameplay.placement),
-                playerDamage = paperGameplay.playerDamage
+                playerDamage = paperGameplay.playerDamage,
+                definitions = coreGameplay.definitions,
+                health = coreGameplay.health
             )
             server.servicesManager.register(FornaxCitadelAPI::class.java, api, this, ServicePriority.Normal)
         } catch (failure: Throwable) {
@@ -170,12 +172,13 @@ class FornaxCitadel : JavaPlugin() {
     }
 }
 
-internal fun PaperChunkService.enableWithAddonComponents(plugins: Array<out Plugin>, citadels: CitadelFacade) {
+internal fun PaperChunkService.enableWithAddons(plugins: Array<out Plugin>, citadels: CitadelFacade, core: CoreGameplay) {
     // Dependent addons have completed onLoad but may still be waiting for onEnable.
     for (addon in plugins.filterIsInstance<Addon>()) {
         for (component in addon.defaultComponents()) {
             citadels.registerComponent(component.key, component.componentClass)
         }
+        addon.registerDefinitions(core.definitions, core.health)
     }
     enable()
 }
