@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.paper.modules.placement
 
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
@@ -38,15 +38,15 @@ class PaperCitadelTypes(settings: CitadelTypesSettings = CitadelTypesSettings())
     fun isInvulnerable(key: Key): Boolean = damagePolicy(key) == CitadelDamagePolicy.DENY
     fun requiresAdmin(key: Key): Boolean = isInvulnerable(key)
 
-    fun register(coreAddon: CoreAddon) {
-        val health = coreAddon.health
+    fun register(coreGameplay: CoreGameplay) {
+        val health = coreGameplay.health
         for ((name, settings) in configured) {
             val key = byName.getValue(name)
             val initializers = buildList<CitadelInitializer> {
                 add(HealthInitializer(health))
                 add(MaturingInitializer())
             }
-            coreAddon.registerDefinition(CitadelDefinition(key, initializers))
+            coreGameplay.registerDefinition(CitadelDefinition(key, initializers))
             settings.health?.let { health.registerDefinition(key, HealthDefinition(it.max)) }
             health.maturation.registerDefinition(key, MaturationDefinition(
                 Duration.ofSeconds(settings.maturing?.durationSeconds ?: 0),

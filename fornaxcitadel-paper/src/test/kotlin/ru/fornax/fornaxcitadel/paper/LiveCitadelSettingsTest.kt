@@ -44,7 +44,7 @@ class LiveCitadelSettingsTest {
             val started = target.getComponent(Maturing::class.java)?.startedAtMillis
             val saves = f.backend.saves
             assertNull(target.getComponent(Health::class.java))
-            assertEquals(100.0, f.coreAddon.health.currentHealth(target))
+            assertEquals(100.0, f.coreGameplay.health.currentHealth(target))
             assertTrue(info(f).any { it.contains("100.0 / 100.0") })
 
             f.installer.held = TestItemStack(Material.DIAMOND, 2)
@@ -69,8 +69,8 @@ class LiveCitadelSettingsTest {
             f.loadChunk(0, 0)
             val reloaded = assertNotNull(f.citadels.findProtecting(f.position))
             assertEquals(90.0, reloaded.getComponent(Health::class.java)?.health)
-            f.coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(200.0))
-            assertEquals(90.0, f.coreAddon.health.currentHealth(reloaded))
+            f.coreGameplay.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(200.0))
+            assertEquals(90.0, f.coreGameplay.health.currentHealth(reloaded))
             assertTrue(info(f).any { it.contains("90.0 / 200.0") })
         }
     }
@@ -92,13 +92,13 @@ class LiveCitadelSettingsTest {
             f.actions.unregisterValidator(reject)
             assertEquals(ActionResult.DENIED, damage(f, 0.0))
             val zero = DamageModifier { _, _, _ -> 0.0 }
-            f.coreAddon.health.registerModifier(zero)
+            f.coreGameplay.health.registerModifier(zero)
             assertEquals(ActionResult.DENIED, damage(f, 10.0))
-            f.coreAddon.health.unregisterModifier(zero)
-            f.coreAddon.health.registerModifier { _, _, _ -> error("Calculation failed") }
+            f.coreGameplay.health.unregisterModifier(zero)
+            f.coreGameplay.health.registerModifier { _, _, _ -> error("Calculation failed") }
             assertFailsWith<IllegalStateException> { damage(f, 10.0) }
             assertNull(target.getComponent(Health::class.java))
-            assertEquals(100.0, f.coreAddon.health.currentHealth(target))
+            assertEquals(100.0, f.coreGameplay.health.currentHealth(target))
             f.manager.saveAll().join()
             assertEquals(saves, f.backend.saves)
         }
@@ -109,14 +109,14 @@ class LiveCitadelSettingsTest {
         restored(saved(), changed(50.0)).use { f ->
             val target = assertNotNull(f.citadels.findProtecting(f.position))
             assertEquals(80.0, f.health())
-            assertEquals(50.0, f.coreAddon.health.maxHealth(target))
+            assertEquals(50.0, f.coreGameplay.health.maxHealth(target))
             assertEquals(7, f.citadelTypes.level(target))
             assertEquals(Key("minecraft", "diamond"), f.citadelTypes.itemKey(target))
             val saves = f.backend.saves
-            assertEquals(80.0, f.coreAddon.health.currentHealth(target))
+            assertEquals(80.0, f.coreGameplay.health.currentHealth(target))
             assertTrue(info(f).any { it.contains("50.0 / 50.0") })
             assertEquals(80.0, f.health())
-            assertEquals(80.0, f.coreAddon.health.currentHealth(target))
+            assertEquals(80.0, f.coreGameplay.health.currentHealth(target))
             f.manager.saveAll().join()
             assertEquals(saves, f.backend.saves)
 
@@ -174,7 +174,7 @@ class LiveCitadelSettingsTest {
     fun `removed type retains usable HP shows no invented maximum and dismantles without refund`() {
         restored(saved(), CitadelTypesSettings(emptyMap())).use { f ->
             val target = assertNotNull(f.citadels.findProtecting(f.position))
-            assertNull(f.coreAddon.health.maxHealth(target))
+            assertNull(f.coreGameplay.health.maxHealth(target))
             assertNull(f.citadelTypes.itemKey(target))
             assertNull(f.citadelTypes.level(target))
             assertEquals(80.0, f.health())
@@ -190,7 +190,7 @@ class LiveCitadelSettingsTest {
     @Test
     fun `absent maximum prevents repair and uses configured damaged refund chance`() {
         restored(saved(), changed(50.0)).use { f ->
-            f.coreAddon.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
+            f.coreGameplay.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
             assertEquals(ActionResult.SUCCESS, damage(f, 1.0))
             assertEquals(79.0, f.health())
             f.installer.held = TestItemStack(Material.DIAMOND, 2)

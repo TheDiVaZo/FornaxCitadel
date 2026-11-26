@@ -4,7 +4,10 @@ import org.bukkit.NamespacedKey
 import org.bukkit.event.world.ChunkLoadEvent
 import org.bukkit.event.world.ChunkUnloadEvent
 import org.bukkit.event.world.WorldUnloadEvent
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import org.bukkit.plugin.Plugin
+import ru.fornax.fornaxcitadel.addon.Addon
+import ru.fornax.fornaxcitadel.addon.ComponentRegistration
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.component.TypeManager
@@ -15,14 +18,18 @@ import ru.fornax.fornaxcitadel.core.facade.ComponentManager
 import ru.fornax.fornaxcitadel.core.scheduler.Scheduler
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkBackendLifecycleCoordinator
+import ru.fornax.fornaxcitadel.core.storage.ChunkCord
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
 import ru.fornax.fornaxcitadel.core.storage.WXZCord
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
+import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.JavaAddonPlugin.SHIELD_KEY
+import ru.fornax.fornaxcitadel.paper.JavaAddonPlugin.Shield
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkListener
 import ru.fornax.fornaxcitadel.paper.modules.chunks.PaperChunkService
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
@@ -41,6 +48,59 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class PaperChunkPersistenceTest {
+    @Test
+    fun `startup restores a saved component from an addon awaiting enable`() {
+        val fixture = Fixture()
+        fixture.storeShield(37.5)
+        var shieldDeclarations = 0
+        var emptyDeclarations = 0
+        val shieldAddon = fixture.addon {
+            shieldDeclarations++
+            listOf(ComponentRegistration(SHIELD_KEY, Shield::class.java))
+        }
+        val emptyAddon = fixture.addon {
+            emptyDeclarations++
+            emptyList()
+        }
+
+        fixture.startWith(shieldAddon, fixture.paper.plugin, emptyAddon)
+
+        val handle = assertNotNull(fixture.citadels.findExact(fixture.paper.position))
+        assertEquals(37.5, handle.getComponent(Shield::class.java)?.health)
+        assertEquals(1, shieldDeclarations)
+        assertEquals(1, emptyDeclarations)
+        fixture.closeStorage()
+    }
+
+    @Test
+    fun `saving a dirty chunk preserves the component payload of a missing addon`() {
+        val fixture = Fixture()
+        val shield = fixture.storeShield(12.5)
+
+        fixture.startWith(fixture.paper.plugin)
+        val handle = assertNotNull(fixture.citadels.findExact(fixture.paper.position))
+        handle.putComponent(Health::class.java, Health(81.0))
+        fixture.closeStorage()
+
+        val snapshot = ChunkCordSnapshot.fromByteArray(fixture.paper.chunkData.values[fixture.key] as ByteArray)
+        val components = snapshot.citadels.single().components.associateBy { it.key }
+        assertContentEquals(shield.toByteArray(), components.getValue(SHIELD_KEY).payload)
+        assertContentEquals(Health(81.0).toByteArray(), components.getValue(Health.KEY).payload)
+    }
+
+    @Test
+    fun `two addons claiming the same key for different classes fail before reading chunks`() {
+        val fixture = Fixture()
+        val shieldAddon = fixture.addon { listOf(ComponentRegistration(SHIELD_KEY, Shield::class.java)) }
+        val conflictingAddon = fixture.addon { listOf(ComponentRegistration(SHIELD_KEY, Health::class.java)) }
+
+        val failure = assertFailsWith<IllegalArgumentException> { fixture.startWith(shieldAddon, conflictingAddon) }
+
+        assertTrue(failure.message.orEmpty().contains(SHIELD_KEY.toString()))
+        assertEquals(0, fixture.paper.pdcAccesses)
+        assertFalse(fixture.manager.isChunkLoaded(fixture.paper.worldId, 0, 0))
+    }
+
     @Test
     fun `world unload writes pending PDC and detaches all chunks before world disappearance`() {
         val fixture = Fixture()
@@ -244,10 +304,36 @@ class PaperChunkPersistenceTest {
         private val storage = ChunkBackendLifecycleCoordinator(backend, scheduler, ChunkCordSnapshotMapper(types), Executor(Runnable::run))
         val manager = ComponentManager(storage, types)
         val actions = ActionManager()
-        private val citadels = CitadelFacade(manager, ExactTestCitadelResolver)
-        private val coreAddon = CoreAddon(citadels, ActionFacade(actions))
+        val citadels = CitadelFacade(manager, ExactTestCitadelResolver)
+        private val coreGameplay = CoreGameplay(citadels, ActionFacade(actions))
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
         val listener = PaperChunkListener(service)
+
+        fun storeShield(health: Double): Shield {
+            val savedTypes = TypeManager()
+            val type = savedTypes.registerType(SHIELD_KEY, Shield::class.java)
+            val chunk = ChunkCord(location)
+            val entity = chunk.putCitadel(paper.position.x, paper.position.y, paper.position.z)
+            val shield = Shield().also { it.health = health }
+            chunk.putComponent(entity, type, shield)
+            paper.chunkData.values[key] = ChunkCordSnapshotMapper(savedTypes).snapshot(chunk).toByteArray()
+            return shield
+        }
+
+        fun addon(declarations: () -> List<ComponentRegistration>): Plugin =
+            object : Plugin by paper.plugin, Addon {
+                override fun isEnabled() = false
+                override val key: Key
+                    get() = Key.key("test:test")
+
+                override fun defaultComponents() = declarations()
+                override fun onEnable(): Unit = error("Only Paper may enable the plugin")
+                override fun onDisable(): Unit = error("Only Paper may disable the plugin")
+            }
+
+        fun startWith(vararg plugins: Plugin) {
+            service.enableWithAddonComponents(plugins, citadels)
+        }
 
         fun closeStorage() {
             service.disable()
@@ -257,9 +343,9 @@ class PaperChunkPersistenceTest {
         }
 
         init {
-            coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
-            coreAddon.registerDefinition(
-                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreAddon.health)))
+            coreGameplay.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
+            coreGameplay.registerDefinition(
+                CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreGameplay.health)))
             )
             actions.registerValidator(
                 PaperDamageValidator(citadels, paper.citadelTypes, true))

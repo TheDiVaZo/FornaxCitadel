@@ -25,7 +25,7 @@
 - [ ] Вынести все сообщения плагина в конфиг
 
 ## Система аддонов
-- [ ] Разработать систему аддонов, которые будут загружаться и которые можно подключать к плагину
+- [X] Разработать систему аддонов, которые будут загружаться и которые можно подключать к плагину
 - [ ] Создать поддержку WorldEdit и WorldGuard
 - [ ] Посмотреть самые популярные плагины и им создать поддержку
 - [ ] Написать документацию по плагину
@@ -83,8 +83,8 @@
 ## P2 — Граница API для сторонних плагинов
 
 - [ ] Отделить внешний API запросов от доверенных низкоуровневых операций до публикации SDK.
-  - `CoreAddon` открывает сервисы `place`, `remove` и `health`. Требование выполнять внешние запросы через конвейер действий сейчас выражено преимущественно в документации.
+  - `CoreGameplay` открывает сервисы `place`, `remove` и `health`. Требование выполнять внешние запросы через конвейер действий сейчас выражено преимущественно в документации.
   - Предоставить узкий интерфейс запросов и чтения состояния, а операции непосредственного изменения и управления жизненным циклом оставить внутренним API. Отдельно определить разрешённые точки регистрации расширений.
   - Проверить: внешние запросы проходят необходимые валидаторы и политики; внутренние операции согласования с состоянием мира сохраняют требуемые возможности.
 
-Код: [CoreAddon.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/addon/CoreAddon.kt), [ActionManager.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/facade/ActionManager.kt), [FornaxCitadel.kt](fornaxcitadel-paper/src/main/java/ru/fornax/fornaxcitadel/paper/FornaxCitadel.kt).
+Код: [CoreAddon.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/addon/CoreGameplay.kt), [ActionManager.kt](fornaxcitadel-core/src/main/java/ru/fornax/fornaxcitadel/core/facade/ActionManager.kt), [FornaxCitadel.kt](fornaxcitadel-paper/src/main/java/ru/fornax/fornaxcitadel/paper/FornaxCitadel.kt).

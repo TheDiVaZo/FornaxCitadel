@@ -114,7 +114,7 @@ class ConfiguredCitadelTypesTest {
 
             assertEquals(saves, fixture.backend.saves)
             assertEquals(24.0, target.getComponent(Health::class.java)?.health)
-            assertEquals(48.0, fixture.coreAddon.health.maxHealth(target))
+            assertEquals(48.0, fixture.coreGameplay.health.maxHealth(target))
             val messages = fixture.installer.messages.filterIsInstance<Component>()
                 .map(PlainTextComponentSerializer.plainText()::serialize)
             assertEquals(3, messages.count { it.contains("24.0 / 48.0") })
@@ -139,17 +139,17 @@ class ConfiguredCitadelTypesTest {
         assertEquals(73.0, handles[1].getComponent(Health::class.java)?.health)
         assertNotNull(handles[0].getComponent(Maturing::class.java))
         assertNotNull(handles[1].getComponent(Maturing::class.java))
-        assertTrue(fixture.coreAddon.health.maturation.isMature(handles[0]))
-        assertTrue(fixture.coreAddon.health.maturation.isMature(handles[1]))
+        assertTrue(fixture.coreGameplay.health.maturation.isMature(handles[0]))
+        assertTrue(fixture.coreGameplay.health.maturation.isMature(handles[1]))
         val growing = handles[2]
         assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
         assertNotNull(growing.getComponent(Maturing::class.java))
         val key = assertNotNull(growing.getComponent(CitadelKind::class.java)).definitionKey
-        val profile = assertNotNull(fixture.coreAddon.health.maturation.findDefinition(key))
+        val profile = assertNotNull(fixture.coreGameplay.health.maturation.findDefinition(key))
         assertEquals(30L, profile.duration.seconds)
         assertEquals(8.0, profile.initialDamageMultiplier)
         assertTrue(growing.editComponent(Maturing::class.java) { it.startedAtMillis = 0L })
-        assertEquals(48.0, fixture.coreAddon.health.maxHealth(growing))
+        assertEquals(48.0, fixture.coreGameplay.health.maxHealth(growing))
         assertEquals(48.0, growing.getComponent(Health::class.java)?.health)
     }
 

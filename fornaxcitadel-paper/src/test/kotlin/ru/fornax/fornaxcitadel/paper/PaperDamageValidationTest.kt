@@ -36,7 +36,7 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-            f.coreAddon.health.unregisterDefinition(type)
+            f.coreGameplay.health.unregisterDefinition(type)
             f.playerDamage.register { _, _, _ -> 0.0 }
             assertTrue(f.breakingService.breakBlock(f.stranger.player, f.block()))
             assertEquals(protected, f.citadels.findProtecting(f.position) != null)
@@ -55,7 +55,7 @@ class PaperDamageValidationTest {
                 when (kind) {
                     "missing" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
                     "unknown" -> target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("external", "unknown") }
-                    "allow" -> f.coreAddon.health.unregisterDefinition(ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes.REINFORCED)
+                    "allow" -> f.coreGameplay.health.unregisterDefinition(ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes.REINFORCED)
                 }
                 val context = if (explosion) ActionContext(null, ExplosionSource.Block(
                     ExplosionPosition(f.worldId, 1.0, 64.0, 2.0), 0.0f, Material.TNT)) else f.context(f.stranger)
@@ -74,7 +74,7 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-            f.coreAddon.health.unregisterDefinition(type)
+            f.coreGameplay.health.unregisterDefinition(type)
             if (reason == "permission") f.stranger.permissions.remove("fornaxcitadel.damage")
             f.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
@@ -94,14 +94,14 @@ class PaperDamageValidationTest {
     fun `unknown types with a live maximum accept first player and explosion damage without saved health`() {
         for (explosion in listOf(false, true)) PaperTestFixture(permissions = true).use { f ->
             val type = Key("external", "lazy_health")
-            f.coreAddon.registerDefinition(CitadelDefinition(type, emptyList()))
+            f.coreGameplay.registerDefinition(CitadelDefinition(type, emptyList()))
             f.place(type)
             val target = assertNotNull(f.citadels.findProtecting(f.position))
             val context = if (explosion) ActionContext(null, ExplosionSource.Block(
                 ExplosionPosition(f.worldId, 1.0, 64.0, 2.0), 4.0f, Material.TNT)) else f.context(f.stranger)
             val action = DamageAction(context, f.position, 10.0)
             assertNull(target.getComponent(Health::class.java))
-            f.coreAddon.health.registerDefinition(type, HealthDefinition(100.0))
+            f.coreGameplay.health.registerDefinition(type, HealthDefinition(100.0))
             assertTrue(f.actions.isAllowed(action))
             assertNull(target.getComponent(Health::class.java))
             assertEquals(ActionResult.SUCCESS, f.actions.execute(action))
@@ -116,14 +116,14 @@ class PaperDamageValidationTest {
             f.installer.permissions.add("fornaxcitadel.admin")
             f.place(type)
             val target = assertNotNull(f.citadels.findProtecting(f.position))
-            f.coreAddon.health.registerDefinition(type, HealthDefinition(100.0))
+            f.coreGameplay.health.registerDefinition(type, HealthDefinition(100.0))
             f.actions.registerValidator(object : ActionValidator<DamageAction> {
                 override val actionClass = DamageAction::class.java
                 override fun validate(action: DamageAction) = ActionValidator.Result.Success
             })
             f.manager.saveAll().join()
             val saves = f.backend.saves
-            assertEquals(100.0, f.coreAddon.health.currentHealth(target))
+            assertEquals(100.0, f.coreGameplay.health.currentHealth(target))
             assertEquals(ActionResult.DENIED, f.actions.execute(DamageAction(f.context(f.stranger), f.position, 10.0)))
             assertNull(target.getComponent(Health::class.java))
             f.manager.saveAll().join()
@@ -135,7 +135,7 @@ class PaperDamageValidationTest {
     fun `unknown types with saved HP accept player and explosion damage without a maximum`() {
         PaperTestFixture(permissions = true).use { fixture ->
             val type = Key("external", "reinforcement")
-            fixture.coreAddon.registerDefinition(CitadelDefinition(type, listOf(CitadelInitializer { _, draft -> draft.addComponent(Health::class.java, Health(100.0)) })))
+            fixture.coreGameplay.registerDefinition(CitadelDefinition(type, listOf(CitadelInitializer { _, draft -> draft.addComponent(Health::class.java, Health(100.0)) })))
             fixture.place(type)
             val ordinary = DamageAction(fixture.context(fixture.stranger), fixture.position, 10.0)
             val source = ExplosionSource.Block(ExplosionPosition(fixture.worldId, 1.0, 64.0, 2.0),
@@ -179,7 +179,7 @@ class PaperDamageValidationTest {
             assertEquals(100.0, fixture.health())
 
             val target = checkNotNull(fixture.citadels.findProtecting(fixture.position))
-            fixture.coreAddon.health.registerModifier(DamageModifier { _, _, _ ->
+            fixture.coreGameplay.health.registerModifier(DamageModifier { _, _, _ ->
                 error("Creative destruction must not calculate damage")
             })
             fixture.stranger.gameMode = GameMode.CREATIVE

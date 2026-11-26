@@ -91,7 +91,7 @@ class OwnerlessCitadelTest {
                 val original = f.citadel()
                 f.unown()
                 if (state in listOf("implicit", "no health")) f.removeHealth()
-                if (state in listOf("no maximum", "no health")) f.coreAddon.health.unregisterDefinition(type)
+                if (state in listOf("no maximum", "no health")) f.coreGameplay.health.unregisterDefinition(type)
                 if (state == "damaged") original.editComponent(Health::class.java) { it.health = 5.0 }
                 val component = original.getComponent(Health::class.java)
                 val health = component?.health

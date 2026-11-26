@@ -85,7 +85,7 @@ class PaperActionPrerequisitesTest {
         PaperTestFixture(resolveMaterials = false).use { f ->
             f.place()
             val target = assertNotNull(f.citadels.findProtecting(f.position))
-            val validator = UpgradeActionValidator(f.citadels, f.coreAddon.definitions)
+            val validator = UpgradeActionValidator(f.citadels, f.coreGameplay.definitions)
             target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "removed") }
             assertSame(Result.Rejected, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, Key("test", "unknown"))))
             assertSame(Result.Neutral, validator.validate(UpgradeAction(ActionContext.SYSTEM, f.position, PaperCitadelTypes.REINFORCED)))
@@ -130,7 +130,7 @@ class PaperActionPrerequisitesTest {
     private fun PaperTestFixture.actionsWithPrerequisites(approve: Boolean = false) = ActionManager().apply {
         if (approve) registerValidator(approval())
         registerValidator(ExistingCitadelValidator(RepairAction::class.java, citadels))
-        registerValidator(UpgradeActionValidator(citadels, coreAddon.definitions))
+        registerValidator(UpgradeActionValidator(citadels, coreGameplay.definitions))
         registerValidator(ExistingCitadelValidator(DismantleAction::class.java, citadels))
     }
 

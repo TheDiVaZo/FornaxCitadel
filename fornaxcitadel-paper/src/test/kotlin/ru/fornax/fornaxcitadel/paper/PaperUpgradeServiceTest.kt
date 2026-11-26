@@ -181,7 +181,7 @@ class PaperUpgradeServiceTest {
         fixture(DismantleSettings(0.0)).use { f ->
             f.place()
             val original = f.citadel()
-            f.coreAddon.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
+            f.coreGameplay.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
             original.editComponent(Health::class.java) { it.health = 80.0 }
             f.installer.held = f.reinforcementStack(HEAVY)
 
@@ -204,7 +204,7 @@ class PaperUpgradeServiceTest {
             val owner = original.getComponent(CitadelOwner::class.java)
             val externalKey = Key("external", "without_level")
             original.editComponent(CitadelKind::class.java) { it.definitionKey = externalKey }
-            f.coreAddon.health.registerDefinition(externalKey, HealthDefinition(maximum))
+            f.coreGameplay.health.registerDefinition(externalKey, HealthDefinition(maximum))
             original.editComponent(Health::class.java) { it.health = 1.0 }
             assertNull(f.citadelTypes.level(original))
             f.installer.held = f.reinforcementStack(HEAVY)
@@ -229,7 +229,7 @@ class PaperUpgradeServiceTest {
             val original = f.citadel()
             val owner = original.getComponent(CitadelOwner::class.java)
             if (!knownLevel) assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
-            f.coreAddon.health.unregisterDefinition(HEAVY)
+            f.coreGameplay.health.unregisterDefinition(HEAVY)
             assertFalse(f.citadelTypes.isInvulnerable(HEAVY))
             f.installer.held = f.reinforcementStack(HEAVY)
 
@@ -242,7 +242,7 @@ class PaperUpgradeServiceTest {
             assertEquals(HEAVY, original.getComponent(CitadelKind::class.java)?.definitionKey)
             assertEquals(3, f.citadelTypes.level(original))
             assertNull(original.getComponent(Health::class.java))
-            assertNull(f.coreAddon.health.currentHealth(original))
+            assertNull(f.coreGameplay.health.currentHealth(original))
             assertEquals(if (knownLevel) 1 else 0, f.droppedItems.size)
         }
     }
@@ -278,7 +278,7 @@ class PaperUpgradeServiceTest {
                     val original = f.citadel()
                     val owner = original.getComponent(CitadelOwner::class.java)
                     original.editComponent(Health::class.java) { it.health = savedHealth }
-                    if (!hasMaximum) f.coreAddon.health.unregisterDefinition(HEAVY)
+                    if (!hasMaximum) f.coreGameplay.health.unregisterDefinition(HEAVY)
                     f.installer.held = f.reinforcementStack(HEAVY)
 
                     assertEquals(ActionResult.SUCCESS, f.actions.execute(f.action()),
@@ -348,7 +348,7 @@ class PaperUpgradeServiceTest {
             fixture(DismantleSettings(0.0)) { error("Absent or guaranteed refund must not roll") }.use { f ->
                 f.place()
                 when (missing) {
-                    "maximum" -> f.coreAddon.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
+                    "maximum" -> f.coreGameplay.health.unregisterDefinition(PaperCitadelTypes.REINFORCED)
                     "health" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
                     "item" -> assertNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(CitadelKind::class.java)
                 }
@@ -490,7 +490,7 @@ class PaperUpgradeServiceTest {
             assertEquals(ActionResult.SUCCESS, f.actions.execute(f.action(PaperCitadelTypes.MATURING)))
             val started = original.getComponent(Maturing::class.java)!!.startedAtMillis
             assertTrue(started > 1L)
-            assertFalse(f.coreAddon.health.maturation.isMature(original))
+            assertFalse(f.coreGameplay.health.maturation.isMature(original))
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.loadChunk(0, 0)
             val restored = f.citadel()
@@ -498,7 +498,7 @@ class PaperUpgradeServiceTest {
             assertEquals(40.0, f.health())
             assertEquals(started, restored.getComponent(Maturing::class.java)?.startedAtMillis)
             assertEquals(f.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
-            assertFalse(f.coreAddon.health.maturation.isMature(restored))
+            assertFalse(f.coreGameplay.health.maturation.isMature(restored))
         }
     }
 
@@ -517,7 +517,7 @@ class PaperUpgradeServiceTest {
             val info = assertIs<AcidResult.Information>(acid.inspect(f.installer.player, f.block()))
             assertEquals(4, info.tier)
             assertFalse(info.mature)
-            assertTrue(f.coreAddon.health.maturation.progress(target) in 0.58..0.60)
+            assertTrue(f.coreGameplay.health.maturation.progress(target) in 0.58..0.60)
             target.editComponent(Maturing::class.java) { it.startedAtMillis = System.currentTimeMillis() - 1_300_000L }
             assertTrue(assertIs<AcidResult.Information>(acid.inspect(f.installer.player, f.block())).mature)
             assertEquals(Material.GOLD_BLOCK, f.block().type)

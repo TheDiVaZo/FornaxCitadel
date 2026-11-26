@@ -37,7 +37,7 @@ import org.bukkit.plugin.PluginManager
 import org.bukkit.plugin.RegisteredListener
 import org.bukkit.scheduler.BukkitScheduler
 import org.bukkit.scheduler.BukkitTask
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
@@ -285,7 +285,7 @@ internal class PaperTestFixture(
     val actions = ActionManager()
     val actionFacade = ActionFacade(actions)
     val citadels = CitadelFacade(manager, if (resolveMaterials) materialPlacement else ExactTestCitadelResolver)
-    val coreAddon = CoreAddon(citadels, actionFacade)
+    val coreGameplay = CoreGameplay(citadels, actionFacade)
     val actionQueue = ActionQueueService(actionFacade, queueScheduler, maxActionsPerTick)
     val pluginQueue = PluginActionQueue(actionQueue, actions)
     init {
@@ -295,7 +295,7 @@ internal class PaperTestFixture(
     }
 
     val placementService = PaperPlacementService(
-        plugin, actionFacade, citadels, coreAddon.health,
+        plugin, actionFacade, citadels, coreGameplay.health,
         citadelTypes, materials, placementSettings, messages
     ).also { service ->
         citadelTypes.keys.forEach { definition ->
@@ -322,27 +322,27 @@ internal class PaperTestFixture(
         }
     }
     val dismantleService = PaperDismantleService(
-        plugin, actionFacade, citadels, coreAddon.health, coreAddon.remove,
+        plugin, actionFacade, citadels, coreGameplay.health, coreGameplay.remove,
         citadelTypes, serviceMaterials(dismantleMaterials), dismantleSettings, dismantleRandom
     )
     val repairService = PaperRepairService(
-        actionFacade, citadels, coreAddon.health, citadelTypes, serviceMaterials(materials)
+        actionFacade, citadels, coreGameplay.health, citadelTypes, serviceMaterials(materials)
     )
     val upgradeService = PaperUpgradeService(
-        plugin, actionFacade, citadels, coreAddon.definitions, coreAddon.health,
+        plugin, actionFacade, citadels, coreGameplay.definitions, coreGameplay.health,
         citadelTypes, serviceMaterials(dismantleMaterials), dismantleSettings, dismantleRandom
     )
     val breakingService = PaperBreakingService(
-        plugin, actionFacade, citadels, coreAddon.remove, playerDamage, messages, creativeModeEnabled
+        plugin, actionFacade, citadels, coreGameplay.remove, playerDamage, messages, creativeModeEnabled
     )
     val acidService = acidSettings?.let {
         AcidService(
-            plugin, actionFacade, citadels, coreAddon.health.maturation,
+            plugin, actionFacade, citadels, coreGameplay.health.maturation,
             citadelTypes, dismantleMaterials, materialPlacement, breakingService, AcidRegistry(it)
         )
     }
     val explosionService = PaperExplosionService(
-        plugin, actionFacade, citadels, coreAddon.remove, explosionPowers
+        plugin, actionFacade, citadels, coreGameplay.remove, explosionPowers
     )
     val environmentService = PaperEnvironmentService(plugin, citadels)
     val placementListener get() = listenerRegistrations.map { it.first }.filterIsInstance<PaperPlacementListener>().single()
@@ -353,7 +353,7 @@ internal class PaperTestFixture(
     val stranger = player(UUID(5L, 6L), "stranger")
 
     init {
-        if (registerTypes) citadelTypes.register(coreAddon)
+        if (registerTypes) citadelTypes.register(coreGameplay)
         if (startQueue) pluginQueue.enable()
         if (initializeSystems) {
             dismantleService.enable()
@@ -373,7 +373,7 @@ internal class PaperTestFixture(
         messages: PaperMessages = PaperMessages.defaults(),
         acid: AcidService? = null,
         save: () -> Unit = {}
-    ) = CitadelCommand(plugin, actionFacade, citadels, coreAddon.health,
+    ) = CitadelCommand(plugin, actionFacade, citadels, coreGameplay.health,
         materials, citadelTypes, messages, acid, save)
 
     fun player(id: UUID, name: String): TestPlayer = TestPlayer(id, name, world).also { player ->

@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.core.facade
 
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.resolver.ExactPositionResolver
 import ru.fornax.fornaxcitadel.modules.queue.ActionQueueService
 import ru.fornax.fornaxcitadel.modules.queue.ActionSettings
@@ -297,7 +297,7 @@ class CitadelFacadeTest {
         val actions = ActionManager()
         val citadels = CitadelFacade(manager, if (useRules) resolver else ExactPositionResolver)
         private val actionFacade = ActionFacade(actions)
-        val addon = CoreAddon(citadels, actionFacade)
+        val addon = CoreGameplay(citadels, actionFacade)
         private val queue = ActionQueueService(actionFacade, scheduler, ActionSettings())
 
         init {

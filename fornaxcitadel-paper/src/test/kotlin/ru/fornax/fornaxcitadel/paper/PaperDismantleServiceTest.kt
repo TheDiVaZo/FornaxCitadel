@@ -17,7 +17,6 @@ import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.dismantle.DismantleAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Health
-import ru.fornax.fornaxcitadel.modules.health.HealthInitializer
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
@@ -225,7 +224,7 @@ class PaperDismantleServiceTest {
         PaperTestFixture(permissions = true, dismantleSettings = DismantleSettings(1.0)).use { fixture ->
             val (lower, upper) = fixture.door()
             // Existing linked protection is independent of the current solid-block placement filter.
-            assertEquals(ActionResult.SUCCESS, fixture.coreAddon.place.place(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, fixture.coreGameplay.place.place(PlaceAction(
                 fixture.context(fixture.installer), upper.testPosition(), PaperCitadelTypes.REINFORCED)))
             val original = assertNotNull(fixture.citadels.findProtecting(upper.testPosition()))
             assertEquals(lower.testPosition(), original.position)

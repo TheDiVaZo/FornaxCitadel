@@ -53,7 +53,7 @@ class PaperExplosionListenerTest {
                 f.installer.permissions.add("fornaxcitadel.admin")
                 f.place(type)
                 checkNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).removeComponent(Health::class.java)
-                f.coreAddon.health.unregisterDefinition(type)
+                f.coreGameplay.health.unregisterDefinition(type)
                 val event = f.blockExplosion(f.block())
                 dispatch(f.explosionListener, event, f.plugin)
                 assertEquals(protected, f.citadels.findProtecting(f.position) != null)
@@ -88,7 +88,7 @@ class PaperExplosionListenerTest {
 
                 assertEquals(listOf(5.0), sourceDamage)
                 assertEquals(20.0, fixture.health())
-                assertEquals(40.0, fixture.coreAddon.health.maxHealth(target))
+                assertEquals(40.0, fixture.coreGameplay.health.maxHealth(target))
                 assertEquals(0, fixture.vanillaBlockChanges)
             }
         }
@@ -554,7 +554,7 @@ class PaperExplosionListenerTest {
 
     private fun PaperTestFixture.placeAt(block: Block) {
         // Source cleanup also covers old data on beds/anchors, outside today's placement allowlist.
-        assertEquals(ActionResult.SUCCESS, coreAddon.place.place(PlaceAction(context(installer),
+        assertEquals(ActionResult.SUCCESS, coreGameplay.place.place(PlaceAction(context(installer),
             CitadelPosition(worldId, block.x, block.y, block.z), PaperCitadelTypes.REINFORCED)))
     }
 }

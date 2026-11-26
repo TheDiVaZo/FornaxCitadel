@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.modules
 
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
@@ -217,7 +217,7 @@ class PlacementMetadataTest {
         private val manager = ComponentManager(storage, types)
         val actions = ActionManager()
         val citadels = CitadelFacade(manager, ExactPositionResolver)
-        val addon = CoreAddon(citadels, ActionFacade(actions))
+        val addon = CoreGameplay(citadels, ActionFacade(actions))
 
         init {
             addon.registerDefinition(CitadelDefinition(TYPE, initializers))

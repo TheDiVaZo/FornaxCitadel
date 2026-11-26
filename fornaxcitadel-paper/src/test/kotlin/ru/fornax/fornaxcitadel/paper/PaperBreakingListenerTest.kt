@@ -8,7 +8,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.modules.health.Health
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifier
@@ -43,7 +42,7 @@ class PaperBreakingListenerTest {
             dispatch(fixture.breakingListener, BlockBreakEvent(fixture.block(), fixture.stranger.player), fixture.plugin)
 
             assertEquals(32.0, fixture.health())
-            assertEquals(40.0, fixture.coreAddon.health.maxHealth(target))
+            assertEquals(40.0, fixture.coreGameplay.health.maxHealth(target))
             assertEquals(listOf(2.0), sourceDamage)
             assertEquals(1, modifierCalls)
             fixture.manager.unloadChunk(fixture.worldId, 0, 0).join()

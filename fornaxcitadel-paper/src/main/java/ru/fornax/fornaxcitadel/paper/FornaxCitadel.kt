@@ -2,8 +2,10 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
+import org.bukkit.plugin.Plugin
 import org.bukkit.plugin.java.JavaPlugin
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.Addon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.component.TypeManager
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
@@ -36,7 +38,7 @@ class FornaxCitadel : JavaPlugin() {
     /** Public API for plugins on the server's main thread after startup. */
     lateinit var api: FornaxCitadelAPI
         private set
-    private lateinit var paperAddon: PaperAddon
+    private lateinit var paperGameplay: PaperGameplay
     private var schedulerAdapter: PaperScheduler? = null
     private var citadelStorage: CitadelStorage? = null
     private var chunkBackend: PersistContainerChunkStorage? = null
@@ -70,7 +72,7 @@ class FornaxCitadel : JavaPlugin() {
             val actionManager = ActionManager()
             val actions = ActionFacade(actionManager)
             val citadels = CitadelFacade(manager, materialPlacement)
-            val coreAddon = CoreAddon(citadels, actions)
+            val coreGameplay = CoreGameplay(citadels, actions)
             val actionSettings = ActionSettings(maxActionsPerTick = settings.postedActionLimit) { failure ->
                 logger.log(Level.SEVERE, "Queued citadel action failed; remaining actions stay queued", failure)
             }
@@ -80,18 +82,18 @@ class FornaxCitadel : JavaPlugin() {
             val observation = ObservationService<Player>(manager, scheduler, settings.observation.intervalTicks) { failure ->
                 logger.log(Level.SEVERE, "Citadel observation failed", failure)
             }
-            paperAddon = PaperAddon(
-                this, settings, messages, actions, citadels, coreAddon,
+            paperGameplay = PaperGameplay(
+                this, settings, messages, actions, citadels, coreGameplay,
                 materials, materialPlacement, observation, chunks::saveAll
             )
             val observationSource = Full3DObservation(this, actions, citadels, chunks,
                 settings.observation.full3D)
             val observers = PaperObservationService(this, observation, observationSource).also { observationService = it }
-            val commands = CitadelCommandRegistration(::getCommand, paperAddon.commands, messages)
+            val commands = CitadelCommandRegistration(::getCommand, paperGameplay.commands, messages)
                 .also { commandRegistration = it }
 
-            chunks.enable()
-            paperAddon.onEnable()
+            chunks.enableWithAddonComponents(server.pluginManager.plugins, citadels)
+            paperGameplay.onEnable()
             queue.enable()
             observers.enable()
             commands.enable()
@@ -100,8 +102,8 @@ class FornaxCitadel : JavaPlugin() {
                 action = actions,
                 resolver = materialPlacement,
                 observation = ObservationFacade(observation),
-                materials = MaterialFacade(materials, materialPlacement, paperAddon.placement),
-                playerDamage = paperAddon.playerDamage
+                materials = MaterialFacade(materials, materialPlacement, paperGameplay.placement),
+                playerDamage = paperGameplay.playerDamage
             )
         } catch (failure: Throwable) {
             logger.log(Level.SEVERE, "Could not enable FornaxCitadel", failure)
@@ -119,7 +121,7 @@ class FornaxCitadel : JavaPlugin() {
         stop("the action queue") { actionQueue?.disable() }
         actionQueue = null
         stop("the Paper addon") {
-            if (::paperAddon.isInitialized) paperAddon.onDisable()
+            if (::paperGameplay.isInitialized) paperGameplay.onDisable()
         }
         stop("the chunk service") {
             chunkService?.disable()
@@ -161,6 +163,16 @@ class FornaxCitadel : JavaPlugin() {
         citadelStorage = null
         chunkBackend = null
     }
+}
+
+internal fun PaperChunkService.enableWithAddonComponents(plugins: Array<out Plugin>, citadels: CitadelFacade) {
+    // Dependent addons have completed onLoad but may still be waiting for onEnable.
+    for (addon in plugins.filterIsInstance<Addon>()) {
+        for (component in addon.defaultComponents()) {
+            citadels.registerComponent(component.key, component.componentClass)
+        }
+    }
+    enable()
 }
 
 /** Discards pending actions when the plugin stops. The queue itself can be paused independently. */

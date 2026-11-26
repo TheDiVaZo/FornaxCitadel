@@ -2,7 +2,7 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.entity.Player
 import org.bukkit.event.Listener
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
@@ -28,7 +28,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class PaperAddonTest {
+class PaperGameplayTest {
     @Test
     fun `configured definitions exist before chunk load and survive gameplay restarts`() = platform().use { paper ->
         val runtime = Runtime(paper)
@@ -112,13 +112,13 @@ class PaperAddonTest {
     private class Runtime(private val paper: PaperTestFixture) {
         val actions = ActionManager()
         private val facade = ActionFacade(actions)
-        val core = CoreAddon(paper.citadels, facade)
+        val core = CoreGameplay(paper.citadels, facade)
         private val settings = PaperSettings(citadelTypes = CitadelTypesSettings(mapOf(
             "test_wall" to CitadelTypeSettings(Key("minecraft", "iron_ingot"), 1, health = HealthSettings(65.0))
         )))
 
         fun construct() =
-            PaperAddon(paper.plugin, settings, PaperMessages.defaults(), facade, paper.citadels,
+            PaperGameplay(paper.plugin, settings, PaperMessages.defaults(), facade, paper.citadels,
                 core, paper.materials, paper.materialPlacement, ObservationService<Player>(paper.manager, ManualScheduler()),
                 save = {})
     }

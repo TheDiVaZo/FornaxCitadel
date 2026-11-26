@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.modules
 
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelInitializer
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
@@ -162,7 +162,7 @@ class ServiceLifecycleTest {
             val external = probeProcessor(key)
             actions.registerProcessor(external)
             val citadels = CitadelFacade(ComponentManager(MemoryStorage(), TypeManager()), ExactPositionResolver)
-            assertFailsWith<IllegalArgumentException> { CoreAddon(citadels, ActionFacade(actions)) }
+            assertFailsWith<IllegalArgumentException> { CoreGameplay(citadels, ActionFacade(actions)) }
             assertTrue(actions.unregisterProcessor(external))
         }
     }
@@ -173,7 +173,7 @@ class ServiceLifecycleTest {
         val citadels = CitadelFacade(ComponentManager(MemoryStorage(), TypeManager()), ExactPositionResolver)
         actions.registerActionMeta(RepairAction.KEY, ActionMeta(true))
         actions.registerActionMeta(UpgradeAction.KEY, ActionMeta(false))
-        CoreAddon(citadels, ActionFacade(actions))
+        CoreGameplay(citadels, ActionFacade(actions))
 
         val protectedKeys = listOf(RemoveAction.KEY, DamageAction.KEY, DismantleAction.KEY, RepairAction.KEY, UpgradeAction.KEY)
         for (key in protectedKeys) {
@@ -268,7 +268,7 @@ class ServiceLifecycleTest {
         val actions = ActionManager()
         val citadels = CitadelFacade(manager, ExactPositionResolver)
         private val actionFacade = ActionFacade(actions)
-        val addon = CoreAddon(citadels, actionFacade)
+        val addon = CoreGameplay(citadels, actionFacade)
         val queue = ActionQueueService(actionFacade, scheduler, ActionSettings(maxActionsPerTick, failures::add))
 
         init {

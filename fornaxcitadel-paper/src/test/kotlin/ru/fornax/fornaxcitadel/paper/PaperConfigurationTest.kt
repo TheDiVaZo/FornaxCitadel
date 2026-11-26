@@ -16,7 +16,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PaperConfigurationTest {
@@ -24,7 +23,7 @@ class PaperConfigurationTest {
     fun `shipped config registers fixed health and independent maturation settings`() {
         val settings = shippedSettings()
         val fixture = PaperTestFixture(load = false, registerTypes = false, citadelSettings = settings.citadelTypes)
-        fixture.citadelTypes.register(fixture.coreAddon)
+        fixture.citadelTypes.register(fixture.coreGameplay)
         fixture.manager.loadChunk(fixture.worldId, 0, 0).join()
 
         val handles = fixture.citadelTypes.names.mapIndexed { index, name ->
@@ -37,13 +36,13 @@ class PaperConfigurationTest {
         for ((name, type) in settings.citadelTypes.types) {
             val handle = handles.getValue(name)
             assertEquals(type.health?.max, handle.getComponent(Health::class.java)?.health)
-            assertEquals(type.health?.max, fixture.coreAddon.health.maxHealth(handle))
+            assertEquals(type.health?.max, fixture.coreGameplay.health.maxHealth(handle))
             assertTrue(assertNotNull(handle.getComponent(Maturing::class.java)).startedAtMillis > 0)
             val key = assertNotNull(handle.getComponent(CitadelKind::class.java)).definitionKey
-            val profile = assertNotNull(fixture.coreAddon.health.maturation.findDefinition(key))
+            val profile = assertNotNull(fixture.coreGameplay.health.maturation.findDefinition(key))
             assertEquals(Duration.ofSeconds(type.maturing?.durationSeconds ?: 0), profile.duration)
             assertEquals(type.maturing?.initialDamageMultiplier ?: 1.0, profile.initialDamageMultiplier)
-            assertEquals(profile.duration.isZero, fixture.coreAddon.health.maturation.isMature(handle))
+            assertEquals(profile.duration.isZero, fixture.coreGameplay.health.maturation.isMature(handle))
         }
     }
 

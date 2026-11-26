@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.modules
 
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
@@ -156,12 +156,12 @@ class CoreActionValidatorsTest {
         }
         val actions = ActionManager()
         val citadels = CitadelFacade(manager, resolver)
-        val addon: CoreAddon
+        val addon: CoreGameplay
         val completed = mutableListOf<Action>()
 
         init {
             if (approve) approve()
-            addon = CoreAddon(citadels, ActionFacade(actions))
+            addon = CoreGameplay(citadels, ActionFacade(actions))
             addon.registerDefinition(CitadelDefinition(TYPE, emptyList()))
         }
 

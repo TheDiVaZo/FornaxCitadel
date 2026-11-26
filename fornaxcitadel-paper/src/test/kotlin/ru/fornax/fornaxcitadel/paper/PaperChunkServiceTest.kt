@@ -2,7 +2,7 @@ package ru.fornax.fornaxcitadel.paper
 
 import org.bukkit.event.Listener
 import org.bukkit.event.world.WorldUnloadEvent
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.component.TypeManager
@@ -233,12 +233,12 @@ class PaperChunkServiceTest {
         val manager = ComponentManager(storage, types)
         private val actions = ActionManager()
         private val citadels = CitadelFacade(manager, ExactTestCitadelResolver)
-        private val coreAddon = CoreAddon(citadels, ActionFacade(actions))
+        private val coreGameplay = CoreGameplay(citadels, ActionFacade(actions))
         val service = PaperChunkService(paper.plugin, manager, backend, 20L)
 
         init {
-            coreAddon.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
-            coreAddon.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreAddon.health))))
+            coreGameplay.health.registerDefinition(PaperCitadelTypes.REINFORCED, HealthDefinition(100.0))
+            coreGameplay.registerDefinition(CitadelDefinition(PaperCitadelTypes.REINFORCED, listOf(HealthInitializer(coreGameplay.health))))
             actions.registerValidator(
                 PaperDamageValidator(citadels, paper.citadelTypes, true))
         }

@@ -23,7 +23,7 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveProcessor
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
 
 /** Registers the persisted core types at construction, before the first chunk is loaded. */
-class CoreAddon(
+class CoreGameplay(
     private val citadelFacade: CitadelFacade,
     private val actionFacade: ActionFacade,
 ) {

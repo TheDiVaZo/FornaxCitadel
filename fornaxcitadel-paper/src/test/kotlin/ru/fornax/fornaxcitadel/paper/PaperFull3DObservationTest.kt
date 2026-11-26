@@ -11,7 +11,7 @@ import org.bukkit.event.player.PlayerTeleportEvent
 import org.bukkit.event.world.ChunkLoadEvent
 import org.bukkit.event.world.ChunkUnloadEvent
 import org.bukkit.event.world.WorldUnloadEvent
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinition
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.component.TypeManager
@@ -428,14 +428,14 @@ class PaperFull3DObservationTest {
         private val manager = ComponentManager(storage, types)
         private val actions = ActionFacade(ActionManager())
         private val citadels = CitadelFacade(manager, ExactTestCitadelResolver)
-        private val coreAddon = CoreAddon(citadels, actions)
+        private val coreGameplay = CoreGameplay(citadels, actions)
         val chunks = PaperChunkService(paper.plugin, manager, backend, 100)
         private val provider = Full3DObservation(paper.plugin, actions, citadels, chunks,
             Full3DObservationSettings(0, 0))
 
         init {
             val type = Key("test", "observed")
-            coreAddon.registerDefinition(CitadelDefinition(type, emptyList()))
+            coreGameplay.registerDefinition(CitadelDefinition(type, emptyList()))
             chunks.enable()
             assertEquals(ActionResult.SUCCESS, actions.execute(PlaceAction(
                 ActionContext.SYSTEM, paper.position, type)))
@@ -472,7 +472,7 @@ class PaperFull3DObservationTest {
         private val manager = ComponentManager(observedStorage, types)
         private val actions = ActionFacade(ActionManager())
         private val citadels = CitadelFacade(manager, ExactTestCitadelResolver)
-        private val coreAddon = CoreAddon(citadels, actions)
+        private val coreGameplay = CoreGameplay(citadels, actions)
         private val scheduler = PaperScheduler(paper.plugin)
         private val backend = PersistContainerChunkStorage(paper.plugin, scheduler)
         val chunks = PaperChunkService(paper.plugin, manager, backend, 100)
@@ -480,7 +480,7 @@ class PaperFull3DObservationTest {
         private val subscriptions = mutableListOf<ObservationSubscription>()
 
         init {
-            paper.citadelTypes.register(coreAddon)
+            paper.citadelTypes.register(coreGameplay)
             manager.loadChunk(paper.worldId, 0, 0).join()
             actions.registerValidator(object : ActionValidator<RemoveAction> {
                 override val actionClass = RemoveAction::class.java
@@ -504,7 +504,7 @@ class PaperFull3DObservationTest {
         }
 
         fun placeDirect(position: CitadelPosition) = withoutRecordingQueries {
-            assertEquals(ActionResult.SUCCESS, coreAddon.place.place(PlaceAction(
+            assertEquals(ActionResult.SUCCESS, coreGameplay.place.place(PlaceAction(
                 ActionContext.SYSTEM, position, PaperCitadelTypes.REINFORCED)))
         }
 

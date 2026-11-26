@@ -11,7 +11,6 @@ import org.bukkit.event.block.Action
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemStack
-import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
@@ -255,7 +254,7 @@ class PaperRepairServiceTest {
             fixture.loadChunk(0, 0)
             val restored = assertNotNull(fixture.citadels.findProtecting(fixture.position))
             assertEquals(40.0, restored.getComponent(Health::class.java)?.health)
-            assertEquals(40.0, fixture.coreAddon.health.maxHealth(restored))
+            assertEquals(40.0, fixture.coreGameplay.health.maxHealth(restored))
             assertEquals(1L, restored.getComponent(Maturing::class.java)?.startedAtMillis)
             assertEquals(fixture.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
             assertEquals(original.getKey(), fixture.citadelTypes.itemKey(restored))
@@ -273,7 +272,7 @@ class PaperRepairServiceTest {
                 }
                 val clicked = if (kind == "bed") first else second
                 val other = if (kind == "bed") second else first
-                assertEquals(ActionResult.SUCCESS, fixture.coreAddon.place.place(PlaceAction(
+                assertEquals(ActionResult.SUCCESS, fixture.coreGameplay.place.place(PlaceAction(
                     fixture.context(fixture.installer), clicked.testPosition(), PaperCitadelTypes.REINFORCED)))
                 val target = assertNotNull(fixture.citadels.findProtecting(clicked.testPosition()))
                 assertTrue(target.editComponent(Health::class.java) { it.health = 10.0 })

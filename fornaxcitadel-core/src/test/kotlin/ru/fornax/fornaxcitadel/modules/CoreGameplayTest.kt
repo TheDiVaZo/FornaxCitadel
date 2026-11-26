@@ -1,6 +1,6 @@
 package ru.fornax.fornaxcitadel.modules
 
-import ru.fornax.fornaxcitadel.addon.CoreAddon
+import ru.fornax.fornaxcitadel.addon.CoreGameplay
 import ru.fornax.fornaxcitadel.core.facade.ActionManager
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
@@ -53,7 +53,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class CoreAddonTest {
+class CoreGameplayTest {
     @Test
     fun `addon rejects duplicate registrations while its registry accepts the same instance again`() {
         val addon = Fixture().addon
@@ -798,7 +798,7 @@ class CoreAddonTest {
         val manager = ComponentManager(storage, types)
         val actions = ActionManager()
         val citadels = CitadelFacade(manager, ExactPositionResolver)
-        val addon = CoreAddon(citadels, ActionFacade(actions))
+        val addon = CoreGameplay(citadels, ActionFacade(actions))
 
         val completed = mutableListOf<Action>()
         val placements get() = completed.filterIsInstance<PlaceAction>().map { it.position }
