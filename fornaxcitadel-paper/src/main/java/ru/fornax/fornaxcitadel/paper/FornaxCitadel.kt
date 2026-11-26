@@ -3,6 +3,7 @@ package ru.fornax.fornaxcitadel.paper
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
 import org.bukkit.plugin.Plugin
+import org.bukkit.plugin.ServicePriority
 import org.bukkit.plugin.java.JavaPlugin
 import ru.fornax.fornaxcitadel.addon.Addon
 import ru.fornax.fornaxcitadel.addon.CoreGameplay
@@ -35,7 +36,7 @@ import java.util.concurrent.Executor
 import java.util.logging.Level
 
 class FornaxCitadel : JavaPlugin() {
-    /** Public API for plugins on the server's main thread after startup. */
+    /** Published through Bukkit's services manager after startup for use on the server's main thread. */
     lateinit var api: FornaxCitadelAPI
         private set
     private lateinit var paperGameplay: PaperGameplay
@@ -105,6 +106,7 @@ class FornaxCitadel : JavaPlugin() {
                 materials = MaterialFacade(materials, materialPlacement, paperGameplay.placement),
                 playerDamage = paperGameplay.playerDamage
             )
+            server.servicesManager.register(FornaxCitadelAPI::class.java, api, this, ServicePriority.Normal)
         } catch (failure: Throwable) {
             logger.log(Level.SEVERE, "Could not enable FornaxCitadel", failure)
             onDisable()
@@ -114,6 +116,9 @@ class FornaxCitadel : JavaPlugin() {
     }
 
     override fun onDisable() {
+        stop("the Bukkit API service") {
+            if (::api.isInitialized) server.servicesManager.unregister(FornaxCitadelAPI::class.java, api)
+        }
         stop("citadel commands") { commandRegistration?.disable() }
         commandRegistration = null
         stop("player observation") { observationService?.disable() }
