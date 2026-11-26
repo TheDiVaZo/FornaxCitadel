@@ -15,7 +15,7 @@ class MaturationService @JvmOverloads constructor(
     private val warnedKeys = mutableSetOf<Key?>()
     private var multipliers: List<MaturationMultiplier> = emptyList()
 
-    /** Replaces this key's settings, including for citadels already placed. */
+    /** Registering the same instance is idempotent. Unregister the current profile before replacing it. */
     fun registerDefinition(key: Key, definition: MaturationDefinition) {
         definitions[key] = definition
         warnedKeys.remove(key)

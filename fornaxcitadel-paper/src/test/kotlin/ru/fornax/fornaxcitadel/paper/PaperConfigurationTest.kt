@@ -39,10 +39,10 @@ class PaperConfigurationTest {
             assertEquals(type.health.maxHealth, fixture.coreGameplay.health.maxHealth(handle))
             assertTrue(assertNotNull(handle.getComponent(Maturing::class.java)).startedAtMillis > 0)
             val key = assertNotNull(handle.getComponent(CitadelKind::class.java)).definitionKey
-            val profile = assertNotNull(fixture.coreGameplay.health.maturation.findDefinition(key))
+            val profile = assertNotNull(fixture.coreGameplay.maturation.findDefinition(key))
             assertEquals(Duration.ofSeconds(type.maturing?.durationSeconds ?: 0), profile.duration)
             assertEquals(type.maturing?.initialDamageMultiplier ?: 1.0, profile.initialDamageMultiplier)
-            assertEquals(profile.duration.isZero, fixture.coreGameplay.health.maturation.isMature(handle))
+            assertEquals(profile.duration.isZero, fixture.coreGameplay.maturation.isMature(handle))
         }
     }
 

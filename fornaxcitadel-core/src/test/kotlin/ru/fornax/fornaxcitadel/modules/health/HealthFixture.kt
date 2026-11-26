@@ -17,6 +17,7 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -36,7 +37,9 @@ internal class HealthFixture(
     val storage = MemoryStorage(if (loaded) ChunkCord(WXZCord(WORLD, 0, 0)) else null)
     val manager = ComponentManager(storage, types)
     val citadels = CitadelFacade(manager, ExactPositionResolver)
-    val service = HealthService(RemoveService(citadels), citadels, clock)
+    val maturation = MaturationService(clock)
+    val service = HealthService(RemoveService(citadels), citadels)
+    val health = HealthFacade(service)
     val actions = ActionManager()
     val chunk: ChunkCord get() = checkNotNull(storage.chunk)
     val citadel: CitadelHandle get() = reference()
@@ -45,7 +48,7 @@ internal class HealthFixture(
         manager.registerComponent(CitadelKind.KEY, CitadelKind::class.java)
         manager.registerComponent(Health.KEY, Health::class.java)
         manager.registerComponent(Maturing.KEY, Maturing::class.java)
-        service.registerModifier(MaturingDamageModifier(service.maturation))
+        service.registerModifier(MaturingDamageModifier(maturation))
         actions.registerActionMeta(DamageAction.KEY, ActionMeta(false))
         actions.registerProcessor(DamageProcessor(service))
         actions.registerValidator(ExistingCitadelValidator(DamageAction::class.java, citadels))
@@ -71,8 +74,10 @@ internal class HealthFixture(
         val draft = draft(x, definitionKey)
         if (health != null) draft.addComponent(Health::class.java, health)
         if (startedAtMillis != null) {
-            service.maturation.registerDefinition(definitionKey,
-                MaturationDefinition(Duration.ofMillis(maturationDurationMillis), initialDamageMultiplier))
+            val profile = MaturationDefinition(Duration.ofMillis(maturationDurationMillis), initialDamageMultiplier)
+            if (maturation.findDefinition(definitionKey) != profile) {
+                maturation.registerDefinition(definitionKey, profile)
+            }
             draft.addComponent(Maturing::class.java, Maturing(startedAtMillis))
         }
         return publish(draft)

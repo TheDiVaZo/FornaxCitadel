@@ -50,16 +50,22 @@ class PaperBreakingService @JvmOverloads constructor(
     /** Removes one logical reinforcement target, even if its material refuses physical destruction. */
     fun destroy(block: Block, reinforcements: List<CitadelHandle>, actions: List<Action>,
                 materials: MaterialRegistry, placement: MaterialPlacementService,
+                validate: () -> Boolean): ActionResult =
+        destroy(block, reinforcements, actions, materials, placement, this.actions::executeBatch, validate)
+
+    internal fun destroy(block: Block, reinforcements: List<CitadelHandle>, actions: List<Action>,
+                materials: MaterialRegistry, placement: MaterialPlacementService,
+                executeBatch: (List<Action>, () -> Boolean, () -> Unit) -> ActionResult,
                 validate: () -> Boolean): ActionResult {
         check(plugin.server.isPrimaryThread && enabled) { "Destruction requires the active server thread" }
         var executingDestruction = false
         try {
-            return this.actions.executeBatch(actions, prepare = {
+            return executeBatch(actions, {
                 val parts = destructionParts(block, placement)
                 enabled && reinforcements.all { it.isCurrent } && validate() && parts.none { it.isEmpty } &&
                     parts.mapNotNull { citadels.findProtecting(it.citadelPosition()) }
                         .map { it.position to it.runtimeId }.toSet() == reinforcements.map { it.position to it.runtimeId }.toSet()
-            }, commit = {
+            }, {
                 executingDestruction = true
                 val material = materials.getTypeOrNull(block)
                 reinforcements.forEach {

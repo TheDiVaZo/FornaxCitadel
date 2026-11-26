@@ -177,7 +177,7 @@ class CitadelFacadeTest {
             val placed = mutableListOf<PlaceAction>()
             fixture.addon.health.registerDefinition(CUSTOM_TYPE, HealthDefinition(100.0))
             fixture.addon.registerDefinition(CitadelDefinition(CUSTOM_TYPE, listOf(
-                placementInitializer { draft -> initialized.add(draft.position) }, HealthInitializer(fixture.addon.health)
+                placementInitializer { draft -> initialized.add(draft.position) }, HealthInitializer(fixture.addon.healthFacade)
             )))
             fixture.actions.validateDamage(fixture.citadels, CUSTOM_TYPE)
             fixture.actions.registerHandler(object : ActionHandler<PlaceAction> {
@@ -303,9 +303,9 @@ class CitadelFacadeTest {
         init {
             addon.health.registerDefinition(TYPE, HealthDefinition(100.0))
             addon.health.registerDefinition(BLOCKED_TYPE, HealthDefinition(100.0))
-            addon.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(addon.health))))
+            addon.registerDefinition(CitadelDefinition(TYPE, listOf(HealthInitializer(addon.healthFacade))))
             actions.validateDamage(citadels, TYPE)
-            addon.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(addon.health))))
+            addon.registerDefinition(CitadelDefinition(BLOCKED_TYPE, listOf(HealthInitializer(addon.healthFacade))))
             actions.validateDamage(citadels, BLOCKED_TYPE) { _, _ -> false }
             actions.validateDamage(citadels, mode = DamageAction.Mode.DESTROY)
             actions.validateRemoval(citadels)
@@ -315,13 +315,13 @@ class CitadelFacadeTest {
 
         fun fill(draft: CitadelDraft) {
             draft.addComponent(CitadelKind::class.java, CitadelKind(TYPE))
-            HealthInitializer(addon.health).initialize(draft)
+            HealthInitializer(addon.healthFacade).initialize(draft)
         }
 
         fun createExact(position: CitadelPosition, type: Key = TYPE): CitadelHandle {
             val draft = MutableCitadelDraft(position)
             draft.addComponent(CitadelKind::class.java, CitadelKind(type))
-            HealthInitializer(addon.health).initialize(draft)
+            HealthInitializer(addon.healthFacade).initialize(draft)
             assertEquals(ActionResult.SUCCESS, manager.createCitadel(draft))
             return assertNotNull(exact(position))
         }

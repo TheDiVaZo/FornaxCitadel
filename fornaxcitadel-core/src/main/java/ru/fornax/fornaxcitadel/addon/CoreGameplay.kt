@@ -6,6 +6,8 @@ import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
+import ru.fornax.fornaxcitadel.core.facade.MaturationFacade
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ExistingCitadelValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -31,9 +33,12 @@ class CoreGameplay(
 
     val place = PlaceService(definitions, citadelFacade)
     val remove = RemoveService(citadelFacade)
-    val health = HealthService(remove, citadelFacade, MaturationService())
+    val health = HealthService(remove, citadelFacade)
+    val maturation = MaturationService()
+    val healthFacade = HealthFacade(health)
+    val maturationFacade = MaturationFacade(maturation)
 
-    private val maturationModifier = MaturingDamageModifier(health.maturation)
+    private val maturationModifier = MaturingDamageModifier(maturation)
 
     init {
         citadelFacade.registerComponent(CitadelKind.KEY, CitadelKind::class.java)

@@ -106,7 +106,8 @@ class FornaxCitadel : JavaPlugin() {
                 materials = MaterialFacade(materials, materialPlacement, paperGameplay.placement),
                 playerDamage = paperGameplay.playerDamage,
                 definitions = coreGameplay.definitions,
-                health = coreGameplay.health
+                health = coreGameplay.healthFacade,
+                maturation = coreGameplay.maturationFacade
             )
             server.servicesManager.register(FornaxCitadelAPI::class.java, api, this, ServicePriority.Normal)
         } catch (failure: Throwable) {
@@ -178,7 +179,7 @@ internal fun PaperChunkService.enableWithAddons(plugins: Array<out Plugin>, cita
         for (component in addon.defaultComponents()) {
             citadels.registerComponent(component.key, component.componentClass)
         }
-        addon.registerDefinitions(core.definitions, core.health)
+        addon.registerDefinitions(core.definitions, core.healthFacade, core.maturationFacade)
     }
     enable()
 }

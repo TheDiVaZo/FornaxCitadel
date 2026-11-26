@@ -9,13 +9,13 @@ import ru.fornax.fornaxcitadel.modules.health.MaturingInitializer
 import java.time.Duration
 
 fun CitadelTypesSettings.register(coreGameplay: CoreGameplay) {
-    val health = coreGameplay.health
+    val health = coreGameplay.healthFacade
     val initializers = listOf(HealthInitializer(health), MaturingInitializer())
     for ((name, settings) in types) {
         val key = Key("fornaxcitadel", name)
         coreGameplay.registerDefinition(CitadelDefinition(key, initializers, level = settings.lvl, itemKey = settings.item))
         health.registerDefinition(key, settings.health)
-        health.maturation.registerDefinition(key, MaturationDefinition(
+        coreGameplay.maturationFacade.registerDefinition(key, MaturationDefinition(
             Duration.ofSeconds(settings.maturing?.durationSeconds ?: 0),
             settings.maturing?.initialDamageMultiplier ?: 1.0
         ))

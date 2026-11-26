@@ -32,15 +32,25 @@ class ProcessorCoordinator {
      * Throws [IllegalArgumentException] if the action's class does not match the processor's type.
      * Exceptions from the processor propagate to the caller.
      */
-    fun execute(action: Action): ActionResult {
+    fun execute(action: Action): ActionResult = execute(action, null)
+
+    @JvmSynthetic
+    internal fun execute(action: Action, withScope: WithActionExecutionScope?): ActionResult {
         val processor = getProcessor(action.type) ?: return ActionResult.DENIED
-        return executeProcessor(processor, action)
+        return executeProcessor(processor, action, withScope)
     }
 
-    private fun <T : Action> executeProcessor(processor: ActionProcessor<T>, action: Action): ActionResult {
+    private fun <T : Action> executeProcessor(
+        processor: ActionProcessor<T>, action: Action, withScope: WithActionExecutionScope?
+    ): ActionResult {
         require(processor.actionClass.isInstance(action)) {
             "Action ${action.javaClass.name} does not match ${processor.actionClass.name} for key ${action.type}"
         }
-        return processor.execute(processor.actionClass.cast(action))
+        val typed = processor.actionClass.cast(action)
+        return if (processor is CompositeActionProcessor<T> && withScope != null) {
+            withScope { scope -> processor.execute(typed, scope) }
+        } else processor.execute(typed)
     }
 }
+
+internal typealias WithActionExecutionScope = ((ActionExecutionScope) -> ActionResult) -> ActionResult

@@ -531,7 +531,7 @@ class PaperUpgradeServiceTest {
             assertEquals(ActionResult.SUCCESS, f.actions.execute(f.action(PaperCitadelTypes.MATURING)))
             val started = original.getComponent(Maturing::class.java)!!.startedAtMillis
             assertTrue(started > 1L)
-            assertFalse(f.coreGameplay.health.maturation.isMature(original))
+            assertFalse(f.coreGameplay.maturation.isMature(original))
             f.manager.unloadChunk(f.worldId, 0, 0).join()
             f.loadChunk(0, 0)
             val restored = f.citadel()
@@ -539,7 +539,7 @@ class PaperUpgradeServiceTest {
             assertEquals(40.0, f.health())
             assertEquals(started, restored.getComponent(Maturing::class.java)?.startedAtMillis)
             assertEquals(f.installer.id, restored.getComponent(CitadelOwner::class.java)?.playerId)
-            assertFalse(f.coreGameplay.health.maturation.isMature(restored))
+            assertFalse(f.coreGameplay.maturation.isMature(restored))
         }
     }
 
@@ -558,7 +558,7 @@ class PaperUpgradeServiceTest {
             val info = assertIs<AcidResult.Information>(acid.inspect(f.installer.player, f.block()))
             assertEquals(4, info.tier)
             assertFalse(info.mature)
-            assertTrue(f.coreGameplay.health.maturation.progress(target) in 0.58..0.60)
+            assertTrue(f.coreGameplay.maturation.progress(target) in 0.58..0.60)
             target.editComponent(Maturing::class.java) { it.startedAtMillis = System.currentTimeMillis() - 1_300_000L }
             assertTrue(assertIs<AcidResult.Information>(acid.inspect(f.installer.player, f.block())).mature)
             assertEquals(Material.GOLD_BLOCK, f.block().type)

@@ -37,7 +37,7 @@ class PaperGameplayTest {
         val definition = assertNotNull(runtime.core.definitions.find(type))
         val health = runtime.core.health
         assertEquals(65.0, assertNotNull(health.findDefinition(type)).maxHealth)
-        assertNotNull(health.maturation.findDefinition(type))
+        assertNotNull(runtime.core.maturationFacade.findDefinition(type))
         assertFalse(paper.citadels.isChunkLoaded(paper.worldId, 0, 0))
         assertTrue(paper.listenerRegistrations.isEmpty())
 

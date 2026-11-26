@@ -13,7 +13,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult;
 import ru.fornax.fornaxcitadel.core.util.Key;
 import ru.fornax.fornaxcitadel.modules.remove.RemoveService;
 
-import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.HashMap;
@@ -27,27 +26,13 @@ import java.util.Objects;
 public final class HealthService {
     private final CitadelFacade citadels;
     private final RemoveService removeService;
-    private final MaturationService maturation;
     private final Map<Key, HealthDefinition> definitions = new HashMap<>();
     private List<DamageModifier> modifiers = List.of();
 
     public HealthService(@NotNull RemoveService removeService, @NotNull CitadelFacade citadels) {
-        this(removeService, citadels, Clock.systemUTC());
-    }
-
-    public HealthService(@NotNull RemoveService removeService, @NotNull CitadelFacade citadels, @NotNull Clock clock) {
-        this(removeService, citadels, new MaturationService(clock));
-    }
-
-    public HealthService(@NotNull RemoveService removeService, @NotNull CitadelFacade citadels,
-                         @NotNull MaturationService maturation) {
         this.citadels = Objects.requireNonNull(citadels, "citadels");
         this.removeService = Objects.requireNonNull(removeService, "removeService");
-        this.maturation = Objects.requireNonNull(maturation, "maturation");
     }
-
-    @NotNull
-    public MaturationService getMaturation() { return maturation; }
 
     /** Replaces live settings without changing saved HP or marking any chunks dirty. */
     public void registerDefinition(@NotNull Key key, @NotNull HealthDefinition definition) {

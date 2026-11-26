@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.modules.health
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelKind
+import ru.fornax.fornaxcitadel.core.facade.MaturationFacade
 import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.serialization.ChunkCordSnapshotMapper
 import ru.fornax.fornaxcitadel.core.storage.ChunkCordSnapshot
@@ -17,18 +18,22 @@ class MaturationServiceTest {
     @Test
     fun `duration multiplier affects shared progress damage and exact maturity without changing saved values`() {
         val fixture = HealthFixture(createInitial = false)
-        val citadel = fixture.create(health = Health(100.0), startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
-        val service = fixture.service.maturation
-        service.registerMultiplier { 2.0 }
+        val citadel = fixture.create(health = Health(100.0))
+        citadel.putComponent(Maturing::class.java, Maturing(1_000L))
+        val maturation = MaturationFacade(fixture.maturation)
+        val profile = MaturationDefinition(Duration.ofSeconds(1), 4.0)
+        maturation.registerDefinition(HealthFixture.TYPE, profile)
+        assertSame(profile, maturation.findDefinition(HealthFixture.TYPE))
+        maturation.registerMultiplier { 2.0 }
         fixture.clock.timeMillis = 2_000L
-        assertEquals(0.5, service.progress(citadel))
-        assertFalse(service.isMature(citadel))
+        assertEquals(0.5, maturation.progress(citadel))
+        assertFalse(maturation.isMature(citadel))
         fixture.service.damage(citadel, 10.0)
         assertEquals(84.0, citadel.getComponent(Health::class.java)?.health)
         fixture.clock.timeMillis = 2_999L
-        assertFalse(service.isMature(citadel))
+        assertFalse(maturation.isMature(citadel))
         fixture.clock.timeMillis = 3_000L
-        assertTrue(service.isMature(citadel))
+        assertTrue(maturation.isMature(citadel))
         assertEquals(1_000L, citadel.getComponent(Maturing::class.java)?.startedAtMillis)
     }
 
@@ -37,7 +42,7 @@ class MaturationServiceTest {
         val fixture = HealthFixture(createInitial = false)
         val plain = fixture.create()
         val timed = fixture.create(1, startedAtMillis = 1_000L)
-        val service = fixture.service.maturation
+        val service = fixture.maturation
         fixture.clock.timeMillis = 2_000L
         assertTrue(service.isMature(plain))
         assertTrue(service.isMature(timed))
@@ -52,13 +57,14 @@ class MaturationServiceTest {
     fun `large multipliers never wrap into instant maturity`() {
         val fixture = HealthFixture(createInitial = false, clock = MutableHealthClock(Long.MAX_VALUE))
         val citadel = fixture.create(startedAtMillis = Long.MIN_VALUE, maturationDurationMillis = Long.MAX_VALUE)
-        val service = fixture.service.maturation
+        val service = fixture.maturation
         val multiplier = MaturationMultiplier { Double.MAX_VALUE }
         service.registerMultiplier(multiplier)
         assertEquals(0.0, service.progress(citadel))
         assertFalse(service.isMature(citadel))
         service.unregisterMultiplier(multiplier)
         assertTrue(service.isMature(citadel))
+        assertTrue(service.unregisterDefinition(HealthFixture.TYPE))
         service.registerDefinition(HealthFixture.TYPE, MaturationDefinition(Duration.ofSeconds(Long.MAX_VALUE)))
         assertTrue(service.progress(citadel) in 0.001..0.003)
     }
@@ -72,14 +78,37 @@ class MaturationServiceTest {
     }
 
     @Test
+    fun `only the registered profile instance can be registered again`() {
+        val fixture = HealthFixture(createInitial = false)
+        val citadel = fixture.create(startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
+        fixture.clock.timeMillis = 1_500L
+        fixture.chunk.resetDirty()
+        val key = HealthFixture.TYPE
+        val maturation = MaturationFacade(fixture.maturation)
+        val modifier = MaturingDamageModifier(fixture.maturation)
+        val first = assertNotNull(maturation.findDefinition(key))
+        maturation.registerDefinition(key, first)
+
+        for (conflict in listOf(first.copy(), MaturationDefinition(Duration.ofSeconds(5), 2.0))) {
+            val error = assertFailsWith<IllegalArgumentException> { maturation.registerDefinition(key, conflict) }
+            assertContains(error.message.orEmpty(), key.asString())
+            assertSame(first, maturation.findDefinition(key))
+            assertEquals(0.5, maturation.progress(citadel))
+            assertEquals(8.0, modifier.getDamage(ActionContext.SYSTEM, citadel, 5.0))
+        }
+        assertFalse(fixture.chunk.isDirty)
+    }
+
+    @Test
     fun `current kind selects the profile and profile replacement updates progress and damage`() {
         val fixture = HealthFixture(createInitial = false)
         val citadel = fixture.create(startedAtMillis = 1_000L, initialDamageMultiplier = 4.0)
-        val service = fixture.service.maturation
+        val service = fixture.maturation
         val modifier = MaturingDamageModifier(service)
         fixture.clock.timeMillis = 2_000L
         assertTrue(service.isMature(citadel))
 
+        assertTrue(service.unregisterDefinition(HealthFixture.TYPE))
         service.registerDefinition(HealthFixture.TYPE, MaturationDefinition(Duration.ofSeconds(2), 5.0))
         fixture.chunk.resetDirty()
         assertEquals(0.5, service.progress(citadel))
@@ -117,7 +146,7 @@ class MaturationServiceTest {
     fun `zero duration is mature before start time and increasing it uses original start`() {
         val fixture = HealthFixture(createInitial = false)
         val citadel = fixture.create(startedAtMillis = 1_000L, maturationDurationMillis = 0)
-        val service = fixture.service.maturation
+        val service = fixture.maturation
         val unexpected = MaturationMultiplier { error("Instant types need no multipliers") }
         service.registerMultiplier(unexpected)
         for (time in listOf(500L, 1_000L, 1_500L)) {
@@ -125,6 +154,7 @@ class MaturationServiceTest {
             assertTrue(service.isMature(citadel))
         }
         service.unregisterMultiplier(unexpected)
+        assertTrue(service.unregisterDefinition(HealthFixture.TYPE))
         service.registerDefinition(HealthFixture.TYPE, MaturationDefinition(Duration.ofSeconds(2)))
         assertEquals(0.25, service.progress(citadel))
         assertEquals(1_000L, citadel.getComponent(Maturing::class.java)?.startedAtMillis)
@@ -172,7 +202,7 @@ class MaturationServiceTest {
         }
         val fixture = HealthFixture()
         fixture.clock.timeMillis = 2_000L
-        val service = fixture.service.maturation
+        val service = fixture.maturation
         val first = Factor(2.0)
         val second = Factor(2.0)
         service.registerMultiplier(first)
@@ -191,7 +221,7 @@ class MaturationServiceTest {
     fun `calculation retains multiplier snapshot and reads live factors next time`() {
         val fixture = HealthFixture()
         fixture.clock.timeMillis = 2_000L
-        val service = fixture.service.maturation
+        val service = fixture.maturation
         var factor = 2.0
         val second = MaturationMultiplier { 3.0 }
         service.registerMultiplier { service.unregisterMultiplier(second); factor }
@@ -204,7 +234,7 @@ class MaturationServiceTest {
     @Test
     fun `invalid factors are rejected while positive fractions and submillisecond durations work`() {
         val fixture = HealthFixture()
-        val service = fixture.service.maturation
+        val service = fixture.maturation
         for (factor in listOf(0.0, -1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
             val multiplier = MaturationMultiplier { factor }
             service.registerMultiplier(multiplier)
@@ -214,6 +244,7 @@ class MaturationServiceTest {
         service.registerMultiplier { 0.5 }
         fixture.clock.timeMillis = 1_250L
         assertEquals(0.5, service.progress(fixture.citadel))
+        assertTrue(service.unregisterDefinition(HealthFixture.TYPE))
         service.registerDefinition(HealthFixture.TYPE, MaturationDefinition(Duration.ofNanos(500_000)))
         fixture.clock.timeMillis = 1_000L
         assertEquals(0.0, service.progress(fixture.citadel))

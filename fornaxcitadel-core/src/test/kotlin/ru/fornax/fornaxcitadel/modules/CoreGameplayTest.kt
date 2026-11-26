@@ -73,7 +73,7 @@ class CoreGameplayTest {
         val fixture = Fixture()
         val clock = Clock.fixed(Instant.ofEpochMilli(1_793_204_123_456L), ZoneOffset.UTC)
         fixture.register(initializers = listOf(MaturingInitializer(clock)))
-        fixture.addon.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.addon.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         var observedKind: Key? = null
         var observedHealth: Double? = null
@@ -474,7 +474,7 @@ class CoreGameplayTest {
     fun `a type with health but no approving damage validator rejects damage`() {
         val fixture = Fixture()
         fixture.addon.health.registerDefinition(DEFAULT_KIND, HealthDefinition(100.0))
-        fixture.addon.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.addon.health))))
+        fixture.addon.registerDefinition(CitadelDefinition(DEFAULT_KIND, listOf(HealthInitializer(fixture.addon.healthFacade))))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         fixture.chunk().resetDirty()
@@ -509,7 +509,7 @@ class CoreGameplayTest {
         val clock = Clock.fixed(Instant.ofEpochMilli(Long.MAX_VALUE), ZoneOffset.UTC)
         fixture.register(maxHealth = 25.0)
         fixture.register(MATURING_KIND, initializers = listOf(MaturingInitializer(clock)))
-        fixture.addon.health.maturation.registerDefinition(MATURING_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.addon.maturation.registerDefinition(MATURING_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.place(SECOND_POSITION, MATURING_KIND))
@@ -731,7 +731,7 @@ class CoreGameplayTest {
         val startedAt = Long.MAX_VALUE
         val clock = Clock.fixed(Instant.ofEpochMilli(startedAt), ZoneOffset.UTC)
         fixture.register(initializers = listOf(MaturingInitializer(clock)))
-        fixture.addon.health.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
+        fixture.addon.maturation.registerDefinition(DEFAULT_KIND, MaturationDefinition(Duration.ofSeconds(1), 5.0))
         fixture.load()
         assertEquals(ActionResult.SUCCESS, fixture.place())
         assertEquals(ActionResult.SUCCESS, fixture.damage(STRANGER_CONTEXT, 15.0))
@@ -829,7 +829,7 @@ class CoreGameplayTest {
             initializers: List<CitadelInitializer> = emptyList()
         ) {
             maxHealth?.let { addon.health.registerDefinition(key, HealthDefinition(it)) }
-            val prepared = initializers + HealthInitializer(addon.health)
+            val prepared = initializers + HealthInitializer(addon.healthFacade)
             addon.registerDefinition(CitadelDefinition(key, prepared))
             actions.validateDamage(citadels, key, allowed = authorizeDamage)
         }

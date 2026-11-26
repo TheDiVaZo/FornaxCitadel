@@ -7,19 +7,110 @@ import org.bukkit.block.Block
 import org.bukkit.block.data.type.Chest
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
+import ru.fornax.fornaxcitadel.core.systems.action.Action
+import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.core.systems.action.NamedActionSource
+import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.acid.AcidAction
 import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
+import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
+import ru.fornax.fornaxcitadel.paper.action.PlayerSource
+import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialAdapter
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.acid.*
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.PlacementSettings
 import ru.fornax.fornaxcitadel.paper.modules.placement.BlockListType
+import java.util.UUID
 import kotlin.test.*
 
 class AcidIntegrationTest {
+    @Test
+    fun `system and addon acid actions preserve child attribution and complete after destruction`() {
+        val addon = ActionContext(UUID(37L, 13L), NamedActionSource(Key("addon", "trigger")))
+        for (context in listOf(ActionContext.SYSTEM, addon)) fixture().use { f ->
+            acid(f)
+            val target = f.block(2, 64, 2)
+            reinforce(f, target)
+            val completed = f.completedActions()
+            val activation = AcidAction(context, f.position)
+            val veto = object : ActionValidator<AcidAction> {
+                override val actionClass = AcidAction::class.java
+                override fun validate(action: AcidAction) = ActionValidator.Result.Rejected
+            }
+            f.actionFacade.registerValidator(veto)
+            assertEquals(ActionResult.DENIED, f.actionFacade.execute(activation))
+            assertTrue(completed.isEmpty())
+            assertTrue(f.naturalBreaks.isEmpty())
+            assertNotNull(f.citadels.findProtecting(f.position))
+            assertNotNull(f.citadels.findProtecting(target.testPosition()))
+
+            assertTrue(f.actions.unregisterValidator(veto))
+            assertEquals(ActionResult.SUCCESS, f.actionFacade.execute(activation))
+            assertEquals(3, completed.size)
+            val source = assertIs<AcidDestroyAction>(completed[0])
+            val destroyedTarget = assertIs<AcidDestroyAction>(completed[1])
+            assertTrue(source.consumingSource)
+            assertEquals(f.position, source.position)
+            assertFalse(destroyedTarget.consumingSource)
+            assertEquals(target.testPosition(), destroyedTarget.position)
+            assertEquals(context, source.context)
+            assertEquals(context, destroyedTarget.context)
+            assertSame(activation, completed.last())
+            assertTrue(f.block().isEmpty && target.isEmpty)
+        }
+    }
+
+    @Test
+    fun `player action enforces ownership and permissions and succeeds with no selected target`() = fixture().use { f ->
+        acid(f)
+        val completed = f.completedActions()
+        assertEquals(ActionResult.DENIED, f.actionFacade.execute(AcidAction(f.context(f.stranger), f.position)))
+        val action = AcidAction(f.context(f.installer), f.position)
+        for (permission in listOf("fornaxcitadel.acid", "fornaxcitadel.damage")) {
+            f.installer.permissions.remove(permission)
+            assertEquals(ActionResult.DENIED, f.actionFacade.execute(action), permission)
+            f.installer.permissions.add(permission)
+        }
+        assertTrue(completed.isEmpty())
+        assertFalse(f.block().isEmpty)
+
+        assertEquals(ActionResult.SUCCESS, f.actionFacade.execute(action))
+        assertEquals(2, completed.size)
+        assertTrue(assertIs<AcidDestroyAction>(completed.first()).consumingSource)
+        assertSame(action, completed.last())
+        assertTrue(f.block().isEmpty)
+    }
+
+    @Test
+    fun `acid command reports owner and maturity failures then counts zero eligible targets`() = fixture().use { f ->
+        f.material(Material.GOLD_BLOCK)
+        f.place(PaperCitadelTypes.MATURING)
+        val source = assertNotNull(f.citadels.findProtecting(f.position))
+        val completed = f.completedActions()
+        val command = f.command(acid = f.acidService)
+        val messages = PaperMessages.defaults()
+        fun activate(player: TestPlayer): Any? {
+            player.target = f.block()
+            command.onCommand(player.player, TestCommand, "citadel", arrayOf("acid"))
+            return player.chatMessages.last()
+        }
+
+        assertEquals<Any?>(messages.render("commands.acid.not-owner"), activate(f.stranger))
+        assertEquals<Any?>(messages.render("commands.acid.immature"), activate(f.installer))
+        assertTrue(source.isCurrent)
+        assertTrue(completed.isEmpty())
+        source.editComponent(Maturing::class.java) { it.startedAtMillis = 0L }
+        assertEquals<Any?>(messages.render("commands.acid.success", "count" to "0"), activate(f.installer))
+        assertFalse(source.isCurrent)
+        assertIs<AcidAction>(completed.last())
+    }
+
     @Test
     fun `unbreakable and non-item materials retain physical blocks but lose acid and target reinforcements`() {
         for (material in listOf(Material.BEDROCK, Material.END_PORTAL)) for (retainSource in listOf(false, true)) {
@@ -336,6 +427,16 @@ class AcidIntegrationTest {
             f.installer.target = f.block()
             f.installer.permissions.add("fornaxcitadel.info")
             val command = f.command(acid = f.acidService)
+            val completed = f.completedActions()
+            var activationAttempts = 0
+            var veto = true
+            f.actionFacade.registerValidator(object : ActionValidator<AcidAction> {
+                override val actionClass = AcidAction::class.java
+                override fun validate(action: AcidAction): ActionValidator.Result {
+                    activationAttempts++
+                    return if (veto) ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
+                }
+            })
             assertEquals(listOf("acid"), command.onTabComplete(f.installer.player, TestCommand, "citadel", arrayOf("ac")))
             assertEquals(listOf("info"), command.onTabComplete(f.installer.player, TestCommand, "citadel", arrayOf("acid", "")))
             command.onCommand(f.installer.player, TestCommand, "citadel", arrayOf("acid", "info"))
@@ -343,6 +444,8 @@ class AcidIntegrationTest {
             assertEquals(8, messages.size)
             assertTrue(messages.any { "GOLD_BLOCK" in it })
             assertTrue(messages.any { "installer" in it })
+            assertEquals(0, activationAttempts)
+            assertTrue(completed.isEmpty())
             assertEquals(0, f.vanillaBlockChanges)
             assertTrue(f.calledEvents.isEmpty())
             command.onCommand(f.installer.player, TestCommand, "citadel", arrayOf("acid", "north"))
@@ -352,8 +455,30 @@ class AcidIntegrationTest {
             assertEquals(0, f.vanillaBlockChanges)
             f.installer.permissions.add("fornaxcitadel.acid")
             command.onCommand(f.installer.player, TestCommand, "citadel", arrayOf("acid"))
+            assertTrue(activationAttempts > 0)
+            assertEquals<Any?>(PaperMessages.defaults().render("commands.acid.denied"), f.installer.chatMessages.last())
+            assertTrue(completed.isEmpty())
+            assertFalse(f.block().isEmpty)
+
+            veto = false
+            command.onCommand(f.installer.player, TestCommand, "citadel", arrayOf("acid"))
+            val activation = assertIs<AcidAction>(completed.last())
+            assertEquals(f.installer.id, activation.context.actorId)
+            assertSame(f.installer.player, assertIs<PlayerSource>(activation.context.source).player)
+            assertEquals(Key("paper", "acid"), activation.context.source.key)
+            assertEquals<Any?>(PaperMessages.defaults().render("commands.acid.success", "count" to "1"),
+                f.installer.chatMessages.last())
             assertTrue(f.block().isEmpty)
         }
+
+    private fun PaperTestFixture.completedActions(): List<Action> {
+        val completed = mutableListOf<Action>()
+        actionFacade.registerHandler(object : ActionHandler<Action> {
+            override val actionClass = Action::class.java
+            override fun handle(action: Action) { completed.add(action) }
+        })
+        return completed
+    }
 
     @Test
     fun `configured ray distance and unloaded rays never force chunk loading`() =
@@ -415,7 +540,7 @@ class AcidIntegrationTest {
     }
     private fun withMaterials(f: PaperTestFixture, materials: MaterialRegistry, body: (AcidService) -> Unit) {
         val service = AcidService(
-            f.plugin, f.actionFacade, f.citadels, f.coreGameplay.health.maturation,
+            f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturation,
             f.citadelTypes, materials, f.materialPlacement, f.breakingService, AcidRegistry(AcidSettings())
         )
         service.enable()

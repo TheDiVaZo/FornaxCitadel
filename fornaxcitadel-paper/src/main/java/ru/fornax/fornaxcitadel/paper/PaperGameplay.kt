@@ -69,7 +69,7 @@ class PaperGameplay(
         settings.playerDamage.creativeModeEnabled
     )
     val acid = AcidService(
-        plugin, actions, citadels, coreGameplay.health.maturation, definitions, materials,
+        plugin, actions, citadels, coreGameplay.maturation, definitions, materials,
         materialPlacement, breaking, AcidRegistry(settings.acid)
     )
     private val explosion = PaperExplosionService(plugin, actions, citadels, coreGameplay.remove, settings.explosionPowers)

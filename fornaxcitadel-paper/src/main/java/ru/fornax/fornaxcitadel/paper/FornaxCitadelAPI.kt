@@ -4,9 +4,10 @@ import org.bukkit.entity.Player
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
+import ru.fornax.fornaxcitadel.core.facade.MaturationFacade
 import ru.fornax.fornaxcitadel.core.facade.ObservationFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 import ru.fornax.fornaxcitadel.paper.material.MaterialFacade
 import ru.fornax.fornaxcitadel.paper.modules.breaking.damage.PlayerDamageModifierService
 
@@ -20,5 +21,6 @@ class FornaxCitadelAPI(
     val playerDamage: PlayerDamageModifierService,
     /** Shared with the gameplay services. Register addon types on the server's main thread. */
     val definitions: CitadelDefinitionRegistry,
-    val health: HealthService
+    val health: HealthFacade,
+    val maturation: MaturationFacade
 )

@@ -12,18 +12,22 @@ class HealthDefinitionTest {
     fun `only invulnerable profiles can omit maximum health`() {
         assertFailsWith<IllegalArgumentException> { HealthDefinition(null) }
         val f = HealthFixture(createInitial = false)
-        val initializer = HealthInitializer(f.service)
+        val initializer = HealthInitializer(f.health)
         val draft = f.draft()
-        f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(null, invulnerable = true))
+        val profile = HealthDefinition(null, invulnerable = true)
+        f.health.registerDefinition(HealthFixture.TYPE, profile)
+        assertSame(profile, f.health.findDefinition(HealthFixture.TYPE))
         initializer.initialize(draft)
         assertNull(draft.getComponent(Health::class.java))
         val citadel = f.publish(draft)
-        assertTrue(f.service.isInvulnerable(HealthFixture.TYPE))
-        assertNull(f.service.currentHealth(citadel))
+        assertTrue(f.health.isInvulnerable(HealthFixture.TYPE))
+        assertTrue(f.health.isInvulnerable(citadel))
+        assertNull(f.health.maxHealth(citadel))
+        assertNull(f.health.currentHealth(citadel))
         assertEquals(ActionResult.DENIED, f.service.damage(citadel, 0.0))
         assertTrue(citadel.isCurrent)
         f.service.unregisterDefinition(HealthFixture.TYPE)
-        assertFalse(f.service.isInvulnerable(HealthFixture.TYPE))
+        assertFalse(f.health.isInvulnerable(HealthFixture.TYPE))
         assertEquals(ActionResult.SUCCESS, f.service.damage(citadel, 1.0))
         assertFalse(citadel.isCurrent)
     }
@@ -51,14 +55,14 @@ class HealthDefinitionTest {
     @Test
     fun `new maximum applies after restore without changing HP until positive damage`() {
         val f = HealthFixture(createInitial = false)
-        f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(100.0))
+        f.health.registerDefinition(HealthFixture.TYPE, HealthDefinition(100.0))
         f.create(health = Health(80.0))
         val mapper = ChunkCordSnapshotMapper(f.types)
         val bytes = mapper.snapshot(f.chunk).toByteArray()
-        f.service.registerDefinition(HealthFixture.TYPE, HealthDefinition(50.0))
+        f.health.registerDefinition(HealthFixture.TYPE, HealthDefinition(50.0))
         f.storage.chunk = mapper.restore(ChunkCordSnapshot.fromByteArray(bytes))
         val restored = f.citadel
-        assertEquals(50.0, f.service.maxHealth(restored))
+        assertEquals(50.0, f.health.maxHealth(restored))
         assertEquals(80.0, restored.getComponent(Health::class.java)?.health)
         assertFalse(f.chunk.isDirty)
         assertEquals(ActionResult.DENIED, f.service.damage(restored, 0.0))
@@ -84,7 +88,7 @@ class HealthDefinitionTest {
         f.service.unregisterModifier(failure)
         assertEquals(80.0, citadel.getComponent(Health::class.java)?.health)
         assertFalse(f.chunk.isDirty)
-        f.service.registerModifier { _, _, damage -> damage * 2.0 }
+        f.health.registerModifier { _, _, damage -> damage * 2.0 }
         assertEquals(ActionResult.SUCCESS, f.service.damage(citadel, 1.0))
         assertEquals(48.0, citadel.getComponent(Health::class.java)?.health)
     }
@@ -115,7 +119,7 @@ class HealthDefinitionTest {
     @Test
     fun `initializer reads current profile and leaves absent profiles without health`() {
         val f = HealthFixture(createInitial = false)
-        val initializer = HealthInitializer(f.service)
+        val initializer = HealthInitializer(f.health)
         val absent = f.draft()
         initializer.initialize(absent)
         assertNull(absent.getComponent(Health::class.java))

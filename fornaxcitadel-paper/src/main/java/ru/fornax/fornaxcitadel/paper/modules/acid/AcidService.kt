@@ -17,9 +17,12 @@ import ru.fornax.fornaxcitadel.core.facade.ReadableHandle
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
+import ru.fornax.fornaxcitadel.core.systems.action.ActionExecutionScope
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
+import ru.fornax.fornaxcitadel.core.systems.action.CompositeActionProcessor
 import ru.fornax.fornaxcitadel.core.util.Key
+import ru.fornax.fornaxcitadel.modules.acid.AcidAction
 import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
@@ -42,14 +45,28 @@ class AcidService(
     private val placement: MaterialPlacementService,
     private val breaking: PaperBreakingService,
     val registry: AcidRegistry
-) : LifecycleService {
+) : CompositeActionProcessor<AcidAction>(), LifecycleService {
+    override val actionClass = AcidAction::class.java
+    override val actionKey = AcidAction.KEY
     private var enabled = false
     private var busy = false
+    internal val activationEnabled get() = enabled && registry.settings.enabled
     private val scopedActions = Collections.newSetFromMap(IdentityHashMap<AcidDestroyAction, Boolean>())
     private val isChunkLoaded: ChunkLoadCheck = citadels::isChunkLoaded
     private val multiplier = AcidMaturationMultiplier(registry, plugin.server, isChunkLoaded)
 
     init {
+        actions.registerAction(this)
+        actions.registerValidator(object : ActionValidator<AcidAction> {
+            override val actionClass = AcidAction::class.java
+            override fun validate(action: AcidAction): ActionValidator.Result = operation({ failure ->
+                (action as? AcidActivationRequest)?.result = failure
+                ActionValidator.Result.Rejected
+            }) {
+                activationSource(action)
+                ActionValidator.Result.Neutral
+            }
+        })
         actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
             override val actionClass = AcidDestroyAction::class.java
             override fun validate(action: AcidDestroyAction): ActionValidator.Result =
@@ -74,31 +91,46 @@ class AcidService(
         enabled = false
     }
 
-    fun inspect(player: Player, block: Block?): AcidResult = operation {
-        val acid = resolve(block)
-        val candidates = candidates(player, acid)
+    fun inspect(player: Player, block: Block?): AcidResult = operation({ it }) {
+        val acid = resolve(block?.let(::position))
+        val candidates = candidates(acidPlayerContext(player), acid, actions::isAllowed)
         AcidResult.Information(acid.type, acid.citadel, acid.owner, acid.tier,
             maturation.isMature(acid.citadel), candidates.size,
             minOf(candidates.size, acid.type.maxTargets))
     }
 
-    fun activate(player: Player, block: Block?): AcidResult = operation {
-        val acid = resolve(block)
-        checkActor(player, acid)
-        if (!maturation.isMature(acid.citadel)) fail(AcidFailure.IMMATURE)
-        val selected = candidates(player, acid).take(acid.type.maxTargets)
+    fun activate(player: Player, block: Block?): AcidResult {
+        if (!plugin.server.isPrimaryThread) return AcidResult.Failed(AcidFailure.WRONG_THREAD)
+        if (busy) return AcidResult.Failed(AcidFailure.BUSY)
+        if (!activationEnabled) return AcidResult.Failed(AcidFailure.DISABLED)
+        if (block == null) return AcidResult.Failed(AcidFailure.NOT_FOUND)
+        val request = AcidActivationRequest(acidPlayerContext(player), position(block))
+        actions.execute(request)
+        return request.result
+    }
+
+    override fun execute(action: AcidAction, scope: ActionExecutionScope): ActionResult {
+        val outcome = operation({ it }) { activate(action, scope) }
+        (action as? AcidActivationRequest)?.result = outcome
+        return if (outcome is AcidResult.Activated) ActionResult.SUCCESS else ActionResult.DENIED
+    }
+
+    private fun activate(action: AcidAction, scope: ActionExecutionScope): AcidResult.Activated {
+        val acid = activationSource(action)
+        val context = action.context
+        val selected = candidates(context, acid, scope::isAllowed).take(acid.type.maxTargets)
         if (breaking.destructionParts(acid.block, placement).mapNotNull {
             citadels.findProtecting(position(it))
         }.any { !same(it, acid.citadel) }) fail(AcidFailure.DENIED)
-        val sourceAction = action(player, acid, acid.block, consuming = true)
+        val sourceAction = destroyAction(context, acid, acid.block, consuming = true)
         scopedActions.add(sourceAction)
         if (breaking.destroy(acid.block, listOf(acid.citadel), listOf(sourceAction), materials, placement,
-                validate = { sourceIsCurrent(player, acid) }) != ActionResult.SUCCESS) {
+                scope::executeBatch, validate = { sourceIsCurrent(context, acid) }) != ActionResult.SUCCESS) {
             fail(AcidFailure.DENIED)
         }
         var destroyed = 0
         for (target in selected) {
-            val result = breaking.destroy(target.block, target.reinforcements, target.actions, materials, placement,
+            val result = breaking.destroy(target.block, target.reinforcements, target.actions, materials, placement, scope::executeBatch,
                 validate = {
                     enabled && target.reinforcements.all {
                         canDissolve(acid.tier, definitions.level(it))
@@ -106,37 +138,45 @@ class AcidService(
                 })
             if (result == ActionResult.SUCCESS) destroyed++
         }
-        AcidResult.Activated(destroyed)
+        return AcidResult.Activated(destroyed)
     }
 
-    private fun sourceIsCurrent(player: Player, acid: AcidBlock): Boolean {
-        checkActor(player, acid)
-        return enabled && registry.find(acid.block.type) == acid.type && acid.citadel.isCurrent &&
+    private fun activationSource(action: AcidAction): AcidBlock {
+        val acid = resolve(action.position)
+        checkActor(action.context, acid)
+        if (!maturation.isMature(acid.citadel)) fail(AcidFailure.IMMATURE)
+        return acid
+    }
+
+    private fun sourceIsCurrent(context: ActionContext, acid: AcidBlock): Boolean {
+        checkActor(context, acid)
+        return activationEnabled && registry.find(acid.block.type) == acid.type && acid.citadel.isCurrent &&
             definitions.level(acid.citadel) == acid.tier &&
             maturation.isMature(acid.citadel)
     }
 
-    private fun checkActor(player: Player, acid: AcidBlock) {
+    private fun checkActor(context: ActionContext, acid: AcidBlock) {
+        val player = (context.source as? PlayerSource)?.player ?: return
         if (!player.isOnline || player.gameMode == GameMode.SPECTATOR || player.world.uid != acid.block.world.uid ||
             !player.hasPermission("fornaxcitadel.acid")) fail(AcidFailure.DENIED)
         if (!acid.citadel.isOwnerOrUnowned(player.uniqueId)) fail(AcidFailure.NOT_OWNER)
     }
 
-    private fun resolve(block: Block?): AcidBlock {
-        if (!enabled || !registry.settings.enabled) fail(AcidFailure.DISABLED)
-        if (block == null) fail(AcidFailure.NOT_FOUND)
-        loadedBlock(position(block))
-        val citadel = citadels.findProtecting(position(block)) ?: run {
+    private fun resolve(position: CitadelPosition?): AcidBlock {
+        if (!activationEnabled) fail(AcidFailure.DISABLED)
+        if (position == null) fail(AcidFailure.NOT_FOUND)
+        val block = loadedBlock(position)
+        val citadel = citadels.findProtecting(position) ?: run {
             if (registry.isDisabled(block.type)) fail(AcidFailure.DISABLED)
             fail(if (registry.find(block.type) != null) AcidFailure.NOT_REINFORCED else AcidFailure.NOT_FOUND)
         }
-        val anchor = loadedBlock(citadel.position)
+        val anchor = if (position == citadel.position) block else loadedBlock(citadel.position)
         val type = registry.find(anchor.type) ?: fail(if (registry.isDisabled(anchor.type)) AcidFailure.DISABLED else AcidFailure.NOT_FOUND)
         val tier = definitions.level(citadel)
         return AcidBlock(anchor, citadel, type, citadel.getComponent(CitadelOwner::class.java)?.playerId, tier)
     }
 
-    private fun candidates(player: Player, acid: AcidBlock): List<Target> {
+    private fun candidates(context: ActionContext, acid: AcidBlock, isAllowed: (AcidDestroyAction) -> Boolean): List<Target> {
         val targets = mutableListOf<Target>()
         val seen = mutableSetOf<Pair<CitadelPosition, Int>>()
         for (face in FACES) {
@@ -149,31 +189,30 @@ class AcidService(
                 .distinctBy { it.second.position to it.second.runtimeId }
             if (protected.any { same(it.second, acid.citadel) }) continue
             if (protected.any { !canDissolve(acid.tier, definitions.level(it.second)) }) continue
-            val destructionActions = protected.map { action(player, acid, it.first) }
+            val destructionActions = protected.map { destroyAction(context, acid, it.first) }
             scopedActions.addAll(destructionActions)
-            if (!destructionActions.all(actions::isAllowed)) continue
+            if (!destructionActions.all(isAllowed)) continue
             seen.addAll(protected.map { it.second.position to it.second.runtimeId })
             targets.add(Target(block, protected.map { it.second }, destructionActions))
         }
         return targets
     }
 
-    private fun action(player: Player, acid: AcidBlock, block: Block, consuming: Boolean = false) = AcidDestroyAction(
-        ActionContext(player.uniqueId, PlayerSource(player, SOURCE)), position(block), acid.citadel.position,
-        acid.citadel.runtimeId, consuming)
+    private fun destroyAction(context: ActionContext, acid: AcidBlock, block: Block, consuming: Boolean = false) =
+        AcidDestroyAction(context, position(block), acid.citadel.position, acid.citadel.runtimeId, consuming)
 
     private fun loadedBlock(position: CitadelPosition): Block = LoadedBlockTarget.blockAt(plugin.server, isChunkLoaded, position)
 
-    private inline fun operation(body: () -> AcidResult): AcidResult {
-        if (!plugin.server.isPrimaryThread) return AcidResult.Failed(AcidFailure.WRONG_THREAD)
-        if (busy) return AcidResult.Failed(AcidFailure.BUSY)
+    private inline fun <T> operation(onFailure: (AcidResult.Failed) -> T, body: () -> T): T {
+        if (!plugin.server.isPrimaryThread) return onFailure(AcidResult.Failed(AcidFailure.WRONG_THREAD))
+        if (busy) return onFailure(AcidResult.Failed(AcidFailure.BUSY))
         busy = true
         return try { body() }
-        catch (failure: Refused) { AcidResult.Failed(failure.reason) }
-        catch (_: CitadelResolutionUnavailableException) { AcidResult.Failed(AcidFailure.CHUNK_UNAVAILABLE) }
+        catch (failure: Refused) { onFailure(AcidResult.Failed(failure.reason)) }
+        catch (_: CitadelResolutionUnavailableException) { onFailure(AcidResult.Failed(AcidFailure.CHUNK_UNAVAILABLE)) }
         catch (failure: Exception) {
             plugin.logger.log(Level.SEVERE, "Could not complete acid operation", failure)
-            AcidResult.Failed(AcidFailure.ERROR)
+            onFailure(AcidResult.Failed(AcidFailure.ERROR))
         } finally { scopedActions.clear(); busy = false }
     }
 
@@ -185,12 +224,14 @@ class AcidService(
     private data class Target(val block: Block, val reinforcements: List<CitadelHandle>, val actions: List<AcidDestroyAction>)
 
     companion object {
-        private val SOURCE = Key("paper", "acid")
         private val FACES = listOf(BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST)
         private fun position(block: Block) = CitadelPosition(block.world.uid, block.x, block.y, block.z)
         private fun same(left: ReadableHandle, right: ReadableHandle) = left.position == right.position && left.runtimeId == right.runtimeId
     }
 }
+
+private val ACID_SOURCE = Key("paper", "acid")
+internal fun acidPlayerContext(player: Player) = ActionContext(player.uniqueId, PlayerSource(player, ACID_SOURCE))
 
 enum class AcidFailure(val message: String) {
     NOT_FOUND("not-found"), NOT_REINFORCED("not-reinforced"), DISABLED("disabled"), NOT_OWNER("not-owner"),

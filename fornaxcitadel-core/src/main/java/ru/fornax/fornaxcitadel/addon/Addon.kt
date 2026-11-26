@@ -2,8 +2,9 @@ package ru.fornax.fornaxcitadel.addon
 
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.component.Component
+import ru.fornax.fornaxcitadel.core.facade.HealthFacade
+import ru.fornax.fornaxcitadel.core.facade.MaturationFacade
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.health.HealthService
 
 /** Declares a plugin's component and citadel types before chunk restoration. */
 interface Addon {
@@ -15,8 +16,8 @@ interface Addon {
      */
     fun defaultComponents(): List<ComponentRegistration> = emptyList()
 
-    /** Registers this addon's types and health profiles on the game thread before chunks are restored. */
-    fun registerDefinitions(definitions: CitadelDefinitionRegistry, health: HealthService) {}
+    /** Registers citadel types and their health and maturation profiles before chunks are restored. */
+    fun registerDefinitions(definitions: CitadelDefinitionRegistry, health: HealthFacade, maturation: MaturationFacade) {}
 }
 
 /** The stable storage key and the component class whose no-argument constructor is used on restore. */

@@ -24,8 +24,12 @@ import ru.fornax.fornaxcitadel.modules.remove.RemoveAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.config.PaperMessages
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidActivationRequest
+import ru.fornax.fornaxcitadel.paper.modules.acid.AcidFailure
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidResult
 import ru.fornax.fornaxcitadel.paper.modules.acid.AcidService
+import ru.fornax.fornaxcitadel.paper.modules.acid.acidPlayerContext
+import ru.fornax.fornaxcitadel.paper.modules.breaking.citadelPosition
 import ru.fornax.fornaxcitadel.paper.modules.supportsCitadelData
 import java.util.Locale
 import java.util.logging.Level
@@ -104,7 +108,16 @@ class CitadelCommand(
         val player = sender as? Player ?: run { sender.message("commands.player-only"); return }
         val service = acid ?: run { sender.message("commands.acid.disabled"); return }
         val block = service.findTarget(player)
-        when (val result = if (information) service.inspect(player, block) else service.activate(player, block)) {
+        val result = when {
+            information -> service.inspect(player, block)
+            block == null -> AcidResult.Failed(if (service.activationEnabled) AcidFailure.NOT_FOUND else AcidFailure.DISABLED)
+            else -> {
+                val request = AcidActivationRequest(acidPlayerContext(player), block.citadelPosition())
+                actions.execute(request)
+                request.result
+            }
+        }
+        when (result) {
             is AcidResult.Failed -> sender.message("commands.acid.${result.reason.message}")
             is AcidResult.Activated -> sender.message("commands.acid.success", "count" to result.targets.toString())
             is AcidResult.Information -> {

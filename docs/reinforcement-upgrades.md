@@ -64,7 +64,11 @@ dismantle:
 
 Пользовательский `citadel-types` заменяет стандартный набор целиком: если нужны остальные типы, сохраните их в своём разделе. Пример выше содержит только два типа.
 
-Аддоны регистрируют типы в общем реестре через `FornaxCitadelAPI.definitions`, а профили здоровья — через `FornaxCitadelAPI.health`. Для регистрации до загрузки чанков служит `Addon.registerDefinitions(definitions, health)`. Команды принимают полные ключи аддонов, например `/citadel place myaddon:steel`. Для типов пространства имён `fornaxcitadel` доступна и короткая запись, например `/citadel place reinforced`.
+Аддоны регистрируют типы через `FornaxCitadelAPI.definitions`, профили здоровья через `api.health`, а профили созревания через `api.maturation`. Для регистрации до загрузки чанков служит `Addon.registerDefinitions(definitions, health, maturation)`. В нём доступны те же `HealthFacade` и `MaturationFacade` из пакета `ru.fornax.fornaxcitadel.core.facade`.
+
+Вызов `health.registerDefinition` может обновить профиль действующего типа. Для созревания первая регистрация закрепляет экземпляр профиля за ключом. Повторная передача того же экземпляра допустима, а попытка передать другой вызывает `IllegalArgumentException`.
+
+Команды принимают полные ключи аддонов, например `/citadel place myaddon:steel`. Для типов пространства имён `fornaxcitadel` доступна и короткая запись, например `/citadel place reinforced`.
 
 Изменения настроек применяются после перезапуска и действуют на существующие укрепления. Новый максимум сам по себе не лечит сохранённые HP; ремонт и улучшение используют актуальные значения.
 

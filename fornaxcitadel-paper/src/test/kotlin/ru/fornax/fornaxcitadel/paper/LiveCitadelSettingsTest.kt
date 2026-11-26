@@ -210,7 +210,7 @@ class LiveCitadelSettingsTest {
         val protected = Key("addon", "protected")
         for (sourceType in listOf(ordinary, PaperCitadelTypes.REINFORCED)) {
             PaperTestFixture(permissions = true, acidSettings = AcidSettings()).use { f ->
-                val health = f.coreGameplay.health
+                val health = f.coreGameplay.healthFacade
                 for ((key, profile) in mapOf(ordinary to HealthDefinition(10.0), protected to HealthDefinition(null, true))) {
                     health.registerDefinition(key, profile)
                     f.coreGameplay.definitions.register(CitadelDefinition(key, listOf(HealthInitializer(health))))

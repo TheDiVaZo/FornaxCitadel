@@ -273,7 +273,7 @@ class ServiceLifecycleTest {
 
         init {
             actions.validateDamage(citadels, TYPE)
-            addon.health.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
+            addon.maturation.registerDefinition(TYPE, MaturationDefinition(Duration.ofSeconds(10), 2.0))
         }
 
         fun load() = ChunkCord(WXZCord(POSITION.world, 0, 0)).also { storage.chunk = it }

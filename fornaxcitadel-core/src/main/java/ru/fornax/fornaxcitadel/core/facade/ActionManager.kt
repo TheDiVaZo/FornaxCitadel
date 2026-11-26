@@ -1,6 +1,7 @@
 package ru.fornax.fornaxcitadel.core.facade
 
 import ru.fornax.fornaxcitadel.core.systems.action.Action
+import ru.fornax.fornaxcitadel.core.systems.action.ActionExecutionScope
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMetaRegistry
@@ -71,13 +72,16 @@ class ActionManager {
      * This is not a world transaction: unexpected commit failures propagate without simulated rollback.
      * Notifications run only after the entire commit succeeds, under the normal reentrancy guard.
      */
-    fun executeBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult = runRoot {
+    fun executeBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult =
+        runRoot { runBatch(actions, prepare, commit) }
+
+    private fun runBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult {
         require(actions.isNotEmpty()) { "A batch must contain an action" }
         val snapshot = actions.toList()
-        if (!snapshot.all(::validate) || !prepare() || !snapshot.all(::validate)) return@runRoot ActionResult.DENIED
+        if (!snapshot.all(::validate) || !prepare() || !snapshot.all(::validate)) return ActionResult.DENIED
         commit()
         snapshot.forEach(handlerCoordinator::handle)
-        ActionResult.SUCCESS
+        return ActionResult.SUCCESS
     }
 
     /**
@@ -94,9 +98,32 @@ class ActionManager {
      */
     fun execute(action: Action): ActionResult = runRoot {
         if (!validate(action)) return@runRoot ActionResult.DENIED
-        val result = processorCoordinator.execute(action)
+        val result = processorCoordinator.execute(action, ::withExecutionScope)
         if (result == ActionResult.SUCCESS) handlerCoordinator.handle(action)
         result
+    }
+
+    private fun withExecutionScope(process: (ActionExecutionScope) -> ActionResult): ActionResult {
+        val scope = ProcessorScope()
+        return try { process(scope) } finally { scope.close() }
+    }
+
+    private inner class ProcessorScope : ActionExecutionScope {
+        private val owner = Thread.currentThread()
+        private var available = true
+
+        fun close() { available = false }
+
+        override fun isAllowed(action: Action): Boolean = useScope { validate(action) }
+
+        override fun executeBatch(actions: List<Action>, prepare: () -> Boolean, commit: () -> Unit): ActionResult =
+            useScope { runBatch(actions, prepare, commit) }
+
+        private inline fun <T> useScope(operation: () -> T): T {
+            check(Thread.currentThread() === owner && available) { "Action execution scope is unavailable" }
+            available = false
+            return try { operation() } finally { available = true }
+        }
     }
 
     private inline fun <T> runRoot(operation: () -> T): T {

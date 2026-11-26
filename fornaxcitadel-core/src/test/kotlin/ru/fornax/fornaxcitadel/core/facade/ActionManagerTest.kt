@@ -1,15 +1,18 @@
 package ru.fornax.fornaxcitadel.core.facade
 
 import ru.fornax.fornaxcitadel.core.systems.action.Action
+import ru.fornax.fornaxcitadel.core.systems.action.ActionExecutionScope
 import ru.fornax.fornaxcitadel.core.systems.action.ActionHandler
 import ru.fornax.fornaxcitadel.core.systems.action.ActionMeta
 import ru.fornax.fornaxcitadel.core.systems.action.ActionProcessor
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator.Result
+import ru.fornax.fornaxcitadel.core.systems.action.CompositeActionProcessor
 import ru.fornax.fornaxcitadel.core.util.Key
 import java.lang.reflect.Modifier
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -18,6 +21,87 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ActionManagerTest {
+    @Test
+    fun `composite processor performs guarded child validation and batches before notifying its handlers`() {
+        val fixture = Fixture()
+        val facade = ActionFacade(fixture.actions)
+        val parent = fixture.action(Key("test", "composite"))
+        val child = fixture.action()
+        val stages = mutableListOf<String>()
+        lateinit var active: ActionExecutionScope
+
+        fun checkScopeBlocked() {
+            assertFailsWith<IllegalStateException> { active.isAllowed(child) }
+            assertFailsWith<IllegalStateException> { active.executeBatch(listOf(child), { true }, {}) }
+        }
+        facade.registerValidator(object : ActionValidator<Action> {
+            override val actionClass = Action::class.java
+            override fun validate(action: Action): Result {
+                if (action === child) {
+                    stages.add("validate")
+                    checkScopeBlocked()
+                }
+                return Result.Success
+            }
+        })
+        facade.registerHandler(handler(Action::class.java) { action ->
+            stages.add(if (action === parent) "parent handler" else "child handler")
+            checkScopeBlocked()
+            assertFailsWith<IllegalStateException> { facade.execute(child) }
+        })
+        facade.registerAction(composite(parent.type) { scope ->
+            active = scope
+            assertFailsWith<IllegalStateException> { facade.isAllowed(child) }
+            CompletableFuture.runAsync { checkScopeBlocked() }.join()
+            assertTrue(scope.isAllowed(child))
+            scope.executeBatch(listOf(child), {
+                stages.add("prepare")
+                checkScopeBlocked()
+                true
+            }, {
+                stages.add("commit")
+                checkScopeBlocked()
+            })
+        })
+
+        assertEquals(ActionResult.SUCCESS, facade.execute(parent))
+        assertEquals(listOf("validate", "validate", "prepare", "validate", "commit", "child handler", "parent handler"), stages)
+        checkScopeBlocked()
+    }
+
+    @Test
+    fun `child rejection skips commit and expired scope cannot be reused after processor failure`() {
+        val fixture = Fixture()
+        val parent = fixture.action(Key("test", "composite"))
+        val child = fixture.action()
+        var allowChild = true
+        val notifications = mutableListOf<Action>()
+        fixture.actions.registerHandler(handler(Action::class.java, notifications::add))
+        fixture.validate { if (allowChild) Result.Success else Result.Rejected }
+        lateinit var saved: ActionExecutionScope
+        val failure = IllegalArgumentException("abort processor")
+        fixture.actions.registerProcessor(composite(parent.type) { scope ->
+            saved = scope
+            val result = scope.executeBatch(listOf(child), { allowChild = false; true }, { error("unexpected commit") })
+            assertEquals(ActionResult.DENIED, result)
+            assertFalse(scope.isAllowed(child))
+            throw failure
+        })
+
+        assertSame(failure, assertFailsWith<IllegalArgumentException> { fixture.actions.execute(parent) })
+        assertFailsWith<IllegalStateException> { saved.isAllowed(child) }
+        assertTrue(notifications.isEmpty())
+        allowChild = true
+        assertEquals(ActionResult.SUCCESS, fixture.actions.execute(child))
+    }
+
+    private fun composite(key: Key, process: (ActionExecutionScope) -> ActionResult) =
+        object : CompositeActionProcessor<Action>() {
+            override val actionClass = Action::class.java
+            override val actionKey = key
+            override fun execute(action: Action, scope: ActionExecutionScope) = process(scope)
+        }
+
     @Test
     fun `public action API hides its collaborators and exposes no citadel operations`() {
         val type = ActionManager::class.java
