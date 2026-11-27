@@ -5,6 +5,8 @@ import org.bukkit.Server
 import org.bukkit.World
 import org.bukkit.block.Block
 import org.bukkit.block.BlockFace
+import org.bukkit.block.data.type.Bed
+import org.bukkit.block.data.type.Door
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolver
 import ru.fornax.fornaxcitadel.core.util.Key
@@ -51,6 +53,13 @@ class MaterialPlacementService(
     fun getRule(block: Block): MaterialPlacementRule {
         requireAvailable(positionOf(block))
         return materials.getTypeOrNull(block)?.getKey()?.let(::getRule) ?: defaultRule
+    }
+
+    /** Doors and beds break as one block. A double chest breaks one half at a time. */
+    internal fun getDestructionPartner(block: Block): Block? {
+        val related = getRule(block).getRelatedBlock(block) ?: return null
+        requireAvailable(positionOf(related))
+        return related.takeIf { block.blockData is Door || block.blockData is Bed }
     }
 
     override fun getResponsiblePosition(position: CitadelPosition): CitadelPosition {

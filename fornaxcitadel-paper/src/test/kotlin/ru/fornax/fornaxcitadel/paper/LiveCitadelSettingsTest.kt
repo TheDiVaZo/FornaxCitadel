@@ -205,7 +205,7 @@ class LiveCitadelSettingsTest {
     }
 
     @Test
-    fun `registered level-less types respect acid tier comparisons and invulnerability`() {
+    fun `acid dissolves addon reinforcements with and without a level or invulnerability`() {
         val ordinary = Key("addon", "ordinary")
         val protected = Key("addon", "protected")
         for (sourceType in listOf(ordinary, PaperCitadelTypes.REINFORCED)) {
@@ -232,21 +232,22 @@ class LiveCitadelSettingsTest {
                 val acid = assertNotNull(f.acidService)
                 val inspected = assertIs<AcidResult.Information>(acid.inspect(f.installer.player, f.block()))
                 val sourceHasLevel = sourceType == PaperCitadelTypes.REINFORCED
-                val expectedTargets = if (sourceHasLevel) 2 else 1
                 assertEquals(if (sourceHasLevel) 2 else null, inspected.tier)
                 assertEquals(f.installer.id, inspected.owner)
-                assertEquals(expectedTargets, inspected.selectedTargets)
+                assertEquals(3, inspected.availableTargets)
+                assertEquals(3, inspected.selectedTargets)
                 assertEquals(AcidResult.Failed(AcidFailure.NOT_OWNER), acid.activate(f.stranger.player, f.block()))
-                assertEquals(AcidResult.Activated(expectedTargets), acid.activate(f.installer.player, f.block()))
-                assertNull(f.citadels.findProtecting(ordinaryTarget.testPosition()))
-                assertNotNull(f.citadels.findProtecting(protectedTarget.testPosition()))
-                assertEquals(sourceHasLevel, f.citadels.findProtecting(leveledTarget.testPosition()) == null)
+                assertEquals(AcidResult.Activated(3), acid.activate(f.installer.player, f.block()))
+                for (target in listOf(ordinaryTarget, protectedTarget, leveledTarget)) {
+                    assertNull(f.citadels.findProtecting(target.testPosition()))
+                    assertTrue(target.isEmpty)
+                }
             }
         }
     }
 
     @Test
-    fun `unknown acid level only reaches unknown targets while any level reaches unknown targets`() {
+    fun `known and unknown definitions allow all source and target combinations`() {
         for (sourceKnown in listOf(false, true)) for (targetKnown in listOf(false, true)) {
             PaperTestFixture(permissions = true, acidSettings = AcidSettings()).use { f ->
                 f.material(Material.GOLD_BLOCK)
@@ -260,8 +261,10 @@ class LiveCitadelSettingsTest {
                 if (!targetKnown) target.editComponent(CitadelKind::class.java) { it.definitionKey = Key("test", "missing_target") }
                 val info = assertIs<AcidResult.Information>(f.acidService!!.inspect(f.installer.player, f.block()))
                 assertEquals(if (sourceKnown) 2 else null, info.tier)
-                assertEquals(AcidResult.Activated(if (targetKnown) 0 else 1), f.acidService.activate(f.installer.player, f.block()))
-                assertEquals(targetKnown, target.isCurrent)
+                assertEquals(1, info.selectedTargets)
+                assertEquals(AcidResult.Activated(1), f.acidService.activate(f.installer.player, f.block()))
+                assertFalse(target.isCurrent)
+                assertTrue(adjacent.isEmpty)
             }
         }
     }

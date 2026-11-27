@@ -72,7 +72,7 @@ class PaperGameplay(
     )
     val acid = AcidService(
         plugin, actions, citadels, maturation, definitions, materials,
-        materialPlacement, breaking, AcidRegistry(settings.acid)
+        materialPlacement, AcidRegistry(settings.acid)
     )
     private val explosion = PaperExplosionService(plugin, actions, citadels, settings.explosionPowers)
     private val environment = PaperEnvironmentService(plugin, citadels)

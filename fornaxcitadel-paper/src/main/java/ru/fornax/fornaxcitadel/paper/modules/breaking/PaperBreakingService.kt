@@ -4,19 +4,13 @@ import org.bukkit.GameMode
 import org.bukkit.block.Block
 import org.bukkit.entity.Player
 import org.bukkit.event.HandlerList
-import org.bukkit.block.data.type.Bed
-import org.bukkit.block.data.type.Door
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
-import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
-import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
-import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.lifecycle.LifecycleService
 import ru.fornax.fornaxcitadel.core.systems.action.ActionContext
-import ru.fornax.fornaxcitadel.core.systems.action.Action
 import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
@@ -37,47 +31,6 @@ class PaperBreakingService @JvmOverloads constructor(
 ) : LifecycleService {
     private val listener = PaperBreakingListener(this)
     private var enabled = false
-
-    /** Resolves positions for reinforcement checks; the material adapter owns physical destruction. */
-    fun destructionParts(block: Block, placement: MaterialPlacementService): List<Block> {
-        requireAvailable(block)
-        val related = placement.getRule(block).getRelatedBlock(block)?.also(::requireAvailable)
-        return if ((block.blockData is Door || block.blockData is Bed) && related != null) listOf(block, related) else listOf(block)
-    }
-
-    /** Removes one logical reinforcement target, even if its material refuses physical destruction. */
-    fun destroy(block: Block, reinforcements: List<CitadelHandle>, actions: List<Action>,
-                materials: MaterialRegistry, placement: MaterialPlacementService,
-                validate: () -> Boolean): ActionResult {
-        check(plugin.server.isPrimaryThread && enabled) { "Destruction requires the active server thread" }
-        var executingDestruction = false
-        try {
-            return this.actions.executeBatch(actions, prepare = {
-                val parts = destructionParts(block, placement)
-                enabled && reinforcements.all { it.isCurrent } && validate() && parts.none { it.isEmpty } &&
-                    parts.mapNotNull { citadels.findProtecting(it.citadelPosition()) }
-                        .map { it.position to it.runtimeId }.toSet() == reinforcements.map { it.position to it.runtimeId }.toSet()
-            }, commit = {
-                executingDestruction = true
-                val material = materials.getTypeOrNull(block)
-                reinforcements.forEach {
-                    check(citadels.removeCitadel(it)) { "Destruction target expired" }
-                }
-                material?.breakNaturallyBlock(block, triggerEffect = true)
-            })
-        } catch (failure: CitadelResolutionUnavailableException) {
-            if (executingDestruction) throw IllegalStateException("Chunk became unavailable during destruction", failure)
-            return ActionResult.DENIED
-        }
-    }
-
-    private fun requireAvailable(block: Block) {
-        val position = block.citadelPosition()
-        if (!block.world.isChunkLoaded(block.x shr 4, block.z shr 4) ||
-            !citadels.isChunkLoaded(position.world, block.x shr 4, block.z shr 4)) {
-            throw CitadelResolutionUnavailableException(position)
-        }
-    }
 
     override fun enable() {
         if (enabled) return

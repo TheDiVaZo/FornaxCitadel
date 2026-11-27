@@ -6,7 +6,6 @@ import ru.fornax.fornaxcitadel.core.facade.ReadableCitadelFacade
 import ru.fornax.fornaxcitadel.core.resolver.CitadelResolutionUnavailableException
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
-import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 
 /** Authorizes configured damage and creative destruction for every action source. */
@@ -24,12 +23,6 @@ class PaperDamageValidator(
             return ActionValidator.Result.Rejected
         } ?: return ActionValidator.Result.Rejected
 
-        if (action is AcidDestroyAction) {
-            // AcidService authorizes only its scoped actions, never a source key alone.
-            if (action.consumingSource) return ActionValidator.Result.Neutral
-            return if (health.isInvulnerable(citadel))
-                ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
-        }
         if (action.mode == DamageAction.Mode.DESTROY) {
             if (!creativeModeEnabled) return ActionValidator.Result.Rejected
             val player = (action.context.source as? PlayerSource)?.player ?: return ActionValidator.Result.Rejected

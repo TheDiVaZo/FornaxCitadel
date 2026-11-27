@@ -4,6 +4,7 @@ acid:
   activation:
     max-distance: 5
   # Types are determined by the reinforced block's material, not reinforcement item.
+  # max-targets caps the first reinforced neighbors in up, down, north, south, east, west order.
   # After restart these values also apply to existing blocks. Activation consumes acid even without targets.
   # Material adapters handle natural block drops; acid never refunds reinforcement materials.
   types:
@@ -88,12 +89,11 @@ explosions:
 # Materials are resolved on use; providers may register after FornaxCitadel enables.
 # lvl is optional. A configured level must be a positive integer and applies to existing citadels.
 # Upgrades require levels on both types and a strictly higher destination level.
-# Acid of any level passes the level check against a target without a level.
 # item is optional and enables placement by item, repair and reinforcement refunds.
 # Types without an item can still be placed by command.
 # health.invulnerable defaults to false. A true value blocks ordinary damage from every source
 # and permits omitting health.max. The legacy damage-policy field also accepts allow or deny.
-# Authorized creative destruction and administrative removal can still remove these types.
+# Acid, authorized creative destruction and administrative removal can remove invulnerable types.
 # health.max is read from current settings; only actual HP is stored in a citadel.
 # Reducing max keeps saved HP: saved 80 with max 50 displays 50/50; taking 1 damage saves 49.
 # Increasing max does not heal. Maturing amplifies ordinary damage from every source.

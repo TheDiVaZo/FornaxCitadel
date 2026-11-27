@@ -23,7 +23,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator.Result
 import ru.fornax.fornaxcitadel.core.util.Key
-import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.DamageModifier
 import ru.fornax.fornaxcitadel.modules.place.PlaceAction
@@ -208,7 +207,6 @@ class CoreActionValidatorsTest {
         fun targetActions(position: CitadelPosition): List<Action> = listOf(
             DamageAction(ActionContext.SYSTEM, position, 1.0),
             DamageAction(ActionContext.SYSTEM, position, 0.0, DamageAction.Mode.DESTROY),
-            AcidDestroyAction(ActionContext.SYSTEM, position, POSITION, 0),
             RemoveAction(ActionContext.SYSTEM, position)
         )
     }

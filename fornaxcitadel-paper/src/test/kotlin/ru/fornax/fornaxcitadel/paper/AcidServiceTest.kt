@@ -13,7 +13,6 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.acid.AcidAction
-import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.modules.health.DamageAction
 import ru.fornax.fornaxcitadel.modules.health.Maturing
 import ru.fornax.fornaxcitadel.modules.health.MaturationDefinition
@@ -23,8 +22,6 @@ import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.acid.*
 import ru.fornax.fornaxcitadel.paper.modules.placement.PaperCitadelTypes
 import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypesSettings
-import ru.fornax.fornaxcitadel.paper.modules.placement.CitadelTypeSettings
-import ru.fornax.fornaxcitadel.modules.health.HealthDefinition
 import java.time.Duration
 import kotlin.test.*
 
@@ -36,7 +33,7 @@ class AcidServiceTest {
             val target = reinforce(f, f.block().getRelative(BlockFace.UP))
             val owner = target.getComponent(CitadelOwner::class.java)?.playerId
             when (reason) {
-                "veto" -> f.vetoAcid { it.consumingSource }
+                "veto" -> f.vetoActivation()
                 "permission" -> f.installer.permissions.remove("fornaxcitadel.acid")
                 "claimed" -> checkNotNull(f.manager.findCitadel(f.worldId, 1, 64, 2)).putComponent(CitadelOwner::class.java, CitadelOwner(f.stranger.id))
             }
@@ -73,14 +70,14 @@ class AcidServiceTest {
         }
 
     @Test
-    fun `invulnerable targets stay protected from high tier creative acid`() = fixture().use { f ->
-        val source = assertNotNull(f.citadels.findProtecting(f.position))
-        source.editComponent(CitadelKind::class.java) { it.definitionKey = Key("fornaxcitadel", "tier_1000") }
+    fun `ordinary acid destroys an invulnerable target`() = fixture().use { f ->
         f.installer.permissions.add("fornaxcitadel.admin")
-        val target = reinforce(f, f.block().getRelative(BlockFace.UP), PaperCitadelTypes.INVULNERABLE)
-        f.installer.gameMode = GameMode.CREATIVE
-        assertEquals(AcidResult.Activated(0), activate(f))
-        assertTrue(target.isCurrent)
+        val block = f.block().getRelative(BlockFace.UP)
+        val target = reinforce(f, block, PaperCitadelTypes.INVULNERABLE)
+        f.installer.permissions.remove("fornaxcitadel.admin")
+        assertEquals(AcidResult.Activated(1), activate(f))
+        assertFalse(target.isCurrent)
+        assertTrue(block.isEmpty)
         consumed(f)
     }
 
@@ -181,19 +178,18 @@ class AcidServiceTest {
     }
 
     @Test
-    fun `missing physical provider does not bypass a core target veto`() = fixture(settings = null).use { f ->
+    fun `higher tier reinforcement is removed even when its physical provider is missing`() = fixture(settings = null).use { f ->
         val targetBlock = f.block().getRelative(BlockFace.UP)
-        val target = reinforce(f, targetBlock)
+        val target = reinforce(f, targetBlock, Key("fornaxcitadel", "reinforced_heavy"))
         val materials = object : MaterialRegistry by f.dismantleMaterials {
             override fun getTypeOrNull(block: Block): MaterialAdapter? =
                 if (block === targetBlock) null else f.dismantleMaterials.getTypeOrNull(block)
         }
-        f.vetoAcid { !it.consumingSource }
         withMaterials(f, materials) { acid ->
-            assertEquals(AcidResult.Activated(0), acid.activate(f.installer.player, f.block()))
+            assertEquals(AcidResult.Activated(1), acid.activate(f.installer.player, f.block()))
         }
         consumed(f)
-        assertTrue(target.isCurrent)
+        assertFalse(target.isCurrent)
         assertEquals(Material.STONE, targetBlock.type)
         assertEquals(listOf(f.block() to true), f.naturalBreaks)
         assertEquals(listOf(Material.GOLD_BLOCK), f.droppedItems.map { it.second.type })
@@ -265,45 +261,42 @@ class AcidServiceTest {
     }
 
     @Test
-    fun `air unreinforced higher tiers and vetoed targets do not consume the limit`() = fixture(Material.DIAMOND_BLOCK).use { f ->
-        val high = reinforce(f, f.block().getRelative(BlockFace.UP))
-        high.editComponent(CitadelKind::class.java) { it.definitionKey = Key("fornaxcitadel", "reinforced_heavy") }
-        val veto = f.block().getRelative(BlockFace.NORTH)
-        reinforce(f, veto)
-        f.actions.registerValidator(object : ActionValidator<DamageAction> {
-            override val actionClass = DamageAction::class.java
-            override fun validate(action: DamageAction) = if (action.position == veto.testPosition())
-                ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
-        })
+    fun `higher tier and invulnerable targets take the first two slots while air is skipped`() = fixture(Material.DIAMOND_BLOCK).use { f ->
+        val high = reinforce(f, f.block().getRelative(BlockFace.UP), Key("fornaxcitadel", "reinforced_heavy"))
+        f.installer.permissions.add("fornaxcitadel.admin")
+        val protected = reinforce(f, f.block().getRelative(BlockFace.NORTH), PaperCitadelTypes.INVULNERABLE)
         val air = f.block().getRelative(BlockFace.SOUTH)
         val stale = reinforce(f, air)
         f.material(Material.AIR, air.testPosition())
-        val accepted = reinforce(f, f.block().getRelative(BlockFace.WEST))
-        assertEquals(AcidResult.Activated(1), activate(f))
-        assertFalse(accepted.isCurrent)
-        assertTrue(high.isCurrent)
+        val last = reinforce(f, f.block().getRelative(BlockFace.WEST))
+        val info = assertIs<AcidResult.Information>(f.acidService!!.inspect(f.installer.player, f.block()))
+        assertEquals(3, info.availableTargets)
+        assertEquals(2, info.selectedTargets)
+        assertEquals(AcidResult.Activated(2), activate(f))
+        assertFalse(high.isCurrent)
+        assertFalse(protected.isCurrent)
         assertTrue(stale.isCurrent)
-        assertFalse(veto.isEmpty)
+        assertTrue(last.isCurrent)
+        assertEquals(listOf(f.position, high.position, protected.position), f.naturalBreaks.map { it.first.testPosition() })
     }
 
     @Test
-    fun `empty activation consumes acid unless its core action is vetoed including higher tier neighbors`() {
+    fun `activation veto preserves acid with or without a higher tier neighbor`() {
         for (high in listOf(false, true)) for (vetoed in listOf(false, true)) fixture().use { f ->
-            val target = if (high) reinforce(f, f.block().getRelative(BlockFace.UP)).also {
-                it.editComponent(CitadelKind::class.java) { kind -> kind.definitionKey = Key("fornaxcitadel", "reinforced_heavy") }
-            } else null
-            if (vetoed) f.vetoAcid { it.consumingSource }
+            val target = if (high) reinforce(f, f.block().getRelative(BlockFace.UP), Key("fornaxcitadel", "reinforced_heavy")) else null
+            if (vetoed) f.vetoActivation()
             if (vetoed) {
                 assertFailure(AcidFailure.DENIED, activate(f))
                 unchanged(f)
                 assertTrue(f.droppedItems.isEmpty())
             } else {
-                assertEquals(AcidResult.Activated(0), activate(f))
+                assertEquals(AcidResult.Activated(if (high) 1 else 0), activate(f))
                 consumed(f)
-                assertEquals(listOf(Material.GOLD_BLOCK), f.droppedItems.map { it.second.type })
+                val expectedDrops = if (high) listOf(Material.GOLD_BLOCK, Material.COBBLESTONE) else listOf(Material.GOLD_BLOCK)
+                assertEquals(expectedDrops, f.droppedItems.map { it.second.type })
             }
             assertTrue(f.calledEvents.isEmpty())
-            if (target != null) assertTrue(target.isCurrent)
+            if (target != null) assertEquals(vetoed, target.isCurrent)
         }
     }
 
@@ -367,65 +360,41 @@ class AcidServiceTest {
         }
 
     @Test
-    fun `source veto preserves acid while late target vetoes skip selected targets without replacement`() {
-        for (mask in 0..7) fixture(Material.DIAMOND_BLOCK).use { f ->
+    fun `selected target becoming invulnerable is still destroyed in order`() =
+        fixture(Material.DIAMOND_BLOCK).use { f ->
             val first = reinforce(f, f.block().getRelative(BlockFace.UP))
             val second = reinforce(f, f.block().getRelative(BlockFace.DOWN))
             val extra = reinforce(f, f.block().getRelative(BlockFace.NORTH))
-            var consumedSource = false
-            f.afterNaturalBreak = { if (it === f.block()) consumedSource = true }
-            val notified = mutableListOf<Action>()
-            f.observeActions { notified.add(it) }
-            f.vetoAcid { action ->
-                if (action.consumingSource) mask and 1 != 0
-                else consumedSource && ((action.position == first.position && mask and 2 != 0) ||
-                    (action.position == second.position && mask and 4 != 0))
+            f.afterNaturalBreak = { block ->
+                if (block === f.block()) {
+                    first.editComponent(CitadelKind::class.java) { it.definitionKey = PaperCitadelTypes.INVULNERABLE }
+                }
             }
-            if (mask and 1 != 0) {
-                assertFailure(AcidFailure.DENIED, activate(f))
-                assertTrue(first.isCurrent && second.isCurrent)
-                unchanged(f)
-                assertTrue(f.droppedItems.isEmpty())
-                assertTrue(notified.isEmpty())
-            } else {
-                val count = 2 - (if (mask and 2 != 0) 1 else 0) - (if (mask and 4 != 0) 1 else 0)
-                assertEquals(AcidResult.Activated(count), activate(f))
-                assertEquals(mask and 2 != 0, first.isCurrent)
-                assertEquals(mask and 4 != 0, second.isCurrent)
-                consumed(f)
-                assertEquals(count + 1, f.naturalBreaks.size)
-                assertEquals(count, f.droppedItems.count { it.second.type == Material.COBBLESTONE })
-                val destroyed = listOf(first, second).filterNot { it.isCurrent }
-                assertEquals(listOf(f.position) + destroyed.map { it.position },
-                    notified.dropLast(1).map { assertIs<AcidDestroyAction>(it).position })
-                assertIs<AcidAction>(notified.last())
-            }
+            assertEquals(AcidResult.Activated(2), activate(f))
+            consumed(f)
+            assertFalse(first.isCurrent)
+            assertFalse(second.isCurrent)
             assertTrue(extra.isCurrent)
+            assertEquals(listOf(f.position, first.position, second.position), f.naturalBreaks.map { it.first.testPosition() })
         }
-    }
 
     @Test
-    fun `late core veto skips only that target and notifies only completed actions`() = fixture(Material.DIAMOND_BLOCK).use { f ->
-        val first = reinforce(f, f.block().getRelative(BlockFace.UP))
-        val second = reinforce(f, f.block().getRelative(BlockFace.DOWN))
-        var veto = false
+    fun `inspection and activation do not dispatch damage actions`() = fixture().use { f ->
+        val target = reinforce(f, f.block().getRelative(BlockFace.UP))
+        val validated = mutableListOf<DamageAction>()
         f.actions.registerValidator(object : ActionValidator<DamageAction> {
             override val actionClass = DamageAction::class.java
-            override fun validate(action: DamageAction) = if (veto && action.position == first.position)
-                ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
+            override fun validate(action: DamageAction): ActionValidator.Result {
+                validated.add(action)
+                return ActionValidator.Result.Neutral
+            }
         })
-        val notified = mutableListOf<ru.fornax.fornaxcitadel.core.citadel.CitadelPosition>()
-        f.actions.registerHandler(object : ActionHandler<DamageAction> {
-            override val actionClass = DamageAction::class.java
-            override fun handle(action: DamageAction) { notified.add(action.position) }
-        })
-        f.afterNaturalBreak = { if (it === f.block()) veto = true }
 
+        val info = assertIs<AcidResult.Information>(f.acidService!!.inspect(f.installer.player, f.block()))
+        assertEquals(1, info.selectedTargets)
         assertEquals(AcidResult.Activated(1), activate(f))
-        consumed(f)
-        assertTrue(first.isCurrent)
-        assertFalse(second.isCurrent)
-        assertEquals(listOf(f.position, second.position), notified)
+        assertFalse(target.isCurrent)
+        assertTrue(validated.isEmpty())
     }
 
     @Test
@@ -448,27 +417,23 @@ class AcidServiceTest {
     }
 
     @Test
-    fun `core target veto never invokes its natural material provider`() = fixture().use { f ->
+    fun `invulnerable source and target both break naturally`() = fixture().use { f ->
+        val source = assertNotNull(f.citadels.findProtecting(f.position))
+        source.editComponent(CitadelKind::class.java) { it.definitionKey = PaperCitadelTypes.INVULNERABLE }
         val block = f.block().getRelative(BlockFace.UP)
-        val target = reinforce(f, block)
-        val adapter = object : MaterialAdapter by TestMaterialAdapter(Key("custom", "stone"), Material.PAPER, block) {
-            override fun breakNaturallyBlock(block: Block, triggerEffect: Boolean): Boolean = error("Vetoed target must remain")
-        }
-        f.materials.register("custom", TestMaterialRegistry(adapter))
-        f.vetoAcid { !it.consumingSource }
-        assertEquals(AcidResult.Activated(0), activate(f))
+        f.installer.permissions.add("fornaxcitadel.admin")
+        val target = reinforce(f, block, PaperCitadelTypes.INVULNERABLE)
+        assertEquals(AcidResult.Activated(1), activate(f))
         consumed(f)
-        assertTrue(target.isCurrent)
-        assertEquals(listOf(Material.GOLD_BLOCK), f.droppedItems.map { it.second.type })
+        assertFalse(target.isCurrent)
+        assertEquals(listOf(f.block() to true, block to true), f.naturalBreaks)
+        assertEquals(listOf(Material.GOLD_BLOCK, Material.COBBLESTONE), f.droppedItems.map { it.second.type })
     }
 
     @Test
-    fun `repeat nested and forged acid actions cannot reuse the source`() = fixture().use { f ->
+    fun `repeat and nested activations cannot reuse the source`() = fixture().use { f ->
         val target = f.block().getRelative(BlockFace.UP)
         reinforce(f, target)
-        val acid = assertNotNull(f.citadels.findProtecting(f.position))
-        val forged = AcidDestroyAction(f.context(f.installer), target.testPosition(), f.position, acid.runtimeId)
-        assertEquals(ActionResult.DENIED, f.actions.execute(forged))
         f.beforeNaturalBreak = { assertFailure(AcidFailure.BUSY, activate(f)) }
         assertEquals(AcidResult.Activated(1), activate(f))
         val drops = f.droppedItems.size
@@ -517,17 +482,17 @@ class AcidServiceTest {
     }
 
     @Test
-    fun `target tier is checked again after native source destruction`() = fixture().use { f ->
+    fun `raising a selected target's tier while consuming the source leaves it selected`() = fixture().use { f ->
         val block = f.block().getRelative(BlockFace.UP)
         val target = reinforce(f, block)
         f.afterNaturalBreak = { if (it === f.block()) {
-            target.editComponent(CitadelKind::class.java) { kind -> kind.definitionKey = Key("fornaxcitadel", "tier_1000") }
+            target.editComponent(CitadelKind::class.java) { kind -> kind.definitionKey = Key("fornaxcitadel", "reinforced_heavy") }
         } }
-        assertEquals(AcidResult.Activated(0), activate(f))
-        assertTrue(target.isCurrent)
+        assertEquals(AcidResult.Activated(1), activate(f))
+        assertFalse(target.isCurrent)
         consumed(f)
-        assertEquals(listOf(f.block() to true), f.naturalBreaks)
-        assertEquals(listOf(Material.GOLD_BLOCK), f.droppedItems.map { it.second.type })
+        assertEquals(listOf(f.block() to true, block to true), f.naturalBreaks)
+        assertEquals(listOf(Material.GOLD_BLOCK, Material.COBBLESTONE), f.droppedItems.map { it.second.type })
     }
 
     @Test
@@ -543,26 +508,19 @@ class AcidServiceTest {
     }
 
     @Test
-    fun `source target and activation notifications see the final reinforcement and block state`() = fixture(Material.DIAMOND_BLOCK).use { f ->
+    fun `only the activation is reported and its handler sees the final block and reinforcement state`() = fixture(Material.DIAMOND_BLOCK).use { f ->
         val blocks = listOf(f.block(), f.block().getRelative(BlockFace.UP), f.block().getRelative(BlockFace.DOWN))
         val source = assertNotNull(f.citadels.findProtecting(f.position))
         val handles = listOf(source) + blocks.drop(1).map { reinforce(f, it) }
         val notified = mutableListOf<Action>()
-        val remaining = mutableListOf<List<Boolean>>()
-        val empty = mutableListOf<List<Boolean>>()
+        var removedAtNotification = false
         f.observeActions { action ->
             notified.add(action)
-            remaining.add(handles.map { it.isCurrent })
-            empty.add(blocks.map { it.isEmpty })
+            removedAtNotification = handles.none { it.isCurrent } && blocks.all { it.isEmpty }
         }
         assertEquals(AcidResult.Activated(2), activate(f))
-        assertEquals(4, notified.size)
-        val children = notified.dropLast(1).map { assertIs<AcidDestroyAction>(it) }
-        assertEquals(handles.map { it.position }, children.map { it.position })
-        assertEquals(listOf(true, false, false), children.map { it.consumingSource })
-        assertIs<AcidAction>(notified.last())
-        assertEquals(List(4) { listOf(false, false, false) }, remaining)
-        assertEquals(List(4) { listOf(true, true, true) }, empty)
+        assertIs<AcidAction>(notified.single())
+        assertTrue(removedAtNotification)
     }
 
     @Test
@@ -604,7 +562,7 @@ class AcidServiceTest {
             val settings = AcidSettings(types = listOf(AcidType("changed", Material.GOLD_BLOCK, 2, 1.0)))
             val service = AcidService(
                 f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturationFacade,
-                f.citadelTypes, f.dismantleMaterials, f.materialPlacement, f.breakingService, AcidRegistry(settings)
+                f.citadelTypes, f.dismantleMaterials, f.materialPlacement, AcidRegistry(settings)
             )
             service.enable()
             try {
@@ -661,9 +619,9 @@ class AcidServiceTest {
     }
 
     private fun fixture(material: Material = Material.GOLD_BLOCK, settings: AcidSettings? = AcidSettings(),
-                        sourceType: Key = PaperCitadelTypes.REINFORCED) = PaperTestFixture(permissions = true, acidSettings = settings, citadelSettings = CitadelTypesSettings(
-                            CitadelTypesSettings.DEFAULT_TYPES + ("tier_1000" to CitadelTypeSettings(
-                                Key("minecraft", "gold_ingot"), 1000, health = HealthDefinition(100.0))))).apply {
+                        sourceType: Key = PaperCitadelTypes.REINFORCED) = PaperTestFixture(
+        permissions = true, acidSettings = settings, citadelSettings = CitadelTypesSettings()
+    ).apply {
         material(material)
         place(sourceType)
     }
@@ -674,11 +632,10 @@ class AcidServiceTest {
         return assertNotNull(f.citadels.findProtecting(block.testPosition()))
     }
 
-    private fun PaperTestFixture.vetoAcid(predicate: (AcidDestroyAction) -> Boolean) {
-        actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
-            override val actionClass = AcidDestroyAction::class.java
-            override fun validate(action: AcidDestroyAction) = if (predicate(action))
-                ActionValidator.Result.Rejected else ActionValidator.Result.Neutral
+    private fun PaperTestFixture.vetoActivation() {
+        actions.registerValidator(object : ActionValidator<AcidAction> {
+            override val actionClass = AcidAction::class.java
+            override fun validate(action: AcidAction) = ActionValidator.Result.Rejected
         })
     }
 
@@ -693,7 +650,7 @@ class AcidServiceTest {
         check(f.acidService == null)
         val service = AcidService(
             f.plugin, f.actionFacade, f.citadels, f.coreGameplay.maturationFacade,
-            f.citadelTypes, materials, f.materialPlacement, f.breakingService, AcidRegistry(AcidSettings())
+            f.citadelTypes, materials, f.materialPlacement, AcidRegistry(AcidSettings())
         )
         service.enable()
         try { body(service) } finally { service.disable() }

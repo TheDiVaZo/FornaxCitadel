@@ -7,8 +7,8 @@ import org.bukkit.entity.Player
 import org.bukkit.plugin.Plugin
 import ru.fornax.fornaxcitadel.core.citadel.CitadelDefinitionRegistry
 import ru.fornax.fornaxcitadel.core.citadel.CitadelOwner
-import ru.fornax.fornaxcitadel.core.citadel.isOwnerOrUnowned
 import ru.fornax.fornaxcitadel.core.citadel.CitadelPosition
+import ru.fornax.fornaxcitadel.core.citadel.isOwnerOrUnowned
 import ru.fornax.fornaxcitadel.core.facade.ActionFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelFacade
 import ru.fornax.fornaxcitadel.core.facade.CitadelHandle
@@ -22,11 +22,10 @@ import ru.fornax.fornaxcitadel.core.systems.action.ActionResult
 import ru.fornax.fornaxcitadel.core.systems.action.ActionValidator
 import ru.fornax.fornaxcitadel.core.util.Key
 import ru.fornax.fornaxcitadel.modules.acid.AcidAction
-import ru.fornax.fornaxcitadel.modules.health.AcidDestroyAction
 import ru.fornax.fornaxcitadel.paper.action.PlayerSource
 import ru.fornax.fornaxcitadel.paper.material.MaterialRegistry
 import ru.fornax.fornaxcitadel.paper.modules.ChunkLoadCheck
-import ru.fornax.fornaxcitadel.paper.modules.breaking.PaperBreakingService
+import ru.fornax.fornaxcitadel.paper.modules.explosion.ExplosionSource
 import ru.fornax.fornaxcitadel.paper.modules.resolver.MaterialPlacementService
 import java.util.UUID
 import java.util.logging.Level
@@ -40,7 +39,6 @@ class AcidService(
     private val definitions: CitadelDefinitionRegistry,
     private val materials: MaterialRegistry,
     private val placement: MaterialPlacementService,
-    private val breaking: PaperBreakingService,
     val registry: AcidRegistry
 ) : ActionProcessor<AcidAction>(), LifecycleService {
     override val actionClass = AcidAction::class.java
@@ -48,7 +46,6 @@ class AcidService(
     private var enabled = false
     private var busy = false
     internal val activationEnabled get() = enabled && registry.settings.enabled
-    private var scopedActions: List<AcidDestroyAction> = emptyList()
     private val isChunkLoaded: ChunkLoadCheck = citadels::isChunkLoaded
     private val multiplier = AcidMaturationMultiplier(registry, plugin.server, isChunkLoaded)
 
@@ -64,11 +61,6 @@ class AcidService(
                 ActionValidator.Result.Neutral
             }
         })
-        actions.registerValidator(object : ActionValidator<AcidDestroyAction> {
-            override val actionClass = AcidDestroyAction::class.java
-            override fun validate(action: AcidDestroyAction): ActionValidator.Result =
-                if (enabled && scopedActions.any { it === action }) ActionValidator.Result.Success else ActionValidator.Result.Rejected
-        })
     }
 
     fun findTarget(player: Player): Block? {
@@ -83,14 +75,14 @@ class AcidService(
     }
 
     override fun disable() {
-        scopedActions = emptyList()
         enabled = false
     }
 
     fun inspect(player: Player, block: Block?): AcidResult = operation({ it }) {
         val acid = resolve(block?.let(::position))
-        val candidates = candidates(acidPlayerContext(player), acid)
-        AcidResult.Information(acid.type, acid.citadel, acid.owner, acid.tier,
+        val candidates = candidates(acid)
+        val owner = acid.citadel.getComponent(CitadelOwner::class.java)?.playerId
+        AcidResult.Information(acid.type, acid.citadel, owner, definitions.level(acid.citadel),
             maturation.isMature(acid.citadel), candidates.size,
             minOf(candidates.size, acid.type.maxTargets))
     }
@@ -113,34 +105,31 @@ class AcidService(
 
     private fun activate(action: AcidAction): AcidResult.Activated {
         val acid = activationSource(action)
-        val context = action.context
-        val selected = candidates(context, acid).take(acid.type.maxTargets)
-        if (breaking.destructionParts(acid.block, placement).mapNotNull {
-            citadels.findProtecting(position(it))
-        }.any { !same(it, acid.citadel) }) fail(AcidFailure.DENIED)
-        val sourceAction = destroyAction(context, acid, acid.block, consuming = true)
-        val source = Target(acid.block, listOf(acid.citadel), listOf(sourceAction))
-        if (destroy(source) { sourceIsCurrent(context, acid) } != ActionResult.SUCCESS) {
-            fail(AcidFailure.DENIED)
-        }
-        var destroyed = 0
-        for (target in selected) {
-            val result = destroy(target) {
-                enabled && target.reinforcements.all { canDissolve(acid.tier, definitions.level(it)) }
+        val selected = candidates(acid).take(acid.type.maxTargets)
+        val source = Target(acid.block, mapOf(acid.citadel.runtimeId to acid.citadel))
+        if (!destroy(source)) fail(AcidFailure.DENIED)
+        val destroyed = selected.count { target ->
+            try {
+                destroy(target)
+            } catch (_: CitadelResolutionUnavailableException) {
+                false
             }
-            if (result == ActionResult.SUCCESS) destroyed++
         }
         return AcidResult.Activated(destroyed)
     }
 
-    private fun destroy(target: Target, validate: () -> Boolean): ActionResult = withDestructionActions(target.actions) {
-        breaking.destroy(target.block, target.reinforcements, target.actions, materials, placement, validate)
-    }
-
-    /** Only these exact child actions may pass validation during this preview or batch. */
-    private inline fun <T> withDestructionActions(children: List<AcidDestroyAction>, body: () -> T): T {
-        scopedActions = children
-        return try { body() } finally { scopedActions = emptyList() }
+    private fun destroy(target: Target): Boolean {
+        if (!enabled || reinforcementsAt(target.block).keys != target.reinforcements.keys) return false
+        try {
+            val material = materials.getTypeOrNull(target.block)
+            for (citadel in target.reinforcements.values) {
+                check(citadels.removeCitadel(citadel)) { "Destruction target expired" }
+            }
+            material?.breakNaturallyBlock(target.block, triggerEffect = true)
+        } catch (failure: CitadelResolutionUnavailableException) {
+            throw IllegalStateException("Chunk became unavailable during destruction", failure)
+        }
+        return true
     }
 
     private fun activationSource(action: AcidAction): AcidBlock {
@@ -150,15 +139,10 @@ class AcidService(
         return acid
     }
 
-    private fun sourceIsCurrent(context: ActionContext, acid: AcidBlock): Boolean {
-        checkActor(context, acid)
-        return activationEnabled && registry.find(acid.block.type) == acid.type && acid.citadel.isCurrent &&
-            definitions.level(acid.citadel) == acid.tier &&
-            maturation.isMature(acid.citadel)
-    }
-
     private fun checkActor(context: ActionContext, acid: AcidBlock) {
-        val player = (context.source as? PlayerSource)?.player ?: return
+        val source = context.source
+        if (source is ExplosionSource && source.position.worldId != acid.block.world.uid) fail(AcidFailure.DENIED)
+        val player = (source as? PlayerSource)?.player ?: return
         if (!player.isOnline || player.gameMode == GameMode.SPECTATOR || player.world.uid != acid.block.world.uid ||
             !player.hasPermission("fornaxcitadel.acid")) fail(AcidFailure.DENIED)
         if (!acid.citadel.isOwnerOrUnowned(player.uniqueId)) fail(AcidFailure.NOT_OWNER)
@@ -174,34 +158,34 @@ class AcidService(
         }
         val anchor = if (position == citadel.position) block else loadedBlock(citadel.position)
         val type = registry.find(anchor.type) ?: fail(if (registry.isDisabled(anchor.type)) AcidFailure.DISABLED else AcidFailure.NOT_FOUND)
-        val tier = definitions.level(citadel)
-        return AcidBlock(anchor, citadel, type, citadel.getComponent(CitadelOwner::class.java)?.playerId, tier)
+        return AcidBlock(anchor, citadel, type)
     }
 
-    private fun candidates(context: ActionContext, acid: AcidBlock): List<Target> {
+    private fun candidates(acid: AcidBlock): List<Target> {
         val targets = mutableListOf<Target>()
-        val seen = mutableSetOf<Pair<CitadelPosition, Int>>()
+        val seen = mutableSetOf(acid.citadel.runtimeId)
         for (face in FACES) {
             val block = placement.findLoadedRelative(acid.block, face) ?: continue
             if (block.isEmpty) continue
-            val citadel = citadels.findProtecting(position(block)) ?: continue
-            if (same(citadel, acid.citadel) || citadel.position to citadel.runtimeId in seen) continue
-            val parts = breaking.destructionParts(block, placement)
-            val protected = parts.mapNotNull { part -> citadels.findProtecting(position(part))?.let { part to it } }
-                .distinctBy { it.second.position to it.second.runtimeId }
-            if (protected.any { same(it.second, acid.citadel) }) continue
-            if (protected.any { !canDissolve(acid.tier, definitions.level(it.second)) }) continue
-            val destructionActions = protected.map { destroyAction(context, acid, it.first) }
-            val allowed = withDestructionActions(destructionActions) { destructionActions.all(actions::isAllowed) }
-            if (!allowed) continue
-            seen.addAll(protected.map { it.second.position to it.second.runtimeId })
-            targets.add(Target(block, protected.map { it.second }, destructionActions))
+            val reinforcements = reinforcementsAt(block)
+            if (reinforcements.isEmpty() || reinforcements.keys.any { it in seen }) continue
+            seen.addAll(reinforcements.keys)
+            targets.add(Target(block, reinforcements))
         }
         return targets
     }
 
-    private fun destroyAction(context: ActionContext, acid: AcidBlock, block: Block, consuming: Boolean = false) =
-        AcidDestroyAction(context, position(block), acid.citadel.position, acid.citadel.runtimeId, consuming)
+    private fun reinforcementsAt(block: Block): Map<Int, CitadelHandle> {
+        val primary = citadels.findProtecting(position(block)) ?: return emptyMap()
+        if (block.isEmpty) return emptyMap()
+        val reinforcements = mutableMapOf(primary.runtimeId to primary)
+        val partner = placement.getDestructionPartner(block)
+        if (partner != null) {
+            if (partner.isEmpty) return emptyMap()
+            citadels.findProtecting(position(partner))?.let { reinforcements[it.runtimeId] = it }
+        }
+        return reinforcements
+    }
 
     private fun loadedBlock(position: CitadelPosition): Block = LoadedBlockTarget.blockAt(plugin.server, isChunkLoaded, position)
 
@@ -220,15 +204,13 @@ class AcidService(
 
     private fun fail(reason: AcidFailure): Nothing = throw Refused(reason)
     private class Refused(val reason: AcidFailure) : RuntimeException()
-    private fun canDissolve(source: Int?, target: Int?): Boolean = target == null || source != null && source >= target
 
-    private data class AcidBlock(val block: Block, val citadel: CitadelHandle, val type: AcidType, val owner: UUID?, val tier: Int?)
-    private data class Target(val block: Block, val reinforcements: List<CitadelHandle>, val actions: List<AcidDestroyAction>)
+    private data class AcidBlock(val block: Block, val citadel: CitadelHandle, val type: AcidType)
+    private data class Target(val block: Block, val reinforcements: Map<Int, CitadelHandle>)
 
     companion object {
         private val FACES = listOf(BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST)
         private fun position(block: Block) = CitadelPosition(block.world.uid, block.x, block.y, block.z)
-        private fun same(left: ReadableHandle, right: ReadableHandle) = left.position == right.position && left.runtimeId == right.runtimeId
     }
 }
 
